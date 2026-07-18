@@ -162,6 +162,32 @@ sealed class ScaleEffectModifier : Modifier
     };
 }
 
+/// <summary>
+/// Attaches an implicit animation, mirroring SwiftUI's <c>.animation(_:value:)</c>. When the
+/// <c>trigger</c> string changes (the stringified <c>on:</c> value), animatable modifiers earlier in
+/// the chain (opacity/scale/frame/offset/color) interpolate to their new values instead of snapping.
+/// </summary>
+sealed class AnimationModifier : Modifier
+{
+    readonly AnimationSpec _spec;
+    readonly string _trigger;
+    public AnimationModifier(AnimationSpec spec, string trigger) { _spec = spec; _trigger = trigger; }
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+    {
+        var d = new Dictionary<string, object>
+        {
+            ["type"] = "animation",
+            ["curve"] = _spec.Curve.Token(),
+            ["duration"] = _spec.Duration,
+            ["delay"] = _spec.Delay,
+            ["trigger"] = _trigger,
+        };
+        if (_spec.SpringStiffness is { } s) d["stiffness"] = s;
+        if (_spec.SpringDamping is { } dm) d["damping"] = dm;
+        return d;
+    }
+}
+
 /// <summary>Dims and blocks interaction on a view (and its subtree), mirroring SwiftUI's <c>.disabled()</c>.</summary>
 sealed class DisabledModifier : Modifier
 {

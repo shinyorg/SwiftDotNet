@@ -22,6 +22,7 @@ public sealed class ContentView : View
     readonly State<bool> _notify = State(true);
     readonly State<int> _rating = State(3);
     readonly State<string> _gesture = State("Try the gestures below");
+    readonly State<bool> _panel = State(false);
 
     // Lists
     readonly State<bool> _expanded = State(false);
@@ -80,7 +81,19 @@ public sealed class ContentView : View
                 .OnLongPress(() => _gesture.Value = "Long-pressed 👇"),
             new Text("👈 Swipe me left")
                 .Padding(12).Background(Color.Hex("#FDECEC")).CornerRadius(10)
-                .OnSwipe(SwipeDirection.Left, () => _gesture.Value = "Swiped left 👈")
+                .OnSwipe(SwipeDirection.Left, () => _gesture.Value = "Swiped left 👈"),
+
+            // Implicit animation: height + opacity interpolate when _panel flips, instead of snapping.
+            new Divider(),
+            new Text("Animation").Font(Font.Headline),
+            new Button(_panel.Value ? "Collapse panel" : "Expand panel", () => _panel.Value = !_panel.Value),
+            new VStack(
+                new Text("Animated with .Animation(Anim.Spring(), on: _panel) — a real native spring on iOS/Compose/WinUI, a cubic-bezier on Web.")
+                    .Font(Font.Caption).ForegroundColor(Color.Secondary).Padding(12)
+            ).Frame(height: _panel.Value ? 110 : 0)
+             .Opacity(_panel.Value ? 1 : 0)
+             .Background(Color.Hex("#EEF0FF")).CornerRadius(10)
+             .Animation(Anim.Spring(), on: _panel.Value)
         ).Padding(20);
 
     View LayoutTab() =>

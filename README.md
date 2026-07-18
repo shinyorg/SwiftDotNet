@@ -81,6 +81,13 @@ Two ways to add your own control:
   WinUI `Holding`/`ManipulationCompleted`, GTK `GestureLongPress`/`GestureSwipe`, Web Pointer Events) and
   fires back through the same event channel as `.OnTapGesture`. Continuous pan/pinch (a `Transformable`
   binding) is a later phase — see [the gestures plan](plans/gestures-and-transforms-plan.md).
+- **Animation**: `.Animation(AnimationSpec, on: <value>)` — implicit animation that interpolates a view's
+  animatable modifiers (opacity, frame size, …) when the `on:` value changes, mirroring SwiftUI's
+  `.animation(_:value:)`. Specs via `Anim.Linear/EaseIn/EaseOut/EaseInOut(duration)` and `Anim.Spring()`.
+  Maps to real native animation — SwiftUI `.animation`, Compose `animateContentSize`/`animateFloatAsState`,
+  WinUI theme transitions, GTK/Web CSS `transition`; springs are native where available and degrade to a
+  bezier (Web) or ease-in-out (GTK). Explicit `Animate.Run` transactions and enter/leave `.Transition(…)`
+  are later phases — see [the animations plan](plans/animations-plan.md).
 - **Alignment**: `VStack.Alignment(HorizontalAlignment)`, `HStack.Alignment(VerticalAlignment)`,
   `ZStack.Alignment(Alignment)`; colors also via `Color.Hex("#RRGGBB")`
 

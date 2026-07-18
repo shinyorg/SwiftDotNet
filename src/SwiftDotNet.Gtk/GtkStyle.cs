@@ -93,10 +93,26 @@ static class GtkStyle
                     var (size, weight) = Font(m.GetValueOrDefault("value") as string);
                     if (size > 0) sb.Append($"font-size:{size}px;font-weight:{weight};");
                     break;
+                case "animation":
+                    // GTK4 has no declarative animation engine; CSS transitions cover the properties GTK
+                    // exposes to CSS (color/background/border). Non-CSS props (widget opacity, frame size)
+                    // still snap — a documented degradation (spring also degrades to ease-in-out).
+                    var dur = Num(N(m, "duration", 0.3));
+                    var delay = Num(N(m, "delay", 0));
+                    sb.Append($"transition:all {dur}s {Timing(m.GetValueOrDefault("curve") as string)} {delay}s;");
+                    break;
             }
         }
         return sb.ToString();
     }
+
+    static string Timing(string? curve) => curve switch
+    {
+        "linear" => "linear",
+        "easeIn" => "ease-in",
+        "easeOut" => "ease-out",
+        _ => "ease-in-out",   // spring → ease-in-out (GTK CSS has no spring)
+    };
 
     static double N(Dictionary<string, object?> m, string key, double fallback = 0)
         => m.TryGetValue(key, out var v) && v is double d ? d : fallback;

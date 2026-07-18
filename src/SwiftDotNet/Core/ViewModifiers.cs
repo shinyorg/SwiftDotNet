@@ -101,6 +101,18 @@ public static class ViewModifiers
         return view;
     }
 
+    /// <summary>
+    /// Animates this view's animatable modifiers (opacity, scale, frame, offset, color) whenever the
+    /// <paramref name="on"/> value changes — mirrors SwiftUI's <c>.animation(_:value:)</c>. Pass the state
+    /// you're binding to (e.g. <c>on: _expanded.Value</c>) so the change arms the animation; a change to any
+    /// other modifier in the same render then interpolates instead of snapping.
+    /// </summary>
+    public static T Animation<T>(this T view, AnimationSpec spec, object? on = null) where T : View
+    {
+        view.Modifiers.Add(new AnimationModifier(spec, Convert.ToString(on, System.Globalization.CultureInfo.InvariantCulture) ?? ""));
+        return view;
+    }
+
     public static T NavigationTitle<T>(this T view, string title) where T : View
     {
         view.Modifiers.Add(new NavigationTitleModifier(title));

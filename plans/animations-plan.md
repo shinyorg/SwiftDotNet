@@ -1,6 +1,8 @@
 # Plan: Animations for SwiftDotNet
 
-**Status:** Draft for review
+**Status:** Phase 1 **shipped** (implicit `.Animation(spec, on:)` for opacity/frame across all backends;
+`AnimationSpec`/`Anim`; `animation` wire modifier). Phases 2 (explicit `Animate.Run` + render batching)
+and 3 (transitions) are future revisions.
 **Date:** 2026-07-18
 **Scope:** Add SwiftUI-style animations — implicit (`.Animation(...)`), explicit
 (`withAnimation`-style transactions), and view transitions (insert/remove) — across all backends
@@ -201,7 +203,7 @@ scale**. These interpolate cleanly on every backend. Rotation and complex path t
 
 | Phase | Deliverable | Backends | Risk |
 |-------|-------------|----------|------|
-| **1** | `AnimationSpec`/`Anim`, animatable-modifier plumbing, **implicit `.Animation(spec, on:)`** for opacity/color/frame/offset/scale; wire `animation` modifier + `NodeJson` support. | SwiftUI + Web first (cheapest), then Compose/WinUI/GTK | Low |
+| **1 ✅** | `AnimationSpec`/`Anim`, animatable-modifier plumbing, **implicit `.Animation(spec, on:)`**; wire `animation` modifier (rides existing dict serialization — no `NodeJson` change needed). Shipped set per backend: SwiftUI animates all animatable modifiers; Web opacity/color/transform/size (CSS `transition`); Compose opacity + frame (`animateFloatAsState`/`animateContentSize`); WinUI layout reposition (theme transition); GTK CSS-backed props (color/background). Scale/offset/rotation on Compose/WinUI/GTK are follow-ups. | SwiftUI + Web + Compose + WinUI + GTK | Low |
 | **2** | **Render batching** (§6) + **explicit `Animate.Run`** with the `Patch` `anim` tag; `withAnimation` on SwiftUI, per-property on the rest. | SwiftUI, Compose, Web; then WinUI/GTK | Med (batching touches `SwiftApp`/`State`) |
 | **3** | **Transitions** `.Transition(...)` for insert/remove, on top of keyed reconciliation. | SwiftUI/Compose/Web, then WinUI/GTK | Higher; sequenced after keyed `ForEach` |
 

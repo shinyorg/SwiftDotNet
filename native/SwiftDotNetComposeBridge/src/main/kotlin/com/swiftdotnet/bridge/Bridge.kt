@@ -5,6 +5,15 @@ package com.swiftdotnet.bridge
 import android.content.Context
 import android.view.View
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -129,6 +138,26 @@ object SwiftDotNetBridge {
 // MARK: - Value helpers ------------------------------------------------------
 
 private fun numOf(v: Any?): Double? = (v as? Number)?.toDouble()
+
+private fun easingFor(curve: String?) = when (curve) {
+    "linear" -> LinearEasing
+    "easeIn" -> FastOutLinearInEasing
+    "easeOut" -> LinearOutSlowInEasing
+    else -> FastOutSlowInEasing
+}
+
+// A spring keeps its native feel; the timed curves map to a tween. Generic over the animated value type
+// so the same spec drives both `animateFloatAsState` (alpha) and `animateContentSize` (layout size) —
+// a FiniteAnimationSpec<Float> is also an AnimationSpec<Float>, so one helper covers both call sites.
+private fun <T> animSpec(mod: Map<String, Any?>): FiniteAnimationSpec<T> {
+    if ((mod["curve"] as? String) == "spring") return spring()
+    return tween(
+        durationMillis = ((numOf(mod["duration"]) ?: 0.3) * 1000).toInt(),
+        delayMillis = ((numOf(mod["delay"]) ?: 0.0) * 1000).toInt(),
+        easing = easingFor(mod["curve"] as? String),
+    )
+}
+
 private fun VNode.s(key: String): String = props[key]?.toString() ?: ""
 private fun VNode.n(key: String): Double? = numOf(props[key])
 private fun VNode.b(key: String): Boolean = props[key] as? Boolean ?: false
@@ -212,6 +241,11 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
     var contentColor: Color? = null
     var boxAlignment: Alignment = Alignment.TopStart
 
+    // Phase-1 implicit animation: `animateContentSize` covers frame/layout, and opacity is animated via
+    // `animateFloatAsState`. Scale/offset/color animation on Compose is a follow-up (they still snap).
+    val animMod = node.modifiers.firstOrNull { (it["type"] as? String) == "animation" }
+    var targetAlpha: Float? = null
+
     for (mod in node.modifiers) {
         when (mod["type"]) {
             "padding" -> m = m.padding(
@@ -237,7 +271,7 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                 val c = colorFor(mod["color"] as? String) ?: Color.Black
                 m = m.shadow(elevation = (numOf(mod["radius"]) ?: 4.0).dp, ambientColor = c, spotColor = c)
             }
-            "opacity" -> m = m.alpha((numOf(mod["amount"]) ?: 1.0).toFloat())
+            "opacity" -> targetAlpha = (numOf(mod["amount"]) ?: 1.0).toFloat()
             "scaleEffect" -> {
                 val t = mod["value"] as? String
                 val fx = if (t == "leading" || t == "topLeading" || t == "bottomLeading") 0f
@@ -286,6 +320,14 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
             "font" -> textStyle = textStyleFor(mod["value"] as? String)
             "foregroundColor" -> contentColor = colorFor(mod["value"] as? String)
         }
+    }
+
+    if (animMod != null) m = m.animateContentSize(animationSpec = animSpec(animMod))
+    if (targetAlpha != null) {
+        val alpha = if (animMod != null)
+            animateFloatAsState(targetValue = targetAlpha!!, animationSpec = animSpec(animMod), label = "alpha").value
+        else targetAlpha!!
+        m = m.alpha(alpha)
     }
 
     Box(modifier = m, contentAlignment = boxAlignment) {

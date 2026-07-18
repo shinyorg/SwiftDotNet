@@ -44,6 +44,12 @@ struct ModifierData: Decodable, Equatable {
     let color: String?
     let x: Double?
     let y: Double?
+    let curve: String?
+    let duration: Double?
+    let delay: Double?
+    let trigger: String?
+    let stiffness: Double?
+    let damping: Double?
 }
 
 final class WireNode: Decodable {
@@ -212,6 +218,20 @@ private func vAlignFor(_ token: String?) -> SwiftUI.VerticalAlignment {
     switch token { case "top": return .top; case "bottom": return .bottom; default: return .center }
 }
 
+private func animationFor(_ m: ModifierData) -> SwiftUI.Animation {
+    let dur = m.duration ?? 0.3
+    let base: SwiftUI.Animation
+    switch m.curve {
+    case "linear": base = .linear(duration: dur)
+    case "easeIn": base = .easeIn(duration: dur)
+    case "easeOut": base = .easeOut(duration: dur)
+    case "spring": base = .interpolatingSpring(stiffness: m.stiffness ?? 170, damping: m.damping ?? 26)
+    default: base = .easeInOut(duration: dur)
+    }
+    let delay = m.delay ?? 0
+    return delay > 0 ? base.delay(delay) : base
+}
+
 private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyView {
     var out = AnyView(view)
     for m in mods {
@@ -246,6 +266,10 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
             out = AnyView(out.opacity(m.amount ?? 1))
         case "scaleEffect":
             out = AnyView(out.scaleEffect(x: CGFloat(m.x ?? 1), y: CGFloat(m.y ?? 1), anchor: unitPointFor(m.value)))
+        case "animation":
+            // Re-arms whenever the trigger (stringified `on:` value) changes; SwiftUI interpolates the
+            // animatable modifiers applied earlier in the chain to their new values.
+            out = AnyView(out.animation(animationFor(m), value: m.trigger ?? ""))
         case "disabled":
             out = AnyView(out.disabled(m.value == "true"))
         case "navigationTitle":

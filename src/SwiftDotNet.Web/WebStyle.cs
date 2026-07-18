@@ -81,6 +81,12 @@ static class WebStyle
                     sb.Append($"transform:scale({N(m, "x", 1).ToString(CultureInfo.InvariantCulture)},{N(m, "y", 1).ToString(CultureInfo.InvariantCulture)});");
                     if (m.GetValueOrDefault("value") is string sanchor) sb.Append($"transform-origin:{OriginCss(sanchor)};");
                     break;
+                case "animation":
+                    // CSS animates whenever a transitioned property changes, so the `trigger` isn't needed here.
+                    var dur = N(m, "duration", 0.3).ToString(CultureInfo.InvariantCulture);
+                    var delay = N(m, "delay", 0).ToString(CultureInfo.InvariantCulture);
+                    sb.Append($"transition:all {dur}s {TimingFunction(m.GetValueOrDefault("curve") as string)} {delay}s;");
+                    break;
                 case "foregroundColor":
                     if (Color(m.GetValueOrDefault("value") as string) is { } fc)
                         sb.Append(shapeFill ? $"background:{fc};" : $"color:{fc};");
@@ -123,6 +129,16 @@ static class WebStyle
         "leading" => "left center", "trailing" => "right center",
         "bottomLeading" => "left bottom", "bottom" => "center bottom", "bottomTrailing" => "right bottom",
         _ => "center",
+    };
+
+    // Spring has no CSS equivalent — approximate with a slight-overshoot bezier.
+    static string TimingFunction(string? curve) => curve switch
+    {
+        "linear" => "linear",
+        "easeIn" => "ease-in",
+        "easeOut" => "ease-out",
+        "spring" => "cubic-bezier(0.34, 1.56, 0.64, 1)",
+        _ => "ease-in-out",
     };
 
     static double? Num(Dictionary<string, object?> m, string key) => m.TryGetValue(key, out var v) && v is double d ? d : null;

@@ -413,6 +413,15 @@ sealed class WinNode
                     Inner.RenderTransform = new ScaleTransform { ScaleX = N(m, "x", 1), ScaleY = N(m, "y", 1) };
                     Inner.RenderTransformOrigin = OriginPoint(m.GetValueOrDefault("value") as string);
                     break;
+                case "animation":
+                    // WinUI Phase 1: implicit theme transitions animate this element's layout repositioning
+                    // when it moves/resizes. Per-property (opacity/scale) animation via the Composition API
+                    // is a follow-up; spring/curve/duration are honored there, not by theme transitions.
+                    current.Transitions = new Microsoft.UI.Xaml.Media.Animation.TransitionCollection
+                    {
+                        new Microsoft.UI.Xaml.Media.Animation.RepositionThemeTransition(),
+                    };
+                    break;
                 case "frame":
                     if (Num(m, "width") is { } w) current.Width = w;
                     if (Num(m, "height") is { } h) current.Height = h;
