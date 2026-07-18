@@ -86,12 +86,8 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 
 | Path | TFM | Role |
 |------|-----|------|
-| `src/SwiftDotNet.Core` | `net10.0` | Platform-neutral DSL, `State<T>`, `Node`/JSON, diff engine, `IBridge`, `SwiftApp` runtime |
-| `src/SwiftDotNet.iOS` | `net10.0-ios` | `IosBridge` (P/Invoke), `SwiftDotNetHost` API, and the bridge `NativeReference` (via `SwiftDotNetBridge.targets`) |
-| `src/SwiftDotNet.macOS` | `net10.0-macos` | `MacBridge` (P/Invoke), `SwiftDotNetHost` API — reuses the SAME xcframework (macOS slice, `NSHostingController`) |
-| `src/SwiftDotNet.Android` | `net10.0-android` | `AndroidBridge` (JNI), `SwiftDotNetHost` API, binds the Compose `.aar`, references `Xamarin.AndroidX.Compose.*` |
-| `src/SwiftDotNet.Gtk` | `net10.0` | **Pure-C#** GTK4 backend — retained-mode interpreter over Gir.Core widgets (no native shim). Runs on Linux (and anywhere GTK4 is installed) |
-| `src/SwiftDotNet.Windows` | `net10.0-windows10.x` | **Pure-C#** WinUI 3 backend — retained-mode interpreter over WinUI controls (no shim; WinUI is fully C#-bindable). ⚠️ scaffolded but not yet built — WinUI needs **Windows** to compile |
+| `src/SwiftDotNet` | **multi-target** | **One library.** `Core/` (platform-neutral DSL, `State<T>`, `Node`/JSON, diff engine, `IBridge`, `SwiftApp`) compiles for every TFM; `Platforms/{iOS,macOS,tvOS,Android,Windows}/` (the bridges + `SwiftDotNetHost`) are opted in per TFM. TFMs: `net10.0;net10.0-android` always, `net10.0-ios;-macos;-tvos` on a Mac, `net10.0-windows10.x` on Windows. iOS/macOS/tvOS pull the Swift xcframework (`SwiftDotNetBridge.targets`); Android binds the Compose `.aar` + `Xamarin.AndroidX.Compose.*`; Windows pulls WinUI 3. |
+| `src/SwiftDotNet.Gtk` | `net10.0` | **Separate** (Linux/GTK shares the `net10.0` TFM with Core, so folding it in would force every neutral consumer to take the GTK dependency). Pure-C# GTK4 backend over Gir.Core; references the combined `SwiftDotNet`. |
 | `native/SwiftDotNetBridge` | Swift | `Bridge.swift` + build script → `build/SwiftDotNetBridge.xcframework` (SwiftUI interpreter; iOS device/sim + macOS slices) |
 | `native/SwiftDotNetComposeBridge` | Kotlin | `Bridge.kt` + Gradle → `build/SwiftDotNetComposeBridge.aar` (Jetpack Compose interpreter) |
 | `sample/SharedUI` | `net10.0` | The demo `ContentView` (5-tab tour) — one file, shared by all apps |
@@ -99,9 +95,11 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 | `sample/SampleApp.Mac` | `net10.0-macos` | Thin macOS app: hosts `SwiftDotNetHost.CreateRootController(new ContentView())` in an `NSWindow` |
 | `sample/SampleApp.Android` | `net10.0-android` | Thin Android app: `SwiftDotNetHost.CreateRootView(this, new ContentView())` |
 
-The **same `SharedUI.ContentView`** renders as **SwiftUI on iOS**, **SwiftUI (AppKit-hosted) on macOS**, and
-**Jetpack Compose on Android** — verified on device/emulator/desktop. macOS reuses the iOS Swift interpreter
-almost verbatim (SwiftUI is AppKit-backed on macOS); only a few `#if canImport(UIKit)`/AppKit conditionals differ.
+The **same `SharedUI.ContentView`** renders as **SwiftUI on iOS**, **SwiftUI (AppKit-hosted) on macOS**,
+**SwiftUI on tvOS**, and **Jetpack Compose on Android** — verified on device/emulator/desktop/Apple TV sim.
+The Apple platforms share one Swift interpreter with a few `#if` conditionals: macOS swaps UIKit→AppKit hosting;
+tvOS (focus-driven, no pointer) falls back for the controls Apple omits there — `Slider`/`DatePicker`/`ColorPicker`
+show a value/swatch, `Stepper`→focusable −/+ buttons, `DisclosureGroup`→a header button, `Gauge`→`ProgressView`.
 
 **Linux/GTK** is different: GTK is a C/GObject library (not a compiler-plugin framework), so its backend is
 **pure C#** with **no native shim** — a retained-mode interpreter mapping the node tree to real `Gtk.Widget`s

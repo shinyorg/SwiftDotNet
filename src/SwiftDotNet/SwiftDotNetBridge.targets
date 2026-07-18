@@ -10,7 +10,7 @@
 
       <Import Project="..\..\src\SwiftDotNet.iOS\SwiftDotNetBridge.targets" />
   -->
-  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios' or '$(TargetPlatformIdentifier)' == 'macos'">
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios' or '$(TargetPlatformIdentifier)' == 'macos' or '$(TargetPlatformIdentifier)' == 'tvos'">
     <NativeReference Include="$(MSBuildThisFileDirectory)..\..\build\SwiftDotNetBridge.xcframework">
       <Kind>Framework</Kind>
     </NativeReference>

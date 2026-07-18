@@ -15,12 +15,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SwiftDotNet.macOS\SwiftDotNet.macOS.csproj" />
+    <ProjectReference Include="..\..\src\SwiftDotNet\SwiftDotNet.csproj" />
     <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
   </ItemGroup>
 
   <!-- Link the native Swift bridge (NativeReference doesn't flow transitively from the library). -->
-  <Import Project="..\..\src\SwiftDotNet.iOS\SwiftDotNetBridge.targets" />
+  <Import Project="..\..\src\SwiftDotNet\SwiftDotNetBridge.targets" />
 
 </Project>
 

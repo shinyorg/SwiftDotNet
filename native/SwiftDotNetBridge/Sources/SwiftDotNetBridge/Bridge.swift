@@ -383,8 +383,8 @@ struct NodeView: View {
 
     @ViewBuilder
     private var tabView: some View {
-        #if os(macOS)
-        // PageTabViewStyle is unavailable on macOS — fall back to a standard TabView.
+        #if os(macOS) || os(tvOS)
+        // PageTabViewStyle is unavailable on macOS/tvOS — fall back to a standard TabView.
         SwiftUI.TabView { childViews }
         #else
         if node.props["style"]?.string == "page" {
@@ -418,10 +418,21 @@ struct NodeView: View {
         }
     }
 
+    @ViewBuilder
     private var gaugeView: some View {
+        // Gauge is unavailable on tvOS — fall back to a labeled ProgressView.
+        #if os(tvOS)
+        let lo = num("min") ?? 0, hi = num("max") ?? 1
+        let frac = hi > lo ? ((num("value") ?? 0) - lo) / (hi - lo) : 0
+        SwiftUI.VStack {
+            SwiftUI.Text(node.props["label"]?.string ?? "")
+            SwiftUI.ProgressView(value: max(0, min(1, frac)))
+        }
+        #else
         SwiftUI.Gauge(value: num("value") ?? 0, in: (num("min") ?? 0)...(num("max") ?? 1)) {
             SwiftUI.Text(node.props["label"]?.string ?? "")
         }
+        #endif
     }
 
     @ViewBuilder
@@ -441,7 +452,9 @@ struct TextFieldNode: View {
     @State private var text = ""
     var body: some View {
         TextField(node.props["placeholder"]?.string ?? "", text: $text)
+            #if !os(tvOS)
             .textFieldStyle(.roundedBorder)
+            #endif
             .onAppear { text = node.props["text"]?.string ?? "" }
             .onChange(of: text) { _, v in emitEvent(node.id, v) }
             .onChange(of: node.props["text"]?.string ?? "") { _, incoming in
@@ -455,7 +468,9 @@ struct SecureFieldNode: View {
     @State private var text = ""
     var body: some View {
         SecureField(node.props["placeholder"]?.string ?? "", text: $text)
+            #if !os(tvOS)
             .textFieldStyle(.roundedBorder)
+            #endif
             .onAppear { text = node.props["text"]?.string ?? "" }
             .onChange(of: text) { _, v in emitEvent(node.id, v) }
             .onChange(of: node.props["text"]?.string ?? "") { _, incoming in
@@ -468,6 +483,15 @@ struct TextEditorNode: View {
     let node: VNode
     @State private var text = ""
     var body: some View {
+        // TextEditor is unavailable on tvOS — fall back to a TextField.
+        #if os(tvOS)
+        TextField("", text: $text)
+            .onAppear { text = node.props["text"]?.string ?? "" }
+            .onChange(of: text) { _, v in emitEvent(node.id, v) }
+            .onChange(of: node.props["text"]?.string ?? "") { _, incoming in
+                if incoming != text { text = incoming }
+            }
+        #else
         TextEditor(text: $text)
             .frame(minHeight: 100)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(.secondary.opacity(0.3)))
@@ -476,6 +500,7 @@ struct TextEditorNode: View {
             .onChange(of: node.props["text"]?.string ?? "") { _, incoming in
                 if incoming != text { text = incoming }
             }
+        #endif
     }
 }
 
@@ -496,6 +521,10 @@ struct SliderNode: View {
     let node: VNode
     @State private var value = 0.0
     var body: some View {
+        // Slider is unavailable on tvOS (no pointer/touch) — show the value.
+        #if os(tvOS)
+        SwiftUI.Text(String(format: "%.2f", node.props["value"]?.number ?? 0))
+        #else
         let lo = node.props["min"]?.number ?? 0
         let hi = node.props["max"]?.number ?? 1
         Slider(value: $value, in: lo...max(lo + 0.0001, hi))
@@ -504,6 +533,7 @@ struct SliderNode: View {
             .onChange(of: node.props["value"]?.number ?? lo) { _, incoming in
                 if abs(incoming - value) > 0.0001 { value = incoming }
             }
+        #endif
     }
 }
 
@@ -513,12 +543,22 @@ struct StepperNode: View {
     var body: some View {
         let lo = Int(node.props["min"]?.number ?? -1e9)
         let hi = Int(node.props["max"]?.number ?? 1e9)
+        // Stepper is unavailable on tvOS — use focusable −/+ buttons (still fully functional).
+        #if os(tvOS)
+        let current = Int(node.props["value"]?.number ?? 0)
+        HStack {
+            SwiftUI.Text("\(node.props["label"]?.string ?? "") \(current)")
+            SwiftUI.Button("−") { if current > lo { emitEvent(node.id, String(current - 1)) } }
+            SwiftUI.Button("+") { if current < hi { emitEvent(node.id, String(current + 1)) } }
+        }
+        #else
         Stepper("\(node.props["label"]?.string ?? "") \(value)", value: $value, in: lo...max(lo, hi))
             .onAppear { value = Int(node.props["value"]?.number ?? 0) }
             .onChange(of: value) { _, v in emitEvent(node.id, String(v)) }
             .onChange(of: Int(node.props["value"]?.number ?? 0)) { _, incoming in
                 if incoming != value { value = incoming }
             }
+        #endif
     }
 }
 
@@ -543,6 +583,11 @@ struct DatePickerNode: View {
     let node: VNode
     @State private var date = Date()
     var body: some View {
+        // DatePicker is unavailable on tvOS — show the formatted date.
+        #if os(tvOS)
+        let d = Date(timeIntervalSince1970: node.props["value"]?.number ?? 0)
+        SwiftUI.Text("\(node.props["label"]?.string ?? ""): \(d.formatted(date: .abbreviated, time: .omitted))")
+        #else
         DatePicker(node.props["label"]?.string ?? "", selection: $date)
             .onAppear { date = Date(timeIntervalSince1970: node.props["value"]?.number ?? 0) }
             .onChange(of: date) { _, v in emitEvent(node.id, String(v.timeIntervalSince1970)) }
@@ -550,6 +595,7 @@ struct DatePickerNode: View {
                 let d = Date(timeIntervalSince1970: incoming)
                 if abs(d.timeIntervalSince(date)) > 1 { date = d }
             }
+        #endif
     }
 }
 
@@ -557,9 +603,19 @@ struct ColorPickerNode: View {
     let node: VNode
     @State private var color = Color.accentColor
     var body: some View {
+        // ColorPicker is unavailable on tvOS — show a swatch.
+        #if os(tvOS)
+        HStack {
+            SwiftUI.Text(node.props["label"]?.string ?? "")
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color(hexString: node.props["value"]?.string ?? "") ?? .accentColor)
+                .frame(width: 48, height: 28)
+        }
+        #else
         ColorPicker(node.props["label"]?.string ?? "", selection: $color)
             .onAppear { color = Color(hexString: node.props["value"]?.string ?? "") ?? .accentColor }
             .onChange(of: color) { _, v in emitEvent(node.id, hexString(from: v)) }
+        #endif
     }
 }
 
@@ -567,6 +623,18 @@ struct DisclosureGroupNode: View {
     let node: VNode
     @State private var expanded = false
     var body: some View {
+        // DisclosureGroup is unavailable on tvOS — use a focusable header button + conditional content.
+        #if os(tvOS)
+        let isOpen = node.props["expanded"]?.bool ?? false
+        VStack(alignment: .leading) {
+            SwiftUI.Button((isOpen ? "▾ " : "▸ ") + (node.props["label"]?.string ?? "")) {
+                emitEvent(node.id, isOpen ? "false" : "true")
+            }
+            if isOpen {
+                ForEach(node.children) { NodeView(node: $0) }
+            }
+        }
+        #else
         DisclosureGroup(node.props["label"]?.string ?? "", isExpanded: $expanded) {
             ForEach(node.children) { NodeView(node: $0) }
         }
@@ -575,6 +643,7 @@ struct DisclosureGroupNode: View {
         .onChange(of: node.props["expanded"]?.bool ?? false) { _, incoming in
             if incoming != expanded { expanded = incoming }
         }
+        #endif
     }
 }
 

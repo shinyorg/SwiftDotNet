@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SwiftDotNet.Core\SwiftDotNet.Core.csproj" />
+    <ProjectReference Include="..\..\src\SwiftDotNet\SwiftDotNet.csproj" />
   </ItemGroup>
 
 </Project>

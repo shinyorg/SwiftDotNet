@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SwiftDotNet.Core\SwiftDotNet.Core.csproj" />
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
   </ItemGroup>
 
   <!-- GTK4 via GObject-introspection C# bindings (pure C# — no native shim). -->

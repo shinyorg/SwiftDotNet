@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Base (platform-neutral Core). Apple TFMs need a Mac; the Windows TFM needs Windows;
+         Android builds anywhere. Linux/GTK stays a separate project (it shares the net10.0 TFM). -->
+    <TargetFrameworks>net10.0;net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(TargetFrameworks);net10.0-ios;net10.0-macos;net10.0-tvos</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <!-- Per-platform OS versions -->
+  <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'ios'"><SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'tvos'"><SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'macos'"><SupportedOSPlatformVersion>14.0</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'android'"><SupportedOSPlatformVersion>24</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'windows'">
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <UseWinUI>true</UseWinUI>
+  </PropertyGroup>
+
+  <!-- Core (Core/**) compiles for every TFM. Platform code is opted in per TFM. -->
+  <ItemGroup>
+    <Compile Remove="Platforms/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios'">
+    <Compile Include="Platforms/iOS/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'macos'">
+    <Compile Include="Platforms/macOS/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'tvos'">
+    <Compile Include="Platforms/tvOS/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'android'">
+    <Compile Include="Platforms/Android/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'windows'">
+    <Compile Include="Platforms/Windows/**/*.cs" />
+  </ItemGroup>
+
+  <!-- Apple (iOS/macOS/tvOS): the Swift/SwiftUI bridge NativeReference (internal ItemGroup is TFM-gated). -->
+  <Import Project="SwiftDotNetBridge.targets" />
+
+  <!-- Android: the Compose bridge AAR + Compose runtime. -->
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'android'">
+    <AndroidLibrary Include="$(MSBuildThisFileDirectory)..\..\build\SwiftDotNetComposeBridge.aar" Bind="true" />
+    <PackageReference Include="Xamarin.AndroidX.Compose.Ui" Version="1.7.6.1" />
+    <PackageReference Include="Xamarin.AndroidX.Compose.Foundation" Version="1.7.6.1" />
+    <PackageReference Include="Xamarin.AndroidX.Compose.Material3" Version="1.3.1" />
+    <PackageReference Include="Xamarin.AndroidX.Activity.Compose" Version="1.9.3.2" />
+  </ItemGroup>
+
+  <!-- Windows: WinUI 3 / Windows App SDK. -->
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'windows'">
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.*" />
+  </ItemGroup>
+
+</Project>

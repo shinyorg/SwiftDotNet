@@ -20,7 +20,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SwiftDotNet.Windows\SwiftDotNet.Windows.csproj" />
+    <ProjectReference Include="..\..\src\SwiftDotNet\SwiftDotNet.csproj" />
     <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
   </ItemGroup>
 

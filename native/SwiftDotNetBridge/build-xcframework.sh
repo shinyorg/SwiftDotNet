@@ -11,6 +11,7 @@ WORK="$OUT/_bridge_work"
 MODULE="SwiftDotNetBridge"
 MIN_IOS="17.0"
 MIN_MAC="14.0"
+MIN_TVOS="17.0"
 
 rm -rf "$WORK" "$OUT/$MODULE.xcframework"
 mkdir -p "$WORK"
@@ -18,6 +19,8 @@ mkdir -p "$WORK"
 SDK_SIM="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 SDK_DEV="$(xcrun --sdk iphoneos --show-sdk-path)"
 SDK_MAC="$(xcrun --sdk macosx --show-sdk-path)"
+SDK_TVSIM="$(xcrun --sdk appletvsimulator --show-sdk-path)"
+SDK_TVDEV="$(xcrun --sdk appletvos --show-sdk-path)"
 
 build_slice () {
   local name="$1" target="$2" sdk="$3"
@@ -103,12 +106,16 @@ PLIST
 
 build_slice "sim" "arm64-apple-ios${MIN_IOS}-simulator" "$SDK_SIM"
 build_slice "dev" "arm64-apple-ios${MIN_IOS}"           "$SDK_DEV"
+build_slice "tvsim" "arm64-apple-tvos${MIN_TVOS}-simulator" "$SDK_TVSIM"
+build_slice "tvdev" "arm64-apple-tvos${MIN_TVOS}"          "$SDK_TVDEV"
 build_mac_slice
 
 echo "→ creating xcframework"
 xcodebuild -create-xcframework \
   -framework "$WORK/sim/$MODULE.framework" \
   -framework "$WORK/dev/$MODULE.framework" \
+  -framework "$WORK/tvsim/$MODULE.framework" \
+  -framework "$WORK/tvdev/$MODULE.framework" \
   -framework "$WORK/mac/$MODULE.framework" \
   -output "$OUT/$MODULE.xcframework"
 
