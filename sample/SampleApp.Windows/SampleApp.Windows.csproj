@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <UseWinUI>true</UseWinUI>
+    <StartupObject>WindowsSample.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- Runs with NO prerequisites: unpackaged + self-contained .NET + self-contained Windows App SDK
+         (bundles the WinAppSDK runtime, so a separate runtime install isn't needed). -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SwiftDotNet.Windows\SwiftDotNet.Windows.csproj" />
+    <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
+  </ItemGroup>
+
+  <!-- The app also references the SDK directly so the bootstrap + self-contained runtime apply at the exe. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.*" />
+  </ItemGroup>
+
+</Project>

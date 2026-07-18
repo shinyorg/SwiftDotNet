@@ -1,0 +1,89 @@
+namespace SwiftDotNet;
+
+/// <summary>
+/// SwiftUI-style modifiers as fluent extension methods. Generic <c>T</c> preserves the concrete
+/// view type so chaining reads like SwiftUI: <c>new Text("hi").Font(Font.Title).Padding()</c>.
+/// </summary>
+public static class ViewModifiers
+{
+    public static T Font<T>(this T view, SwiftFont font) where T : View
+    {
+        view.Modifiers.Add(new FontModifier(font.Value));
+        return view;
+    }
+
+    public static T ForegroundColor<T>(this T view, SwiftColor color) where T : View
+    {
+        view.Modifiers.Add(new ForegroundColorModifier(color.Value));
+        return view;
+    }
+
+    public static T Background<T>(this T view, SwiftColor color) where T : View
+    {
+        view.Modifiers.Add(new BackgroundModifier(color.Value));
+        return view;
+    }
+
+    public static T Padding<T>(this T view, double all = 16) where T : View
+    {
+        view.Modifiers.Add(new PaddingModifier(all));
+        return view;
+    }
+
+    /// <summary>Per-edge padding: <c>.Padding(Edge.Horizontal, 20)</c>.</summary>
+    public static T Padding<T>(this T view, Edge edges, double amount) where T : View
+    {
+        view.Modifiers.Add(new PaddingModifier(edges, amount));
+        return view;
+    }
+
+    public static T Frame<T>(this T view, double? width = null, double? height = null, Alignment? alignment = null) where T : View
+    {
+        view.Modifiers.Add(new FrameModifier(width, height, alignment?.Token()));
+        return view;
+    }
+
+    public static T CornerRadius<T>(this T view, double radius) where T : View
+    {
+        view.Modifiers.Add(new CornerRadiusModifier(radius));
+        return view;
+    }
+
+    public static T Shadow<T>(this T view, double radius = 4, SwiftColor? color = null, double x = 0, double y = 0) where T : View
+    {
+        view.Modifiers.Add(new ShadowModifier(radius, color?.Value, x, y));
+        return view;
+    }
+
+    /// <summary>A stroked border, optionally rounded: <c>.Border(Color.Blue, 2, cornerRadius: 8)</c>.</summary>
+    public static T Border<T>(this T view, SwiftColor color, double width = 1, double cornerRadius = 0) where T : View
+    {
+        view.Modifiers.Add(new BorderModifier(color.Value, width, cornerRadius));
+        return view;
+    }
+
+    /// <summary>Fills available width and aligns content — <c>.Align(Alignment.Leading)</c> left-aligns a control.</summary>
+    public static T Align<T>(this T view, Alignment alignment) where T : View
+    {
+        view.Modifiers.Add(new AlignModifier(alignment.Token()));
+        return view;
+    }
+
+    public static T Opacity<T>(this T view, double opacity) where T : View
+    {
+        view.Modifiers.Add(new OpacityModifier(opacity));
+        return view;
+    }
+
+    public static T NavigationTitle<T>(this T view, string title) where T : View
+    {
+        view.Modifiers.Add(new NavigationTitleModifier(title));
+        return view;
+    }
+
+    public static T OnTapGesture<T>(this T view, Action action) where T : View
+    {
+        view.Modifiers.Add(new OnTapGestureModifier(action));
+        return view;
+    }
+}

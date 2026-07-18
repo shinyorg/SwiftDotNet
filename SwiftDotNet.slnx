@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SwiftDotNet.Core/SwiftDotNet.Core.csproj" />
+    <Project Path="src/SwiftDotNet.iOS/SwiftDotNet.iOS.csproj" />
+    <Project Path="src/SwiftDotNet.Android/SwiftDotNet.Android.csproj" />
+    <Project Path="src/SwiftDotNet.macOS/SwiftDotNet.macOS.csproj" />
+    <Project Path="src/SwiftDotNet.Gtk/SwiftDotNet.Gtk.csproj" />
+    <Project Path="src/SwiftDotNet.Windows/SwiftDotNet.Windows.csproj" />
+  </Folder>
+  <Folder Name="/sample/">
+    <Project Path="sample/SharedUI/SharedUI.csproj" />
+    <Project Path="sample/SampleApp/SampleApp.csproj" />
+    <Project Path="sample/SampleApp.Android/SampleApp.Android.csproj" />
+    <Project Path="sample/SampleApp.Mac/SampleApp.Mac.csproj" />
+    <Project Path="sample/SampleApp.Gtk/SampleApp.Gtk.csproj" />
+    <Project Path="sample/SampleApp.Windows/SampleApp.Windows.csproj" />
+  </Folder>
+</Solution>

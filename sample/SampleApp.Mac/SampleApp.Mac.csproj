@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-macos</TargetFramework>
+    <SupportedOSPlatformVersion>14.0</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <ApplicationTitle>SwiftDotNet</ApplicationTitle>
+    <ApplicationId>com.swiftdotnet.macsample</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SwiftDotNet.macOS\SwiftDotNet.macOS.csproj" />
+    <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
+  </ItemGroup>
+
+  <!-- Link the native Swift bridge (NativeReference doesn't flow transitively from the library). -->
+  <Import Project="..\..\src\SwiftDotNet.iOS\SwiftDotNetBridge.targets" />
+
+</Project>
+

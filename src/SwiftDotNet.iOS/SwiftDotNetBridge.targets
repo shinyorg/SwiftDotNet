@@ -1,0 +1,19 @@
+<Project>
+
+  <!--
+    Declares the native Swift/SwiftUI bridge as a NativeReference.
+
+    NativeReference items do NOT flow transitively from a referenced library into the
+    consuming app's native link step, so the app that produces the final binary must
+    declare it. Importing this file (owned by the SwiftDotNet.iOS library) from the app's
+    .csproj keeps a single source of truth:
+
+      <Import Project="..\..\src\SwiftDotNet.iOS\SwiftDotNetBridge.targets" />
+  -->
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios' or '$(TargetPlatformIdentifier)' == 'macos'">
+    <NativeReference Include="$(MSBuildThisFileDirectory)..\..\build\SwiftDotNetBridge.xcframework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
+
+</Project>
