@@ -230,6 +230,8 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
                                      x: CGFloat(m.x ?? 0), y: CGFloat(m.y ?? 0)))
         case "opacity":
             out = AnyView(out.opacity(m.amount ?? 1))
+        case "disabled":
+            out = AnyView(out.disabled(m.value == "true"))
         case "navigationTitle":
             out = AnyView(out.navigationTitle(m.value ?? ""))
         case "onTapGesture":

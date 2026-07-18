@@ -22,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -232,6 +233,12 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                 m = m.shadow(elevation = (numOf(mod["radius"]) ?: 4.0).dp, ambientColor = c, spotColor = c)
             }
             "opacity" -> m = m.alpha((numOf(mod["amount"]) ?: 1.0).toFloat())
+            "disabled" -> if ((mod["value"] as? String) == "true") {
+                // Dim + swallow all pointer input for the subtree (Compose has no generic `.disabled()`).
+                m = m.alpha(0.5f).pointerInput(Unit) {
+                    awaitPointerEventScope { while (true) { awaitPointerEvent().changes.forEach { it.consume() } } }
+                }
+            }
             "onTapGesture" -> (mod["event"] as? String)?.let { e -> m = m.clickable { SwiftDotNetBridge.emit(e, null) } }
             "font" -> textStyle = textStyleFor(mod["value"] as? String)
             "foregroundColor" -> contentColor = colorFor(mod["value"] as? String)
