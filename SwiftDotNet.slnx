@@ -1,13 +1,15 @@
 <Solution>
-  <Folder Name="/src/">
-    <Project Path="src/SwiftDotNet/SwiftDotNet.csproj" />
-    <Project Path="src/SwiftDotNet.Gtk/SwiftDotNet.Gtk.csproj" />
-    <Project Path="src/SwiftDotNet.Web/SwiftDotNet.Web.csproj" />
-  </Folder>
-  <Folder Name="/sample/">
-    <Project Path="sample/SharedUI/SharedUI.csproj" />
-    <Project Path="sample/SampleApp/SampleApp.csproj" />
-    <Project Path="sample/SampleApp.Gtk/SampleApp.Gtk.csproj" />
-    <Project Path="sample/SampleApp.Web/SampleApp.Web.csproj" />
-  </Folder>
+    <Folder Name="/.Solution/">
+        <File Path="nuget.config"/>
+        <File Path="README.md"/>
+    </Folder>
+    <Folder Name="/Sample/">
+        <Project Path="sample/SharedUI/SharedUI.csproj"/>
+        <Project Path="sample/SampleApp/SampleApp.csproj"/>
+        <Project Path="sample/SampleApp.Gtk/SampleApp.Gtk.csproj"/>
+        <Project Path="sample/SampleApp.Web/SampleApp.Web.csproj"/>
+    </Folder>
+    <Project Path="src/SwiftDotNet.Gtk/SwiftDotNet.Gtk.csproj"/>
+    <Project Path="src/SwiftDotNet.Web/SwiftDotNet.Web.csproj"/>
+    <Project Path="src/SwiftDotNet/SwiftDotNet.csproj"/>
 </Solution>
