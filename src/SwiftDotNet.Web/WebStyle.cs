@@ -77,6 +77,10 @@ static class WebStyle
                     if ((m.GetValueOrDefault("value") as string) == "true")
                         sb.Append("pointer-events:none;opacity:0.5;");
                     break;
+                case "scaleEffect":
+                    sb.Append($"transform:scale({N(m, "x", 1).ToString(CultureInfo.InvariantCulture)},{N(m, "y", 1).ToString(CultureInfo.InvariantCulture)});");
+                    if (m.GetValueOrDefault("value") is string sanchor) sb.Append($"transform-origin:{OriginCss(sanchor)};");
+                    break;
                 case "foregroundColor":
                     if (Color(m.GetValueOrDefault("value") as string) is { } fc)
                         sb.Append(shapeFill ? $"background:{fc};" : $"color:{fc};");
@@ -111,6 +115,14 @@ static class WebStyle
         "leading" => "text-align:left;",
         "trailing" => "text-align:right;",
         _ => "text-align:center;",
+    };
+
+    static string OriginCss(string token) => token switch
+    {
+        "topLeading" => "left top", "top" => "center top", "topTrailing" => "right top",
+        "leading" => "left center", "trailing" => "right center",
+        "bottomLeading" => "left bottom", "bottom" => "center bottom", "bottomTrailing" => "right bottom",
+        _ => "center",
     };
 
     static double? Num(Dictionary<string, object?> m, string key) => m.TryGetValue(key, out var v) && v is double d ? d : null;

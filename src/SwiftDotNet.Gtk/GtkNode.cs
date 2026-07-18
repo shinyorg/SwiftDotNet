@@ -491,6 +491,10 @@ sealed class GtkNode
                     // GTK greys out and blocks input on insensitive widgets automatically.
                     w.Sensitive = (m.GetValueOrDefault("value") as string) != "true";
                     break;
+                case "scaleEffect":
+                    // GTK4 has no generic per-widget scale transform — documented no-op
+                    // (see plans/gestures-and-transforms-plan.md); revisit via snapshot/zoom container.
+                    break;
                 case "onTapGesture":
                     if (m.GetValueOrDefault("event") is string ev)
                     {

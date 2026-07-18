@@ -147,6 +147,21 @@ sealed class OpacityModifier : Modifier
         => new() { ["type"] = "opacity", ["amount"] = _opacity };
 }
 
+/// <summary>Scales a view (and its subtree) around an anchor, mirroring SwiftUI's <c>.scaleEffect(x:y:anchor:)</c>.</summary>
+sealed class ScaleEffectModifier : Modifier
+{
+    readonly double _x, _y;
+    readonly string _anchor;
+    public ScaleEffectModifier(double x, double y, string anchor) { _x = x; _y = y; _anchor = anchor; }
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path) => new()
+    {
+        ["type"] = "scaleEffect",
+        ["x"] = _x,
+        ["y"] = _y,
+        ["value"] = _anchor,
+    };
+}
+
 /// <summary>Dims and blocks interaction on a view (and its subtree), mirroring SwiftUI's <c>.disabled()</c>.</summary>
 sealed class DisabledModifier : Modifier
 {

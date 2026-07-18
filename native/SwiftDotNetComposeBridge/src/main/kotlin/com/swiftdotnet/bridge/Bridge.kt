@@ -26,6 +26,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalUriHandler
@@ -233,6 +235,18 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                 m = m.shadow(elevation = (numOf(mod["radius"]) ?: 4.0).dp, ambientColor = c, spotColor = c)
             }
             "opacity" -> m = m.alpha((numOf(mod["amount"]) ?: 1.0).toFloat())
+            "scaleEffect" -> {
+                val t = mod["value"] as? String
+                val fx = if (t == "leading" || t == "topLeading" || t == "bottomLeading") 0f
+                         else if (t == "trailing" || t == "topTrailing" || t == "bottomTrailing") 1f else 0.5f
+                val fy = if (t == "top" || t == "topLeading" || t == "topTrailing") 0f
+                         else if (t == "bottom" || t == "bottomLeading" || t == "bottomTrailing") 1f else 0.5f
+                m = m.graphicsLayer(
+                    scaleX = (numOf(mod["x"]) ?: 1.0).toFloat(),
+                    scaleY = (numOf(mod["y"]) ?: 1.0).toFloat(),
+                    transformOrigin = TransformOrigin(fx, fy),
+                )
+            }
             "disabled" -> if ((mod["value"] as? String) == "true") {
                 // Dim + swallow all pointer input for the subtree (Compose has no generic `.disabled()`).
                 m = m.alpha(0.5f).pointerInput(Unit) {

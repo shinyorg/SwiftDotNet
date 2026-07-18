@@ -60,6 +60,9 @@ public sealed class ContentView : View
             // .Disabled() dims + blocks interaction on any control; here it's bound live to the toggle.
             new Button("Configure…", () => _sheet.Value = true).Disabled(!_notify.Value),
 
+            // .ScaleEffect() applies a native transform to any view — grows the star with the rating.
+            new Text("★").Font(Font.Title).ForegroundColor(Color.Accent).ScaleEffect(1 + _rating.Value * 0.15),
+
             // A user-authored composite custom control (see Rating.cs) — works on every backend.
             new Text($"Rating: {_rating.Value}/5").Font(Font.Caption),
             new Rating(_rating)

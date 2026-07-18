@@ -87,6 +87,20 @@ public static class ViewModifiers
         return view;
     }
 
+    /// <summary>Uniformly scales the view around <paramref name="anchor"/> (mirrors <c>.scaleEffect(_:anchor:)</c>).</summary>
+    public static T ScaleEffect<T>(this T view, double scale, Alignment anchor = Alignment.Center) where T : View
+    {
+        view.Modifiers.Add(new ScaleEffectModifier(scale, scale, anchor.Token()));
+        return view;
+    }
+
+    /// <summary>Scales the view non-uniformly around <paramref name="anchor"/> (mirrors <c>.scaleEffect(x:y:anchor:)</c>).</summary>
+    public static T ScaleEffect<T>(this T view, double x, double y, Alignment anchor = Alignment.Center) where T : View
+    {
+        view.Modifiers.Add(new ScaleEffectModifier(x, y, anchor.Token()));
+        return view;
+    }
+
     public static T NavigationTitle<T>(this T view, string title) where T : View
     {
         view.Modifiers.Add(new NavigationTitleModifier(title));

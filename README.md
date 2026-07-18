@@ -69,9 +69,11 @@ Two ways to add your own control:
   and shapes `Rectangle` / `Circle` / `Capsule` / `RoundedRectangle`
 - **Modifiers** (order-preserving): `.Font`, `.ForegroundColor`, `.Background`, `.Padding` (uniform or
   per-`Edge`), `.Frame` (+ alignment), `.CornerRadius`, `.Border`, `.Shadow` (+ color/offset), `.Opacity`
-  (clamped 0–1), `.Disabled` (dim + block interaction), `.Align` (fill width + align), `.NavigationTitle`,
-  `.OnTapGesture`. Modifiers are a **universal wrapper** applied to any view via a single generic pass per
-  backend — so `.Opacity`/`.Disabled` work on every control, not a hand-picked subset.
+  (clamped 0–1), `.Disabled` (dim + block interaction), `.ScaleEffect` (native scale transform, around an
+  anchor), `.Align` (fill width + align), `.NavigationTitle`, `.OnTapGesture`. Modifiers are a **universal
+  wrapper** applied to any view via a single generic pass per backend — so `.Opacity`/`.Disabled`/
+  `.ScaleEffect` work on every control, not a hand-picked subset. (`.ScaleEffect` is a documented no-op on
+  GTK, which has no per-widget scale transform.)
 - **Alignment**: `VStack.Alignment(HorizontalAlignment)`, `HStack.Alignment(VerticalAlignment)`,
   `ZStack.Alignment(Alignment)`; colors also via `Color.Hex("#RRGGBB")`
 

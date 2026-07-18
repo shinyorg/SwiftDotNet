@@ -190,6 +190,20 @@ private func alignmentFor(_ token: String?) -> SwiftUI.Alignment {
     }
 }
 
+private func unitPointFor(_ token: String?) -> UnitPoint {
+    switch token {
+    case "topLeading": return .topLeading
+    case "top": return .top
+    case "topTrailing": return .topTrailing
+    case "leading": return .leading
+    case "trailing": return .trailing
+    case "bottomLeading": return .bottomLeading
+    case "bottom": return .bottom
+    case "bottomTrailing": return .bottomTrailing
+    default: return .center
+    }
+}
+
 private func hAlignFor(_ token: String?) -> SwiftUI.HorizontalAlignment {
     switch token { case "leading": return .leading; case "trailing": return .trailing; default: return .center }
 }
@@ -230,6 +244,8 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
                                      x: CGFloat(m.x ?? 0), y: CGFloat(m.y ?? 0)))
         case "opacity":
             out = AnyView(out.opacity(m.amount ?? 1))
+        case "scaleEffect":
+            out = AnyView(out.scaleEffect(x: CGFloat(m.x ?? 1), y: CGFloat(m.y ?? 1), anchor: unitPointFor(m.value)))
         case "disabled":
             out = AnyView(out.disabled(m.value == "true"))
         case "navigationTitle":

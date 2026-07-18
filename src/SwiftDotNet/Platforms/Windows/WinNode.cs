@@ -409,6 +409,10 @@ sealed class WinNode
                     if (Inner is Control dc) dc.IsEnabled = !disabled;   // native greyed-out + disabled state
                     else { current.IsHitTestVisible = !disabled; if (disabled) Inner.Opacity = 0.5; }
                     break;
+                case "scaleEffect":
+                    Inner.RenderTransform = new ScaleTransform { ScaleX = N(m, "x", 1), ScaleY = N(m, "y", 1) };
+                    Inner.RenderTransformOrigin = OriginPoint(m.GetValueOrDefault("value") as string);
+                    break;
                 case "frame":
                     if (Num(m, "width") is { } w) current.Width = w;
                     if (Num(m, "height") is { } h) current.Height = h;
@@ -535,6 +539,15 @@ sealed class WinNode
     bool Bool(string key) => Props.TryGetValue(key, out var v) && v is bool b && b;
     static double? Num(Dictionary<string, object?> m, string key) => m.TryGetValue(key, out var v) && v is double d ? d : null;
     static double N(Dictionary<string, object?> m, string key, double fallback = 0) => m.TryGetValue(key, out var v) && v is double d ? d : fallback;
+
+    static Windows.Foundation.Point OriginPoint(string? t)
+    {
+        double fx = t is "leading" or "topLeading" or "bottomLeading" ? 0
+                  : t is "trailing" or "topTrailing" or "bottomTrailing" ? 1 : 0.5;
+        double fy = t is "top" or "topLeading" or "topTrailing" ? 0
+                  : t is "bottom" or "bottomLeading" or "bottomTrailing" ? 1 : 0.5;
+        return new Windows.Foundation.Point(fx, fy);
+    }
 
     static Dictionary<string, object?> ReadDict(JsonElement e)
     {
