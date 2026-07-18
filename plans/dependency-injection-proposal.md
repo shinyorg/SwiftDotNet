@@ -546,3 +546,21 @@ getting each phase's shape right.
    become lazy-on-tap) or keep both models fully independent? *Recommendation: re-express — one source
    of truth, and destinations stop being rebuilt every render.*
 ```
+
+---
+
+## 15. Related: view construction seam (`Text()` vs `new Text()`)
+
+A separate but reinforcing idea — replacing `new Text()` authoring with a function form `Text()`
+routed through a **construction chokepoint** — is written up in
+[`view-construction-seam.md`](./view-construction-seam.md). It matters to this proposal in three
+places:
+
+- **§4.3 `[Inject]`** — a source generator can emit the `[Inject]` fill as *static, reflection-free*
+  assignments, which makes property injection trim/AOT-clean (addresses the §10 reflection concern).
+- **§8 reconciliation** — the function form is the enabling primitive for Compose-style *positional
+  state retention*, i.e. the "per-view child-instance state" milestone this doc keeps deferring. It is
+  the same milestone approached from the construction side.
+- **Service delivery rule** — that doc recommends *constructor = parent data, `[Inject]` = services*,
+  a deliberate shift from §4's constructor-injection-of-services default. **The two docs must ratify
+  one rule** (see its §8, decision 3).

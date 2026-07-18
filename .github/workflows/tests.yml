@@ -1,0 +1,42 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The core runtime multi-targets net10.0-android on Linux, and a ProjectReference restores
+      # every TFM of the referenced project — so the Android workload is required even though the
+      # tests only build and run against net10.0.
+      - name: Install Android workload
+        run: dotnet workload install android
+
+      - name: Restore
+        run: dotnet restore tests/SwiftDotNet.Tests/SwiftDotNet.Tests.csproj
+
+      - name: Test
+        run: >
+          dotnet test tests/SwiftDotNet.Tests/SwiftDotNet.Tests.csproj
+          --no-restore
+          --configuration Release
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory ./TestResults
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ./TestResults/*.trx

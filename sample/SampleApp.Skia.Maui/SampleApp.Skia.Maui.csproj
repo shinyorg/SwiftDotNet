@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Mac Catalyst verified locally; iOS/Android/Windows add the same MauiProgram once the repo-wide
+         iOS Swift-bridge import + AndroidX version reconciliation are in place. -->
+    <TargetFrameworks>net10.0-maccatalyst</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SampleApp.Skia.Maui</RootNamespace>
+    <ApplicationTitle>SwiftDotNet Skia MAUI</ApplicationTitle>
+    <ApplicationId>com.swiftdotnet.skia.maui</ApplicationId>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+    <DefineConstants Condition="'$(NoShiny)' == 'true'">$(DefineConstants);NO_SHINY</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SwiftDotNet.Skia.Maui\SwiftDotNet.Skia.Maui.csproj" />
+    <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
+  </ItemGroup>
+
+  <!-- Shiny: MAUI hosting + a flagship cross-platform plugin (BluetoothLE) to prove shared DI. -->
+  <ItemGroup Condition="'$(NoShiny)' != 'true'">
+    <PackageReference Include="Shiny.Hosting.Maui" Version="5.2.3" />
+    <PackageReference Include="Shiny.BluetoothLE" Version="5.2.3" />
+  </ItemGroup>
+
+</Project>

@@ -3,9 +3,11 @@
 **SwiftUI for .NET — everywhere.** Write declarative UI once in C# and render it as *real* native UI on
 each platform: **SwiftUI** on iOS/macOS/tvOS, **Jetpack Compose** on Android, **GTK4** on Linux, **WinUI 3**
 on Windows, and **HTML/DOM** on the Web. Not a reimplementation of each toolkit — the actual native controls,
-with the platform's own layout, fonts, animations, and accessibility.
+with the platform's own layout, fonts, animations, and accessibility. Plus a **self-drawing SkiaSharp**
+backend that paints the UI itself for a pixel-identical look on every platform.
 
-One `View` subclass, eight rendering backends:
+One `View` subclass, and two families of rendering backend — **native-fidelity** (map to the OS's real
+controls) and **self-drawing** (paint every pixel with SkiaSharp for a pixel-identical look everywhere):
 
 | Platform | Renders as | Route | Status |
 |----------|-----------|-------|--------|
@@ -16,6 +18,13 @@ One `View` subclass, eight rendering backends:
 | Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop |
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded (needs Windows to build) |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
+| **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp — no native controls)** | ✅ Verified (macOS window + headless PNG) |
+
+The **Skia** backend is a from-scratch UI toolkit: it owns layout, text shaping (HarfBuzz), scrolling,
+overlays, input/focus, an animation clock, and an icon font — rendering the *whole* shared `ContentView`
+identically on every OS. It's the universal renderer for a uniform look and for targets the native
+backends can't reach (dependency-free desktop, embedded/framebuffer Linux). Trade-off: no native
+accessibility, and `WebView`/`Map` can't be painted onto a canvas (they need a native-view overlay).
 
 Two backend routes: SwiftUI and Compose are **compiler-plugin frameworks**, so they need a thin native shim
 (Swift/Kotlin) that reconstructs the tree; GTK, WinUI, and the Web are fully C#-bindable, so those backends are
@@ -134,12 +143,18 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 | `src/SwiftDotNet` | **multi-target** | **One library.** `Core/` (platform-neutral DSL, `State<T>`, `Node`/JSON, diff engine, `IBridge`, `SwiftApp`) compiles for every TFM; `Platforms/{iOS,macOS,tvOS,Android,Windows}/` (the bridges + `SwiftDotNetHost`) are opted in per TFM. TFMs: `net10.0;net10.0-android` always, `net10.0-ios;-macos;-tvos` on a Mac, `net10.0-windows10.x` on Windows. iOS/macOS/tvOS pull the Swift xcframework (`SwiftDotNetBridge.targets`); Android binds the Compose `.aar` + `Xamarin.AndroidX.Compose.*`; Windows pulls WinUI 3. |
 | `src/SwiftDotNet.Gtk` | `net10.0` | **Separate** (Linux/GTK shares the `net10.0` TFM with Core, so folding it in would force every neutral consumer to take the GTK dependency). Pure-C# GTK4 backend over Gir.Core; references the combined `SwiftDotNet`. |
 | `src/SwiftDotNet.Web` | `net10.0` (Razor lib) | **Separate** (Blazor has no distinct TFM either). Pure-C# **Blazor WebAssembly** backend — `SwiftDotNetView` renders the node tree to HTML/CSS via `RenderTreeBuilder`; DOM events call back into C#. |
+| `src/SwiftDotNet.Skia` | `net10.0` | **Separate** (self-drawing engine; SkiaSharp on every neutral consumer). Pure-C# **SkiaSharp** backend — `SkiaBridge` keeps a retained scene tree and paints/measures/hit-tests it directly on an `SKCanvas`. Layout, HarfBuzz text, scrolling, overlays, input/focus, animation clock, `SkiaRenderers` registry. Host-agnostic via `ISkiaHost`. |
 | `native/SwiftDotNetBridge` | Swift | `Bridge.swift` + build script → `build/SwiftDotNetBridge.xcframework` (SwiftUI interpreter; 5 slices — iOS device/sim, tvOS device/sim, macOS) |
 | `native/SwiftDotNetComposeBridge` | Kotlin | `Bridge.kt` + Gradle → `build/SwiftDotNetComposeBridge.aar` (Jetpack Compose interpreter) |
 | `sample/SharedUI` | `net10.0` | The demo `ContentView` (5-tab tour) + composite `Rating` control — one file, shared by all apps |
 | `sample/SampleApp` | **multi-target** | **One sample app**, multi-targeted like the library: `net10.0-android` always, `+ios;-macos;-tvos` on a Mac, `+windows` on Windows. `Platforms/{iOS,macOS,tvOS,Android,Windows}/` hold the thin per-OS entry points; the root view is registered once in `AppRoot.cs`. |
 | `sample/SampleApp.Gtk` | `net10.0` | Thin GTK app: references `SwiftDotNet.Gtk` (separate — no distinct TFM) |
 | `sample/SampleApp.Web` | `net10.0` (Blazor WASM) | Thin web app: hosts `<SwiftDotNetView Root="new ContentView()">` (separate — no distinct TFM) |
+| `sample/SampleApp.Skia` | `net10.0` | Headless harness: renders `ContentView` to PNGs, drives taps/scroll/typing/overlays/animation (the Skia analog of the `SDN_TEST` harness). |
+| `sample/SampleApp.Skia.Mac` | `net10.0-macos` | **Interactive** AppKit window: an `NSView` blits the Skia scene and feeds mouse/scroll/keyboard into the bridge; a timer drives the animation clock. |
+| `src/SwiftDotNet.Skia.Maui` | `net10.0-maccatalyst` (+more) | MAUI adapter: `SwiftDotNetSkiaView : SKCanvasView` hosts the engine on iOS/Android/Mac Catalyst/Windows. Composes with **Shiny** via MAUI hosting (`.UseShiny()`) — the Skia UI and Shiny plugins share one DI container. |
+| `sample/SampleApp.Skia.Maui` | `net10.0-maccatalyst` | MAUI + **Shiny** demo: `MauiProgram` calls `.UseSkiaSharp().UseShiny()` + `AddBluetoothLE()`; the page resolves `IBleManager` from the same container. (`-p:NoShiny=true` builds without Shiny.) |
+| `sample/SampleApp.Skia.Silk` | `net10.0` | **Dependency-free desktop** (Windows/macOS/Linux): a Silk.NET (GLFW) window + GL context; SkiaSharp draws onto a GL-backed surface. Base for embedded/framebuffer Linux. |
 
 All projects are wired into **`SwiftDotNet.slnx`** at the repo root.
 

@@ -1,0 +1,876 @@
+using System.Globalization;
+using System.Text.Json;
+using SkiaSharp;
+
+namespace SwiftDotNet;
+
+/// <summary>
+/// A node in the retained Skia scene tree — mirrors the wire node and owns its computed layout box and
+/// paint state. Unlike the widget-backed backends (GTK/WinUI/Web) there is no native control underneath:
+/// each node measures, arranges, paints, and hit-tests itself directly on an <see cref="SKCanvas"/>.
+/// Patches (<c>updateProps</c>/<c>setChildren</c>) mutate this tree in place, keyed by structural id.
+///
+/// Split across two files: this one holds construction, layout, hit-testing and helpers;
+/// <c>SkiaNodePaint.cs</c> holds the paint pass.
+/// </summary>
+sealed partial class SkiaNode
+{
+    public required string Id { get; init; }
+    public required string Type { get; init; }
+    public Dictionary<string, object?> Props { get; private set; } = new();
+    public List<Dictionary<string, object?>> Modifiers { get; private set; } = new();
+    public List<SkiaNode> Children { get; } = new();
+
+    SkiaBridge _bridge = null!;
+    ISkiaRenderer? _custom;
+
+    // ---- layout results (canvas coordinates) --------------------------------
+    public SKRect Frame { get; private set; }
+    SKRect _content;                 // Frame minus padding insets
+    SKSize _measured;                // outer measured size
+    readonly List<SKSize> _childMeasured = new();
+    float _gridCellW, _gridCellH;    // Grid only
+
+    // ---- per-node local (backend-owned) state -------------------------------
+    int _tabIndex;                   // TabView: selected tab / page
+    internal float ScrollOffset;     // ScrollView / List / Form: vertical scroll
+    internal float ScrollMax;        // max scroll offset for the current layout
+    SkiaNode? _navOwner;             // NavigationLink → its enclosing NavigationStack
+    internal SkiaNode? PushedContent;// NavigationStack: currently pushed destination (or null)
+    internal string PushedTitle = "";
+
+    // ========================================================================
+    //  Construction / patching
+    // ========================================================================
+
+    public static SkiaNode Build(JsonElement e, SkiaBridge bridge)
+    {
+        var node = new SkiaNode
+        {
+            Id = e.GetProperty("id").GetString()!,
+            Type = e.GetProperty("type").GetString()!,
+            Props = ReadDict(e.GetProperty("props")),
+            Modifiers = ReadDictArray(e.GetProperty("modifiers")),
+        };
+        node._bridge = bridge;
+
+        // A NavigationStack must be visible to NavigationLinks built beneath it.
+        if (node.Type == "NavigationStack") bridge.NavStack.Push(node);
+        if (node.Type == "NavigationLink" && bridge.NavStack.Count > 0) node._navOwner = bridge.NavStack.Peek();
+
+        foreach (var child in e.GetProperty("children").EnumerateArray())
+            node.Children.Add(Build(child, bridge));
+
+        if (node.Type == "NavigationStack") bridge.NavStack.Pop();
+
+        if (!IsBuiltIn(node.Type)) node._custom = SkiaRenderers.Get(node.Type);
+        return node;
+    }
+
+    public void UpdateProps(JsonElement props, JsonElement modifiers)
+    {
+        Props = ReadDict(props);
+        Modifiers = ReadDictArray(modifiers);
+    }
+
+    public void SetChildren(JsonElement children)
+    {
+        Children.Clear();
+        if (Type == "NavigationStack") _bridge.NavStack.Push(this);
+        foreach (var childElement in children.EnumerateArray())
+            Children.Add(Build(childElement, _bridge));
+        if (Type == "NavigationStack") _bridge.NavStack.Pop();
+    }
+
+    // ========================================================================
+    //  LAYOUT — Measure (intrinsic size) then Arrange (final rects)
+    // ========================================================================
+
+    // ---- implicit animation (.Animation(spec, on:) ) -----------------------
+    bool _animInit;
+    string _animTrigger = "";
+    double _animT = 1, _animDur = 0.3;
+    string? _animCurve;
+    float _fromO = 1, _toO = 1, _fromH, _toH;
+
+    // Detect a trigger change and (re)arm interpolation of the animatable props (opacity, frame height).
+    void UpdateAnimation()
+    {
+        var anim = Mod("animation");
+        if (anim is null) return;
+        var trig = anim.GetValueOrDefault("trigger") as string ?? "";
+        var targetO = (float)(MNull(Mod("opacity"), "amount") ?? 1);
+        var targetH = (float)(MNull(Mod("frame"), "height") ?? 0);
+        if (!_animInit) { _animInit = true; _animTrigger = trig; _fromO = _toO = targetO; _fromH = _toH = targetH; _animT = 1; return; }
+        if (trig != _animTrigger)
+        {
+            _fromO = AnimO; _fromH = AnimH;           // start from where we currently are
+            _toO = targetO; _toH = targetH;
+            _animTrigger = trig; _animT = 0;
+            _animDur = Math.Max(0.05, MNull(anim, "duration") ?? 0.3);
+            _animCurve = anim.GetValueOrDefault("curve") as string;
+        }
+        else if (_animT >= 1) { _toO = targetO; _toH = targetH; } // settle to any non-animated change
+    }
+
+    float Ease(double t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        return _animCurve switch
+        {
+            "linear" => (float)t,
+            "easeIn" => (float)(t * t),
+            "easeOut" => (float)(t * (2 - t)),
+            "spring" => (float)(1 - Math.Exp(-6 * t) * Math.Cos(t * Math.PI * 1.5)), // decaying settle
+            _ => (float)(t < 0.5 ? 2 * t * t : 1 - Math.Pow(-2 * t + 2, 2) / 2),       // easeInOut
+        };
+    }
+
+    float AnimO => Mod("animation") is null ? RawOpacity : _fromO + (_toO - _fromO) * Ease(_animT);
+    float AnimH => _fromH + (_toH - _fromH) * Ease(_animT);
+    bool Animating => Mod("animation") is not null && _animT < 1;
+
+    /// <summary>Advance this node's animation clock by <paramref name="dt"/>s; returns true while still animating.</summary>
+    public bool Tick(double dt)
+    {
+        var active = false;
+        if (Mod("animation") is not null && _animT < 1) { _animT = Math.Min(1, _animT + dt / _animDur); active = true; }
+        foreach (var c in Children) active |= c.Tick(dt);
+        return active;
+    }
+
+    public SKSize Measure(SKSize available)
+    {
+        UpdateAnimation();
+        var pad = Padding();
+        var inner = new SKSize(
+            Math.Max(0, available.Width - pad.Horizontal),
+            Math.Max(0, available.Height - pad.Vertical));
+
+        var content = MeasureContent(inner);
+        var outer = new SKSize(content.Width + pad.Horizontal, content.Height + pad.Vertical);
+
+        var (fw, fh) = FrameSize();
+        if (fw is { } w) outer.Width = (float)w;
+        if (Mod("animation") is not null && Mod("frame")?.ContainsKey("height") == true) outer.Height = AnimH;
+        else if (fh is { } h) outer.Height = (float)h;
+        if (Mod("align") is not null || FillsWidth) outer.Width = available.Width;
+
+        _measured = outer;
+        return outer;
+    }
+
+    SKSize MeasureContent(SKSize inner)
+    {
+        _childMeasured.Clear();
+        switch (Type)
+        {
+            case "Text":
+                return MeasureWrapped(Str("text"), Font(), inner.Width);
+            case "Button":
+            {
+                var t = MeasureText(Str("title"), Font());
+                return new SKSize(t.Width + 36, Math.Max(t.Height, 20) + 18);
+            }
+            case "Link":
+                return MeasureText(Str("title"), Font());
+            case "Image":
+                return MeasureText(SkiaTheme.Icon(Str("system")), IconFont(22));
+            case "Label":
+                return MeasureText(SkiaTheme.Icon(Str("systemImage")) + "  " + Str("title"), Font());
+            case "Divider":
+                return new SKSize(inner.Width, 1);
+            case "Spacer":
+                return new SKSize(0, 0);
+            case "Rectangle" or "Circle" or "Capsule" or "RoundedRectangle":
+                // Shapes are greedy: they fill the space offered (a .Frame modifier overrides). SwiftUI parity.
+                return inner;
+            case "ProgressView":
+                return new SKSize(inner.Width, HasProp("label") ? 44 : 6);
+            case "Gauge":
+                return new SKSize(inner.Width, HasProp("label") ? 48 : 26);
+            case "WebView":
+                return new SKSize(inner.Width, 120);
+
+            // simple full-width control rows
+            case "TextField" or "SecureField":
+                return new SKSize(inner.Width, 40);
+            case "TextEditor":
+                return new SKSize(inner.Width, 100);
+            case "Toggle" or "Slider" or "Stepper" or "Picker" or "DatePicker" or "ColorPicker" or "Menu":
+                return new SKSize(inner.Width, 44);
+
+            case "DisclosureGroup":
+                return MeasureDisclosure(inner);
+
+            // stacks / containers
+            case "HStack":
+                return MeasureStack(inner, horizontal: true);
+            case "VStack" or "Group":
+                return MeasureStack(inner, horizontal: false);
+            case "ScrollView" or "List" or "Form" or "Section":
+                return MeasureScrollable(inner);
+            case "ZStack":
+                return MeasureZ(inner);
+            case "Grid":
+                return MeasureGrid(inner);
+            case "Tab":
+                return MeasureFill(inner);
+            case "NavigationStack":
+            {
+                var avail = new SKSize(inner.Width, Math.Max(0, inner.Height - NavBarHeight));
+                if (Children.Count > 0) _childMeasured.Add(Children[0].Measure(avail));
+                return inner;
+            }
+            case "NavigationLink":
+                return MeasureNavLink(inner);
+            case "Sheet" or "Alert":
+                return Children.Count > 0 ? Children[0].Measure(inner) : new SKSize(0, 0);
+            case "TabView":
+            {
+                // Only the selected tab/page is shown — measure just its subtree so Arrange has data.
+                var barH = Paged ? 28f : TabBarHeight;
+                var childAvail = new SKSize(inner.Width, Math.Max(0, inner.Height - barH));
+                if (_tabIndex < Children.Count) Children[_tabIndex].Measure(childAvail);
+                return inner; // TabView fills
+            }
+
+            default:
+                if (_custom is { } r) return r.Measure(RenderCtx(), inner);
+                return MeasureText("⚠️ " + Type, Font());
+        }
+    }
+
+    SKSize MeasureStack(SKSize inner, bool horizontal)
+    {
+        var spacing = (float)(Num("spacing") ?? 8);
+        float main = 0, cross = 0;
+        var count = 0;
+        foreach (var c in Children)
+        {
+            var s = c.Measure(inner);
+            _childMeasured.Add(s);
+            if (horizontal) { main += s.Width; cross = Math.Max(cross, s.Height); }
+            else { main += s.Height; cross = Math.Max(cross, s.Width); }
+            count++;
+        }
+        if (count > 1) main += spacing * (count - 1);
+        return horizontal ? new SKSize(main, cross) : new SKSize(cross, main);
+    }
+
+    // Scrollables measure their content like a VStack but report only the available height
+    // (content taller than that scrolls). Section adds a header line.
+    SKSize MeasureScrollable(SKSize inner)
+    {
+        var headerH = Type == "Section" && HasProp("header") ? 26f : 0f;
+        var spacing = Type == "Section" ? 6f : (Type == "ScrollView" ? 12f : 10f);
+        float contentH = headerH, cross = 0;
+        var count = 0;
+        foreach (var c in Children)
+        {
+            var s = c.Measure(new SKSize(inner.Width, inner.Height));
+            _childMeasured.Add(s);
+            contentH += s.Height;
+            cross = Math.Max(cross, s.Width);
+            count++;
+        }
+        if (count > 1) contentH += spacing * (count - 1);
+        _naturalHeight = contentH;
+        // Section reports its natural height (it lives inside a scrollable). ScrollView/List/Form cap to available.
+        if (Type is "Section")
+            return new SKSize(Math.Max(cross, inner.Width), contentH);
+        return new SKSize(inner.Width, Math.Min(contentH, inner.Height));
+    }
+
+    float _naturalHeight;
+
+    SKSize MeasureZ(SKSize inner)
+    {
+        float w = 0, h = 0;
+        foreach (var c in Children)
+        {
+            var s = c.Measure(inner);
+            _childMeasured.Add(s);
+            w = Math.Max(w, s.Width);
+            h = Math.Max(h, s.Height);
+        }
+        return new SKSize(w, h);
+    }
+
+    SKSize MeasureGrid(SKSize inner)
+    {
+        var cols = Math.Max(1, (int)(Num("columns") ?? 2));
+        var spacing = (float)(Num("spacing") ?? 8);
+        float cellW = 0, cellH = 0;
+        foreach (var c in Children)
+        {
+            var s = c.Measure(inner);
+            _childMeasured.Add(s);
+            cellW = Math.Max(cellW, s.Width);
+            cellH = Math.Max(cellH, s.Height);
+        }
+        _gridCellW = cellW;
+        _gridCellH = cellH;
+        var rows = (int)Math.Ceiling(Children.Count / (double)cols);
+        var w = cols * cellW + (cols - 1) * spacing;
+        var h = rows * cellH + Math.Max(0, rows - 1) * spacing;
+        return new SKSize(w, h);
+    }
+
+    SKSize MeasureFill(SKSize inner)
+    {
+        if (Children.Count > 0)
+        {
+            var s = Children[0].Measure(inner);
+            _childMeasured.Add(s);
+        }
+        return inner;
+    }
+
+    SKSize MeasureNavLink(SKSize inner)
+    {
+        // child 0 = label (shown as a row); child 1 = destination (measured only when pushed)
+        var label = Children.Count > 0 ? Children[0].Measure(inner) : new SKSize(0, 0);
+        _childMeasured.Add(label);
+        return new SKSize(inner.Width, Math.Max(label.Height, 22) + 8);
+    }
+
+    SKSize MeasureDisclosure(SKSize inner)
+    {
+        var h = 40f; // header row
+        if (Bool("expanded"))
+            foreach (var c in Children)
+            {
+                var s = c.Measure(inner);
+                h += s.Height + 6;
+            }
+        return new SKSize(inner.Width, h);
+    }
+
+    // ---- Arrange -------------------------------------------------------------
+
+    public void Arrange(SKRect rect)
+    {
+        Frame = rect;
+        var pad = Padding();
+        _content = new SKRect(rect.Left + pad.Left, rect.Top + pad.Top, rect.Right - pad.Right, rect.Bottom - pad.Bottom);
+
+        switch (Type)
+        {
+            case "HStack":
+                ArrangeStack(horizontal: true);
+                break;
+            case "VStack" or "Group":
+                ArrangeStack(horizontal: false);
+                break;
+            case "ScrollView" or "List" or "Form" or "Section":
+                ArrangeScrollable();
+                break;
+            case "ZStack":
+                ArrangeZ();
+                break;
+            case "Grid":
+                ArrangeGrid();
+                break;
+            case "Tab":
+                if (Children.Count > 0) Children[0].Arrange(_content);
+                break;
+            case "NavigationStack":
+                if (Children.Count > 0)
+                    Children[0].Arrange(new SKRect(_content.Left, _content.Top + NavBarHeight, _content.Right, _content.Bottom));
+                break;
+            case "NavigationLink":
+                if (Children.Count > 0) Children[0].Arrange(new SKRect(_content.Left, _content.Top, _content.Right - 20, _content.Bottom));
+                break;
+            case "Sheet" or "Alert":
+                if (Children.Count > 0) Children[0].Arrange(_content);
+                break;
+            case "TabView":
+                ArrangeTabView();
+                break;
+            case "DisclosureGroup":
+                ArrangeDisclosure();
+                break;
+        }
+    }
+
+    void ArrangeStack(bool horizontal)
+    {
+        var spacing = (float)(Num("spacing") ?? 8);
+        float fixedMain = 0;
+        var spacers = 0;
+        for (var i = 0; i < Children.Count; i++)
+        {
+            if (Children[i].Type == "Spacer") spacers++;
+            else fixedMain += horizontal ? _childMeasured[i].Width : _childMeasured[i].Height;
+        }
+        if (Children.Count > 1) fixedMain += spacing * (Children.Count - 1);
+
+        var extent = horizontal ? _content.Width : _content.Height;
+        var free = Math.Max(0, extent - fixedMain);
+        var spacerEach = spacers > 0 ? free / spacers : 0;
+        var cursor = (horizontal ? _content.Left : _content.Top) + (spacers == 0 ? free / 2 : 0);
+
+        for (var i = 0; i < Children.Count; i++)
+        {
+            if (i > 0) cursor += spacing;
+            var child = Children[i];
+            var m = _childMeasured[i];
+            if (horizontal)
+            {
+                var cw = child.Type == "Spacer" ? spacerEach : m.Width;
+                var y = CrossPos(_content.Top, _content.Height, m.Height, CrossToken(), vertical: true);
+                child.Arrange(new SKRect(cursor, y, cursor + cw, y + m.Height));
+                cursor += cw;
+            }
+            else
+            {
+                var ch = child.Type == "Spacer" ? spacerEach : m.Height;
+                var x = CrossPos(_content.Left, _content.Width, m.Width, CrossToken(), vertical: false);
+                child.Arrange(new SKRect(x, cursor, x + m.Width, cursor + ch));
+                cursor += ch;
+            }
+        }
+    }
+
+    void ArrangeScrollable()
+    {
+        var spacing = Type == "Section" ? 6f : (Type == "ScrollView" ? 12f : 10f);
+        var headerH = Type == "Section" && HasProp("header") ? 26f : 0f;
+
+        // clamp scroll to content
+        ScrollMax = Math.Max(0, _naturalHeight - _content.Height);
+        ScrollOffset = Math.Clamp(ScrollOffset, 0, ScrollMax);
+
+        // Form/List/Section are leading-aligned (SwiftUI grouped rows); a plain ScrollView centers.
+        var leading = Type is "Form" or "List" or "Section";
+        var y = _content.Top + headerH - ScrollOffset;
+        for (var i = 0; i < Children.Count; i++)
+        {
+            if (i > 0) y += spacing;
+            var m = _childMeasured[i];
+            var span = Children[i].FillsWidth || Children[i].Type is "Section" or "List" or "Form" or "Divider" or "ScrollView";
+            var cw = span ? _content.Width : m.Width;
+            var x = span ? _content.Left
+                : leading ? _content.Left
+                : CrossPos(_content.Left, _content.Width, m.Width, null, vertical: false);
+            Children[i].Arrange(new SKRect(x, y, x + cw, y + m.Height));
+            y += m.Height;
+        }
+    }
+
+    void ArrangeZ()
+    {
+        var token = Str("alignment");
+        for (var i = 0; i < Children.Count; i++)
+        {
+            var m = _childMeasured[i];
+            var span = Children[i].FillsWidth;
+            var cw = span ? _content.Width : m.Width;
+            var x = span ? _content.Left : CrossPos(_content.Left, _content.Width, m.Width, token, vertical: false);
+            var y = CrossPos(_content.Top, _content.Height, m.Height, token, vertical: true);
+            Children[i].Arrange(new SKRect(x, y, x + cw, y + m.Height));
+        }
+    }
+
+    void ArrangeGrid()
+    {
+        var cols = Math.Max(1, (int)(Num("columns") ?? 2));
+        var spacing = (float)(Num("spacing") ?? 8);
+        for (var i = 0; i < Children.Count; i++)
+        {
+            var col = i % cols;
+            var row = i / cols;
+            var cellX = _content.Left + col * (_gridCellW + spacing);
+            var cellY = _content.Top + row * (_gridCellH + spacing);
+            var m = _childMeasured[i];
+            // center the child within its cell
+            var x = cellX + (_gridCellW - m.Width) / 2;
+            var y = cellY + (_gridCellH - m.Height) / 2;
+            Children[i].Arrange(new SKRect(x, y, x + m.Width, y + m.Height));
+        }
+    }
+
+    void ArrangeTabView()
+    {
+        if (Paged)
+        {
+            // carousel: selected page fills, minus a dot strip at the bottom
+            var pageRect = new SKRect(_content.Left, _content.Top, _content.Right, _content.Bottom - 28);
+            if (_tabIndex < Children.Count) Children[_tabIndex].Arrange(pageRect);
+        }
+        else
+        {
+            var barTop = _content.Bottom - TabBarHeight;
+            var contentRect = new SKRect(_content.Left, _content.Top, _content.Right, barTop);
+            if (_tabIndex < Children.Count) Children[_tabIndex].Arrange(contentRect); // selected Tab
+        }
+    }
+
+    void ArrangeDisclosure()
+    {
+        if (!Bool("expanded")) return;
+        var y = _content.Top + 40;
+        foreach (var c in Children)
+        {
+            var s = c.Measure(new SKSize(_content.Width - 12, _content.Height));
+            c.Arrange(new SKRect(_content.Left + 12, y, _content.Right, y + s.Height));
+            y += s.Height + 6;
+        }
+    }
+
+    internal const float TabBarHeight = 56;
+    internal const float NavBarHeight = 44;
+    bool Paged => Str("style") == "page";
+    internal bool MenuOpen;   // Menu popover open state (engine-local)
+
+    // ========================================================================
+    //  HIT TESTING — topmost interactive node under the point wins
+    // ========================================================================
+
+    public bool HitTest(SKPoint p)
+    {
+        if (!Frame.Contains(p)) return false;
+
+        // TabView: the bottom bar switches tabs; otherwise forward into the selected tab only.
+        if (Type == "TabView")
+        {
+            if (!Paged && p.Y >= _content.Bottom - TabBarHeight)
+            {
+                var n = Children.Count;
+                if (n > 0)
+                {
+                    var idx = (int)((p.X - _content.Left) / (_content.Width / n));
+                    _tabIndex = Math.Clamp(idx, 0, n - 1);
+                }
+                return true;
+            }
+            if (Paged)
+            {
+                _tabIndex = p.X < _content.MidX
+                    ? Math.Max(0, _tabIndex - 1)
+                    : Math.Min(Children.Count - 1, _tabIndex + 1);
+                return true;
+            }
+            return _tabIndex < Children.Count && Children[_tabIndex].HitTest(p);
+        }
+
+        // DisclosureGroup: tapping the header row toggles (emits expanded state to C#).
+        if (Type == "DisclosureGroup" && p.Y <= _content.Top + 40)
+        {
+            _bridge.Emit(Id, Bool("expanded") ? "false" : "true");
+            return true;
+        }
+
+        // NavigationLink: push its destination onto the enclosing stack (engine-local).
+        if (Type == "NavigationLink" && _navOwner is { } nav && Children.Count > 1)
+        {
+            nav.PushedContent = Children[1];
+            nav.PushedTitle = Children[1].NavTitle();
+            return true;
+        }
+
+        for (var i = Children.Count - 1; i >= 0; i--)
+        {
+            // Tab only exposes the selected child; a plain container exposes all.
+            if (Type == "TabView" && i != _tabIndex) continue;
+            if (Children[i].HitTest(p)) return true;
+        }
+
+        // Tapping a text control focuses it (keyboard input then routes here).
+        if (Type is "TextField" or "SecureField" or "TextEditor")
+        {
+            _bridge.FocusedId = IsDisabled ? _bridge.FocusedId : Id;
+            return true;
+        }
+        // A Menu toggles its popover (engine-local overlay).
+        if (Type == "Menu")
+        {
+            if (!IsDisabled) MenuOpen = !MenuOpen;
+            return true;
+        }
+
+        // Controls that resolve a value from where you tapped (slider set, stepper +/-, picker cycle…).
+        if (IsInteractiveControl)
+        {
+            if (!IsDisabled) ControlTap(p);
+            return true;
+        }
+        // Generic taps: Button / Toggle / onTapGesture.
+        if (SelfTap() is { } act)
+        {
+            if (!IsDisabled) act();
+            return true;
+        }
+        return false;
+    }
+
+    bool IsInteractiveControl => Type is "Slider" or "Stepper" or "Picker" or "DatePicker" or "ColorPicker";
+
+    Action? SelfTap()
+    {
+        if (Type is "Button") return () => _bridge.Emit(Id, null);
+        if (Type is "Toggle") return () => _bridge.Emit(Id, Bool("value") ? "false" : "true");
+        if (Mod("onTapGesture")?.GetValueOrDefault("event") is string ev) return () => _bridge.Emit(ev, null);
+        return null;
+    }
+
+    static readonly string[] Palette = { "#FF3B30", "#FF9500", "#FFCC00", "#34C759", "#007AFF", "#5856D6", "#AF52DE" };
+
+    void ControlTap(SKPoint p)
+    {
+        switch (Type)
+        {
+            case "Slider":
+            {
+                var min = Num("min") ?? 0;
+                var max = Num("max") ?? 1;
+                var t = Math.Clamp((p.X - (_content.Left + 10)) / Math.Max(1, _content.Width - 20), 0, 1);
+                Emit(min + t * (max - min));
+                break;
+            }
+            case "Stepper":
+            {
+                var v = (int)(Num("value") ?? 0);
+                var min = (int)(Num("min") ?? int.MinValue);
+                var max = (int)(Num("max") ?? int.MaxValue);
+                v = Math.Clamp(p.X > _content.Right - 36 ? v + 1 : v - 1, min, max);
+                Emit(v);
+                break;
+            }
+            case "Picker":
+            {
+                if (Children.Count == 0) break;
+                Emit(((int)(Num("selection") ?? 0) + 1) % Children.Count);
+                break;
+            }
+            case "DatePicker":
+                Emit((Num("value") ?? 0) + 86400);
+                break;
+            case "ColorPicker":
+            {
+                var idx = Array.IndexOf(Palette, Str("value"));
+                _bridge.Emit(Id, Palette[(idx + 1 + Palette.Length) % Palette.Length]);
+                break;
+            }
+        }
+    }
+
+    void Emit(double v) => _bridge.Emit(Id, v.ToString(CultureInfo.InvariantCulture));
+    void Emit(int v) => _bridge.Emit(Id, v.ToString(CultureInfo.InvariantCulture));
+
+    internal string NavTitle() =>
+        Modifiers.FirstOrDefault(m => m.GetValueOrDefault("type") as string == "navigationTitle")
+            ?.GetValueOrDefault("value") as string ?? "";
+
+    // ========================================================================
+    //  Scroll hit resolution (used by the host for wheel / drag)
+    // ========================================================================
+
+    /// <summary>
+    /// Dispatch a long-press or swipe: the topmost node under <paramref name="p"/> carrying that gesture
+    /// modifier emits (swipe also matches the direction token). Mirrors the tap path but for the
+    /// timed/directional recognizers the host resolves from raw pointer streams.
+    /// </summary>
+    public bool DispatchGesture(SKPoint p, string modType, string? direction)
+    {
+        if (!Frame.Contains(p)) return false;
+        for (var i = Children.Count - 1; i >= 0; i--)
+        {
+            if (Type == "TabView" && i != _tabIndex) continue;
+            if (Children[i].DispatchGesture(p, modType, direction)) return true;
+        }
+        if (Mod(modType)?.GetValueOrDefault("event") is string ev)
+        {
+            if (modType == "onSwipe" && direction is not null && Mod(modType)?.GetValueOrDefault("value") as string != direction)
+                return false;
+            _bridge.Emit(ev, null);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>Children that are actually on screen (a TabView shows only its selected tab) — for the overlay walk.</summary>
+    internal IEnumerable<SkiaNode> VisibleOverlayChildren()
+    {
+        if (Type == "TabView")
+            return _tabIndex < Children.Count ? new[] { Children[_tabIndex] } : Array.Empty<SkiaNode>();
+        return Children;
+    }
+
+    /// <summary>Find the innermost scrollable node under a point (for wheel/drag scrolling).</summary>
+    public SkiaNode? ScrollableAt(SKPoint p)
+    {
+        if (!Frame.Contains(p)) return null;
+        for (var i = Children.Count - 1; i >= 0; i--)
+        {
+            if (Type == "TabView" && i != _tabIndex) continue;
+            if (Children[i].ScrollableAt(p) is { } inner) return inner;
+        }
+        return Type is "ScrollView" or "List" or "Form" && ScrollMax > 0 ? this : null;
+    }
+
+    // ========================================================================
+    //  MODIFIER / PROP HELPERS
+    // ========================================================================
+
+    bool FillsWidth => Type is "Divider" or "ProgressView" or "Gauge" or "WebView"
+        or "TextField" or "SecureField" or "TextEditor"
+        or "Toggle" or "Slider" or "Stepper" or "Picker" or "DatePicker" or "ColorPicker" or "Menu"
+        or "DisclosureGroup" or "NavigationLink";
+
+    static bool IsBuiltIn(string type) => type is
+        "Text" or "Button" or "Link" or "Image" or "Label" or "Divider" or "Spacer"
+        or "Rectangle" or "Circle" or "Capsule" or "RoundedRectangle"
+        or "ProgressView" or "Gauge" or "WebView"
+        or "TextField" or "SecureField" or "TextEditor"
+        or "Toggle" or "Slider" or "Stepper" or "Picker" or "DatePicker" or "ColorPicker" or "Menu"
+        or "DisclosureGroup" or "HStack" or "VStack" or "Group"
+        or "ScrollView" or "List" or "Form" or "Section" or "ZStack" or "Grid"
+        or "Tab" or "TabView" or "NavigationStack" or "NavigationLink" or "Sheet" or "Alert";
+
+    SKFont Font() => SkiaTheme.MakeFont(Mod("font")?.GetValueOrDefault("value") as string);
+    static SKFont IconFont(float size) => new(SKTypeface.Default, size);
+
+    string? AlignToken() => Mod("align")?.GetValueOrDefault("value") as string
+        ?? (Mod("frame")?.GetValueOrDefault("alignment") as string);
+
+    SKColor ForegroundColor(bool dark) => SkiaTheme.Color(Mod("foregroundColor")?.GetValueOrDefault("value") as string, dark);
+    SKColor? ForegroundColorOptional(bool dark) =>
+        Mod("foregroundColor")?.GetValueOrDefault("value") is string t ? SkiaTheme.Color(t, dark) : null;
+    SKColor? BackgroundColor(bool dark) =>
+        Mod("background")?.GetValueOrDefault("value") is string t ? SkiaTheme.Color(t, dark) : null;
+
+    float RawOpacity => (float)(MNull(Mod("opacity"), "amount") ?? 1);
+    float Opacity() => AnimO;
+    bool IsDisabled => Mod("disabled")?.GetValueOrDefault("value") as string == "true";
+    (double x, double y, string anchor)? Scale()
+    {
+        var m = Mod("scaleEffect");
+        if (m is null) return null;
+        return (MNull(m, "x") ?? 1, MNull(m, "y") ?? 1, m.GetValueOrDefault("value") as string ?? "center");
+    }
+
+    float CornerRadius()
+    {
+        if (MNull(Mod("cornerRadius"), "radius") is { } r) return (float)r;
+        if (MNull(Mod("border"), "cornerRadius") is { } br) return (float)br;
+        return 0;
+    }
+
+    (SKColor color, double width)? Border(bool dark)
+    {
+        var m = Mod("border");
+        if (m?.GetValueOrDefault("color") is string c) return (SkiaTheme.Color(c, dark), MNull(m, "width") ?? 1);
+        return null;
+    }
+
+    (double x, double y, double radius, SKColor color)? Shadow()
+    {
+        var m = Mod("shadow");
+        if (m is null) return null;
+        var col = m.GetValueOrDefault("color") is string c ? SkiaTheme.Color(c, false) : new SKColor(0, 0, 0, 90);
+        return (MNull(m, "x") ?? 0, MNull(m, "y") ?? 0, MNull(m, "radius") ?? 4, col);
+    }
+
+    EdgeInsets Padding()
+    {
+        var m = Mod("padding");
+        if (m is null) return default;
+        return new EdgeInsets(
+            (float)(MNull(m, "leading") ?? 0),
+            (float)(MNull(m, "top") ?? 0),
+            (float)(MNull(m, "trailing") ?? 0),
+            (float)(MNull(m, "bottom") ?? 0));
+    }
+
+    (double? w, double? h) FrameSize()
+    {
+        var m = Mod("frame");
+        if (m is null) return (null, null);
+        return (MNull(m, "width"), MNull(m, "height"));
+    }
+
+    // Cross-axis (or Z) positioning of a child of size `size` within [start, start+extent].
+    static float CrossPos(float start, float extent, float size, string? token, bool vertical)
+    {
+        var leading = vertical
+            ? token is "top" or "topLeading" or "topTrailing"
+            : token is "leading" or "topLeading" or "bottomLeading";
+        var trailing = vertical
+            ? token is "bottom" or "bottomLeading" or "bottomTrailing"
+            : token is "trailing" or "topTrailing" or "bottomTrailing";
+        if (leading) return start;
+        if (trailing) return start + extent - size;
+        return start + (extent - size) / 2;
+    }
+
+    string? CrossToken() => Props.GetValueOrDefault("alignment") as string;
+
+    SkiaRenderContext RenderCtx() => new(Id, Props, _bridge.Emit);
+
+    Dictionary<string, object?>? Mod(string type)
+    {
+        foreach (var m in Modifiers)
+            if (m.GetValueOrDefault("type") as string == type) return m;
+        return null;
+    }
+
+    internal string TextProp() => Str("text");
+    bool HasProp(string key) => Props.ContainsKey(key);
+    string Str(string key) => Props.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
+    double? Num(string key) => Props.TryGetValue(key, out var v) && v is double d ? d : null;
+    bool Bool(string key) => Props.TryGetValue(key, out var v) && v is bool b && b;
+
+    static double? MNull(Dictionary<string, object?>? m, string key) =>
+        m is not null && m.TryGetValue(key, out var v) && v is double d ? d : null;
+
+    static SKSize MeasureText(string text, SKFont font)
+    {
+        var m = font.Metrics;
+        var h = m.Descent - m.Ascent;
+        var w = string.IsNullOrEmpty(text) ? 0 : font.MeasureText(text);
+        return new SKSize(w, h);
+    }
+
+    // Wraps `text` to `maxWidth`, caching the broken lines for the paint pass. Returns the block size.
+    List<string>? _wrapLines;
+    SKSize MeasureWrapped(string text, SKFont font, float maxWidth)
+    {
+        _wrapLines = SkiaText.Wrap(text, font, maxWidth);
+        var m = font.Metrics;
+        var lineH = m.Descent - m.Ascent;
+        float w = 0;
+        foreach (var line in _wrapLines) w = Math.Max(w, font.MeasureText(line));
+        return new SKSize(w, lineH * _wrapLines.Count);
+    }
+
+    static Dictionary<string, object?> ReadDict(JsonElement e)
+    {
+        var d = new Dictionary<string, object?>();
+        foreach (var p in e.EnumerateObject())
+            d[p.Name] = p.Value.ValueKind switch
+            {
+                JsonValueKind.String => p.Value.GetString(),
+                JsonValueKind.Number => p.Value.GetDouble(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => null,
+            };
+        return d;
+    }
+
+    static List<Dictionary<string, object?>> ReadDictArray(JsonElement e)
+    {
+        var list = new List<Dictionary<string, object?>>();
+        foreach (var item in e.EnumerateArray()) list.Add(ReadDict(item));
+        return list;
+    }
+}
+
+/// <summary>Padding/inset amounts in canvas units.</summary>
+readonly record struct EdgeInsets(float Left, float Top, float Right, float Bottom)
+{
+    public float Horizontal => Left + Right;
+    public float Vertical => Top + Bottom;
+}
