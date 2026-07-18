@@ -1,6 +1,14 @@
 using AppKit;
+using Foundation;
+using SwiftDotNet;
 
-namespace MacSample;
+namespace SampleApp;
+
+[Register("AppDelegate")]
+public sealed class AppDelegate : SwiftDotNetAppDelegate
+{
+    protected override View CreateRoot() => AppRoot.Create();
+}
 
 static class Program
 {

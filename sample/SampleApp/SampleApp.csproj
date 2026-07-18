@@ -1,25 +1,83 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0-ios</TargetFramework>
-    <OutputType>Exe</OutputType>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
-    <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
+    <PropertyGroup>
+        <TargetFrameworks>net10.0-android</TargetFrameworks>
+        <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(TargetFrameworks);net10.0-ios;net10.0-macos;net10.0-tvos</TargetFrameworks>
+        <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
 
-    <ApplicationTitle>SwiftDotNet</ApplicationTitle>
-    <ApplicationId>com.swiftdotnet.sample</ApplicationId>
-    <ApplicationVersion>1</ApplicationVersion>
-    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-  </PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <LangVersion>latest</LangVersion>
+        <RootNamespace>SampleApp</RootNamespace>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\SwiftDotNet\SwiftDotNet.csproj" />
-    <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
-  </ItemGroup>
+        <ApplicationTitle>SwiftDotNet</ApplicationTitle>
+        <ApplicationId>com.swiftdotnet.sample</ApplicationId>
+        <ApplicationVersion>1</ApplicationVersion>
+        <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    </PropertyGroup>
 
-  <!-- Link the native Swift bridge (NativeReference doesn't flow transitively from the library). -->
-  <Import Project="..\..\src\SwiftDotNet\SwiftDotNetBridge.targets" />
+    <PropertyGroup Condition="$(TargetFramework.EndsWith('-ios'))">
+        <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
+    </PropertyGroup>
+    <PropertyGroup Condition="$(TargetFramework.EndsWith('-tvos'))">
+        <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
+    </PropertyGroup>
+    <PropertyGroup Condition="$(TargetFramework.EndsWith('-macos'))">
+        <SupportedOSPlatformVersion>14.0</SupportedOSPlatformVersion>
+    </PropertyGroup>
+    <PropertyGroup Condition="$(TargetFramework.EndsWith('-android'))">
+        <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    </PropertyGroup>
+    <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
+        <OutputType>WinExe</OutputType>
+        <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+        <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+        <UseWinUI>true</UseWinUI>
+        <StartupObject>SampleApp.Program</StartupObject>
+        <ApplicationManifest>Platforms/Windows/app.manifest</ApplicationManifest>
+        <!-- Runs with NO prerequisites: unpackaged + self-contained .NET + self-contained Windows App SDK. -->
+        <WindowsPackageType>None</WindowsPackageType>
+        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+        <SelfContained>true</SelfContained>
+        <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    </PropertyGroup>
+
+    <!-- Shared references (the multi-target library + the shared demo UI). -->
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\SwiftDotNet\SwiftDotNet.csproj"/>
+        <ProjectReference Include="..\SharedUI\SharedUI.csproj"/>
+    </ItemGroup>
+
+    <!-- Only the matching platform's entry point compiles; AppRoot.cs (the single registration) is shared. -->
+    <ItemGroup>
+        <Compile Remove="Platforms/**/*.cs"/>
+    </ItemGroup>
+    <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios'">
+        <Compile Include="Platforms/iOS/**/*.cs"/>
+        <None Include="Platforms/iOS/Info.plist"/>
+    </ItemGroup>
+    <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'tvos'">
+        <Compile Include="Platforms/tvOS/**/*.cs"/>
+        <None Include="Platforms/tvOS/Info.plist"/>
+    </ItemGroup>
+    <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'macos'">
+        <Compile Include="Platforms/macOS/**/*.cs"/>
+        <None Include="Platforms/macOS/Info.plist"/>
+    </ItemGroup>
+    <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'android'">
+        <Compile Include="Platforms/Android/**/*.cs"/>
+    </ItemGroup>
+    <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'windows'">
+        <Compile Include="Platforms/Windows/**/*.cs"/>
+    </ItemGroup>
+
+    <!-- Apple (iOS/macOS/tvOS): link the Swift bridge (NativeReference doesn't flow transitively). -->
+    <Import Project="..\..\src\SwiftDotNet\SwiftDotNetBridge.targets"/>
+
+    <!-- Windows: reference the SDK directly so the bootstrap + self-contained runtime apply at the exe. -->
+    <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'windows'">
+        <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.*"/>
+    </ItemGroup>
 
 </Project>

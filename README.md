@@ -75,8 +75,10 @@ Two ways to add your own control:
 
 ## Architecture
 
-C# owns the view tree (React-Native style); a thin Swift shim reconstructs SwiftUI. A **diff engine**
-turns each re-render into a minimal patch so only changed nodes cross the bridge:
+C# owns the view tree (React-Native style); each backend reconstructs native UI from it. A **diff engine**
+turns every re-render into a minimal patch so only changed nodes reach the renderer. The diagram below shows
+the iOS/SwiftUI path — the bridge is a native shim there and on Android, and an in-process interpreter on the
+pure-C# backends (GTK/WinUI/Web), but the patch protocol and event round-trip are identical everywhere:
 
 ```
  C# DSL (View/State)
@@ -111,15 +113,28 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 | `native/SwiftDotNetBridge` | Swift | `Bridge.swift` + build script → `build/SwiftDotNetBridge.xcframework` (SwiftUI interpreter; 5 slices — iOS device/sim, tvOS device/sim, macOS) |
 | `native/SwiftDotNetComposeBridge` | Kotlin | `Bridge.kt` + Gradle → `build/SwiftDotNetComposeBridge.aar` (Jetpack Compose interpreter) |
 | `sample/SharedUI` | `net10.0` | The demo `ContentView` (5-tab tour) + composite `Rating` control — one file, shared by all apps |
-| `sample/SampleApp` | `net10.0-ios` | Thin iOS app: `SwiftDotNetHost.CreateRootController(new ContentView())` |
-| `sample/SampleApp.Mac` | `net10.0-macos` | Thin macOS app: hosts the root controller in an `NSWindow` |
-| `sample/SampleApp.tvOS` | `net10.0-tvos` | Thin Apple TV app: same host controller, focus-driven UI |
-| `sample/SampleApp.Android` | `net10.0-android` | Thin Android app: `SwiftDotNetHost.CreateRootView(this, new ContentView())` |
-| `sample/SampleApp.Windows` | `net10.0-windows` | Thin WinUI 3 app (unpackaged + self-contained) |
-| `sample/SampleApp.Gtk` | `net10.0` | Thin GTK app: references `SwiftDotNet.Gtk` |
-| `sample/SampleApp.Web` | `net10.0` (Blazor WASM) | Thin web app: hosts `<SwiftDotNetView Root="new ContentView()">` |
+| `sample/SampleApp` | **multi-target** | **One sample app**, multi-targeted like the library: `net10.0-android` always, `+ios;-macos;-tvos` on a Mac, `+windows` on Windows. `Platforms/{iOS,macOS,tvOS,Android,Windows}/` hold the thin per-OS entry points; the root view is registered once in `AppRoot.cs`. |
+| `sample/SampleApp.Gtk` | `net10.0` | Thin GTK app: references `SwiftDotNet.Gtk` (separate — no distinct TFM) |
+| `sample/SampleApp.Web` | `net10.0` (Blazor WASM) | Thin web app: hosts `<SwiftDotNetView Root="new ContentView()">` (separate — no distinct TFM) |
 
-All ten projects are wired into **`SwiftDotNet.slnx`** at the repo root.
+All projects are wired into **`SwiftDotNet.slnx`** at the repo root.
+
+### Centralized hosting & registration
+
+The per-OS bootstrap lives **in the library** as reusable abstract hosts, so an app's platform entry point
+is a one-liner that just names its root view:
+
+| Base host (in `SwiftDotNet`) | Platform | Subclass in the app |
+|------------------------------|----------|---------------------|
+| `SwiftDotNetAppDelegate : UIApplicationDelegate` | iOS / tvOS | `[Register("AppDelegate")] class AppDelegate : SwiftDotNetAppDelegate` |
+| `SwiftDotNetAppDelegate : NSApplicationDelegate` | macOS | same (creates + sizes the `NSWindow` for you) |
+| `SwiftDotNetActivity : ComponentActivity` | Android | `[Activity(MainLauncher=true)] class MainActivity : SwiftDotNetActivity` |
+| `SwiftDotNetApplication : Application` | Windows | `class App : SwiftDotNetApplication` |
+
+Each override is just `protected override View CreateRoot() => AppRoot.Create();`, and `AppRoot.Create()`
+(the single registration point) returns `new ContentView()`. So the window/host/activation wiring is written
+once in the framework, and the sample declares its UI in exactly one place. (The bases are non-generic abstract
+classes — a generic `NSObject`/`Java.Lang.Object` subclass can't be registered with the ObjC/Android runtimes.)
 
 The **same `SharedUI.ContentView`** renders as **SwiftUI on iOS**, **SwiftUI (AppKit-hosted) on macOS**,
 **SwiftUI on tvOS**, **Jetpack Compose on Android**, **GTK4 on Linux**, and **HTML/DOM on the Web** — verified
@@ -151,39 +166,86 @@ The sample app is **unpackaged + self-contained** (`WindowsPackageType=None`, `S
 dotnet run --project sample/SampleApp.Windows
 ```
 
-**One Core, two native backends.** The DSL, `State<T>`, `Node`, `TreeDiffer`, patch protocol, and `SwiftApp`
-are shared verbatim; iOS renders them as **SwiftUI** (Swift shim, P/Invoke) and Android as **Jetpack Compose**
-(Kotlin shim, JNI). SwiftUI's `@Observable` VNode ↔ Compose's `mutableStateOf` VNode; `@_cdecl` ↔ `@JvmStatic`;
-function-pointer callback ↔ bound `EventCallback` interface.
+**Web/Blazor** is the third pure-C# "translate to controls" backend, where the "control" is an HTML element.
+`SwiftDotNet.Web` is a separate Razor class library: `SwiftDotNetView : ComponentBase` walks the node tree in
+`BuildRenderTree`, emitting HTML/CSS through Blazor's `RenderTreeBuilder` — so **Blazor's own render-tree→DOM
+diff is the write layer** (no manual DOM manipulation). VStack/HStack→flex `div`, `TextField`→`<input>`,
+`Toggle`→`<input type=checkbox>`, `Slider`→range input, `Picker`→`<select>`, `DatePicker`/`ColorPicker`→native
+inputs, shapes→styled `div`s, modifiers→inline CSS; DOM events (`onclick`, `onchange`) call back into C# via
+`EventCallback`. It runs in **Blazor WebAssembly** — the whole framework and your C# UI execute in the browser:
+```bash
+dotnet run --project sample/SampleApp.Web    # → http://localhost:5000
+```
 
-> **Consuming the library:** reference `SwiftDotNet.iOS`, then add
-> `<Import Project="…/SwiftDotNet.iOS/SwiftDotNetBridge.targets" />` to your app's `.csproj`.
-> The import is required because `NativeReference` items don't flow transitively into the app's native link.
+**One Core, three interpreter families.** The DSL, `State<T>`, `Node`, `TreeDiffer`, patch protocol, and
+`SwiftApp` are shared verbatim across every backend. Only the leaf renderer differs: a **native shim** for the
+compiler-plugin frameworks (SwiftUI via `@_cdecl`/P-Invoke, Compose via `@JvmStatic`/JNI — `@Observable` VNode ↔
+`mutableStateOf` VNode ↔ bound `EventCallback`), or a **pure-C# interpreter** for the bindable ones (GTK
+widgets, WinUI controls, Blazor DOM), all applying the identical diff patches.
+
+> **Consuming the library:** reference the combined `SwiftDotNet` package. For the Apple targets, also add
+> `<Import Project="…/SwiftDotNet/SwiftDotNetBridge.targets" />` to your app's `.csproj` — required because
+> `NativeReference` items don't flow transitively into the app's native link. GTK and Web are plain project
+> references (`SwiftDotNet.Gtk` / `SwiftDotNet.Web`); no import needed.
 
 ## Build & run
 
+**iOS** (SwiftUI):
 ```bash
-# 1. Build the Swift bridge (device + simulator slices, min iOS 17)
+# 1. Build the Swift bridge (iOS/tvOS/macOS slices, min iOS 17)
 native/SwiftDotNetBridge/build-xcframework.sh
-
 # 2. Build the sample app for the simulator
 dotnet build sample/SampleApp/SampleApp.csproj -f net10.0-ios -r iossimulator-arm64
-
 # 3. Install + launch
 xcrun simctl install booted sample/SampleApp/bin/Debug/net10.0-ios/iossimulator-arm64/SampleApp.app
 xcrun simctl launch booted com.swiftdotnet.sample
 ```
 
+**Other platforms** — the same `sample/SampleApp` project, selected by `-f`:
+```bash
+# macOS / tvOS — reuse the same xcframework from step 1
+dotnet build sample/SampleApp -f net10.0-macos
+dotnet build sample/SampleApp -f net10.0-tvos
+
+# Android (Compose) — build the .aar first, then the app
+native/SwiftDotNetComposeBridge/gradlew -p native/SwiftDotNetComposeBridge assembleRelease
+dotnet build sample/SampleApp -f net10.0-android
+
+# Windows (WinUI 3) — on a Windows machine
+dotnet run --project sample/SampleApp -f net10.0-windows10.0.19041.0
+
+# Linux/GTK — separate project; needs GTK4 (brew install gtk4 / apt install libgtk-4-1)
+dotnet run --project sample/SampleApp.Gtk
+
+# Web (Blazor WASM) — separate project; runs the whole framework in the browser
+dotnet run --project sample/SampleApp.Web           # → http://localhost:5000
+```
+
 ## Status
 
-Verified on iPhone Air / iOS 26.5 (simulator) — a 5-tab demo (`ContentView`) exercising the whole set:
-- **Inputs** tab: TextField, SecureField, Slider, Stepper, Picker, DatePicker, ColorPicker, Toggle.
+The **same 5-tab `ContentView`** (one file in `sample/SharedUI`) has been verified rendering natively on six
+platforms; Windows is scaffolded pending a Windows build host:
+
+| Platform | Verified on | Notes |
+|----------|-------------|-------|
+| iOS | iPhone Air / iOS 26.5 (simulator) | Real SwiftUI |
+| macOS | Desktop (`NSWindow` + `NSHostingController`) | SwiftUI via AppKit hosting |
+| tvOS | Apple TV 4K (simulator) | Focus-driven; `#if os(tvOS)` fallbacks for controls Apple omits |
+| Android | Emulator | Real Jetpack Compose |
+| Linux | GTK4 desktop | 325 real `Gtk.Widget`s, pure C# |
+| Web | Chrome (Blazor WASM) | Real HTML/DOM, pure C# |
+| Windows | — | WinUI 3 backend scaffolded, not yet compiled |
+
+The demo exercises the whole vocabulary:
+- **Inputs** tab: TextField, SecureField, Slider, Stepper, Picker, DatePicker, ColorPicker, Toggle, + composite `Rating`.
 - **Layout** tab: Grid of shapes (color/frame/opacity), Divider, ZStack, HStack + SF Symbol Images/Label,
   ProgressView, Gauge.
 - **Carousel** tab: paged `TabView` with page dots.
 - **Lists** tab: Form + Sections + List + DisclosureGroup + Menu.
 - **Nav** tab: NavigationStack + NavigationLink (push verified), Link, Sheet, Alert.
-- Interactions confirmed live: tab switching, navigation push, Menu action, Button/TextField/Toggle bindings.
+- Interactions confirmed live on each backend: tab switching, navigation push, Menu action, and
+  Button/TextField/Toggle/Slider bindings — including the full **event → C# `State` → re-render** round-trip
+  (e.g. tapping a star updates the composite `Rating` to "5/5" in the browser).
 - Diff engine + bool/text/value bindings verified deterministically via a Core test harness.
 
 ### Notes
@@ -193,7 +255,8 @@ Verified on iPhone Air / iOS 26.5 (simulator) — a 5-tab demo (`ContentView`) e
 - JSON is hand-rolled (`NodeJson`) — zero reflection, trim/AOT-safe (no IL2026).
 
 ### Next steps
-- Per-view local state ownership (child composite views keep `@State` across renders → needs view-instance reconciliation).
-- More views/modifiers (ScrollView, Image, Picker, `.background`, `.cornerRadius`, gestures).
-- Binary bridge protocol (replace JSON on the hot path); physical-device run.
+- Compile + verify the **Windows/WinUI 3** backend on a Windows host (expect minor WinUI API fixes).
+- Per-view local state ownership (child composite views keep local state across renders → view-instance reconciliation).
+- Binary bridge protocol (replace JSON on the hot path); physical-device runs on iOS/Android.
 - Keyed `ForEach` for animated list insert/remove/move.
+- Publish the combined `SwiftDotNet` + `SwiftDotNet.Gtk` + `SwiftDotNet.Web` as NuGet packages.

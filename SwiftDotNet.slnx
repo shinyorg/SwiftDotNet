@@ -7,10 +7,6 @@
   <Folder Name="/sample/">
     <Project Path="sample/SharedUI/SharedUI.csproj" />
     <Project Path="sample/SampleApp/SampleApp.csproj" />
-    <Project Path="sample/SampleApp.Mac/SampleApp.Mac.csproj" />
-    <Project Path="sample/SampleApp.tvOS/SampleApp.tvOS.csproj" />
-    <Project Path="sample/SampleApp.Android/SampleApp.Android.csproj" />
-    <Project Path="sample/SampleApp.Windows/SampleApp.Windows.csproj" />
     <Project Path="sample/SampleApp.Gtk/SampleApp.Gtk.csproj" />
     <Project Path="sample/SampleApp.Web/SampleApp.Web.csproj" />
   </Folder>

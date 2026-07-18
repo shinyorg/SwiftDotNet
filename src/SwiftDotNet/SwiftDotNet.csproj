@@ -15,12 +15,14 @@
     <IsTrimmable>true</IsTrimmable>
   </PropertyGroup>
 
-  <!-- Per-platform OS versions -->
-  <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'ios'"><SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion></PropertyGroup>
-  <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'tvos'"><SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion></PropertyGroup>
-  <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'macos'"><SupportedOSPlatformVersion>14.0</SupportedOSPlatformVersion></PropertyGroup>
-  <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'android'"><SupportedOSPlatformVersion>24</SupportedOSPlatformVersion></PropertyGroup>
-  <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'windows'">
+  <!-- Per-platform OS versions. Conditioned on $(TargetFramework) (a global property, set during property
+       evaluation) rather than $(TargetPlatformIdentifier), which the SDK only defines in its bottom targets
+       import — too late for a PropertyGroup condition, so those would silently never apply. -->
+  <PropertyGroup Condition="$(TargetFramework.EndsWith('-ios'))"><SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework.EndsWith('-tvos'))"><SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework.EndsWith('-macos'))"><SupportedOSPlatformVersion>14.0</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework.EndsWith('-android'))"><SupportedOSPlatformVersion>24</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <UseWinUI>true</UseWinUI>
   </PropertyGroup>
