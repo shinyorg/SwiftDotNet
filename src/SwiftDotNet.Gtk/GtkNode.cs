@@ -487,6 +487,10 @@ sealed class GtkNode
                 case "opacity":
                     w.Opacity = Num(m, "amount") ?? 1;
                     break;
+                case "disabled":
+                    // GTK greys out and blocks input on insensitive widgets automatically.
+                    w.Sensitive = (m.GetValueOrDefault("value") as string) != "true";
+                    break;
                 case "onTapGesture":
                     if (m.GetValueOrDefault("event") is string ev)
                     {

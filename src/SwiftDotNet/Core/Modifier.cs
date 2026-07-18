@@ -140,9 +140,20 @@ sealed class ShadowModifier : Modifier
 sealed class OpacityModifier : Modifier
 {
     readonly double _opacity;
-    public OpacityModifier(double opacity) => _opacity = opacity;
+    // Clamp to the valid 0–1 range so an out-of-range value degrades identically on every backend
+    // (SwiftUI/Compose/GTK/WinUI/CSS otherwise each clamp — or don't — differently).
+    public OpacityModifier(double opacity) => _opacity = Math.Clamp(opacity, 0, 1);
     internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
         => new() { ["type"] = "opacity", ["amount"] = _opacity };
+}
+
+/// <summary>Dims and blocks interaction on a view (and its subtree), mirroring SwiftUI's <c>.disabled()</c>.</summary>
+sealed class DisabledModifier : Modifier
+{
+    readonly bool _disabled;
+    public DisabledModifier(bool disabled) => _disabled = disabled;
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+        => new() { ["type"] = "disabled", ["value"] = _disabled ? "true" : "false" };
 }
 
 sealed class NavigationTitleModifier : Modifier

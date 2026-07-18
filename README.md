@@ -68,8 +68,10 @@ Two ways to add your own control:
 - **Display**: `Text`, `Label`, `Image` (SF Symbols), `ProgressView`, `Gauge`, `Link`,
   and shapes `Rectangle` / `Circle` / `Capsule` / `RoundedRectangle`
 - **Modifiers** (order-preserving): `.Font`, `.ForegroundColor`, `.Background`, `.Padding` (uniform or
-  per-`Edge`), `.Frame` (+ alignment), `.CornerRadius`, `.Border`, `.Shadow` (+ color/offset), `.Opacity`,
-  `.Align` (fill width + align), `.NavigationTitle`, `.OnTapGesture`
+  per-`Edge`), `.Frame` (+ alignment), `.CornerRadius`, `.Border`, `.Shadow` (+ color/offset), `.Opacity`
+  (clamped 0–1), `.Disabled` (dim + block interaction), `.Align` (fill width + align), `.NavigationTitle`,
+  `.OnTapGesture`. Modifiers are a **universal wrapper** applied to any view via a single generic pass per
+  backend — so `.Opacity`/`.Disabled` work on every control, not a hand-picked subset.
 - **Alignment**: `VStack.Alignment(HorizontalAlignment)`, `HStack.Alignment(VerticalAlignment)`,
   `ZStack.Alignment(Alignment)`; colors also via `Color.Hex("#RRGGBB")`
 
@@ -163,7 +165,7 @@ a sibling, not a dependency; this backend keeps SwiftDotNet's own reconciler.
 The sample app is **unpackaged + self-contained** (`WindowsPackageType=None`, `SelfContained=true`,
 `WindowsAppSDKSelfContained=true`), so on a Windows machine it runs with no prerequisites beyond the .NET SDK:
 ```powershell
-dotnet run --project sample/SampleApp.Windows
+dotnet run --project sample/SampleApp -f net10.0-windows10.0.19041.0
 ```
 
 **Web/Blazor** is the third pure-C# "translate to controls" backend, where the "control" is an HTML element.
@@ -187,6 +189,41 @@ widgets, WinUI controls, Blazor DOM), all applying the identical diff patches.
 > `<Import Project="…/SwiftDotNet/SwiftDotNetBridge.targets" />` to your app's `.csproj` — required because
 > `NativeReference` items don't flow transitively into the app's native link. GTK and Web are plain project
 > references (`SwiftDotNet.Gtk` / `SwiftDotNet.Web`); no import needed.
+
+## How this differs from .NET Comet
+
+The closest prior art is [.NET Comet](https://github.com/dotnet/Comet) — James Clancey's SwiftUI-inspired
+C# UI toolkit. The **authoring surface looks similar** (both give you `Text(...).Font(...)`, `VStack`,
+`State<T>`, a recomputed body), but the substrate is fundamentally different:
+
+> **Comet renders through .NET MAUI's handler abstraction. SwiftDotNet bypasses MAUI and renders to each
+> platform's own toolkit directly — including the modern *declarative* ones (SwiftUI, Jetpack Compose) that
+> MAUI predates and doesn't use.**
+
+| | **.NET Comet** | **SwiftDotNet** |
+|---|---|---|
+| **Rendering substrate** | .NET **MAUI handlers** (implements `Microsoft.Maui.IButton` etc.); MAUI maps to native | The platform's **own toolkit, directly** |
+| **iOS output** | UIKit via MAUI handler | **Real SwiftUI** |
+| **Android output** | Android Views via MAUI handler | **Real Jetpack Compose** |
+| **macOS** | Mac Catalyst (iOS-on-Mac) | Native **AppKit-hosted SwiftUI** |
+| **Update mechanism** | MVU over MAUI's in-process object graph | Structural-path **diff engine** → JSON patch → native `@Observable`/`mutableStateOf` VNode tree across a C-ABI/JNI **bridge** |
+| **Dependencies** | The **entire MAUI stack** | Core is dependency-free platform-neutral C#; each backend pulls only its toolkit (GTK/WinUI/Web are pure C#, no shim) |
+| **Platform reach** | Wherever MAUI runs: Win, Android, iOS, macOS (Catalyst), Blazor | iOS, **tvOS**, native macOS/AppKit, Android, **Linux/GTK**, Windows/WinUI, **Web/DOM** |
+| **Status** | **Archived July 11, 2025** — *"a proof of concept… no official support"*, read-only | Active, early-stage |
+
+**Why the substrate choice matters.** Comet's bet was to lean on MAUI's abstraction and inherit its
+platforms for free — the cost being MAUI's control model and its lowest-common-denominator handler layer,
+and no access to the platforms' modern declarative frameworks (MAUI itself doesn't render through them).
+SwiftDotNet takes the opposite bet: render as the *real* native declarative toolkit on each platform, so on
+iOS you get Apple's own SwiftUI layout/animation/accessibility rather than a UIKit approximation. The price
+is that SwiftUI and Compose are compiler-plugin-locked, which is exactly why those two backends need a thin
+Swift/Kotlin shim plus the diff-over-a-bridge machinery — the part Comet never needs because it stays inside
+MAUI's .NET process. It also shows up in the architecture: SwiftDotNet has **two backend routes** (native-shim
+hosts for the compiler-locked toolkits, pure-C# interpreters for the bindable ones), where Comet has one
+route — MAUI handlers — for everything.
+
+_(Both are experimental. The distinction is that Comet is archived; SwiftDotNet is still a live design space —
+which is why the DI, native-view-access, and per-view-reconciliation questions in [`plans/`](plans/) are open.)_
 
 ## Build & run
 

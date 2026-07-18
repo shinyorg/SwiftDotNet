@@ -404,6 +404,11 @@ sealed class WinNode
                 case "opacity":
                     Inner.Opacity = N(m, "amount", 1);
                     break;
+                case "disabled":
+                    var disabled = (m.GetValueOrDefault("value") as string) == "true";
+                    if (Inner is Control dc) dc.IsEnabled = !disabled;   // native greyed-out + disabled state
+                    else { current.IsHitTestVisible = !disabled; if (disabled) Inner.Opacity = 0.5; }
+                    break;
                 case "frame":
                     if (Num(m, "width") is { } w) current.Width = w;
                     if (Num(m, "height") is { } h) current.Height = h;

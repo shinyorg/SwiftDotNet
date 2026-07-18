@@ -73,6 +73,10 @@ static class WebStyle
                 case "opacity":
                     sb.Append($"opacity:{N(m, "amount", 1).ToString(CultureInfo.InvariantCulture)};");
                     break;
+                case "disabled":
+                    if ((m.GetValueOrDefault("value") as string) == "true")
+                        sb.Append("pointer-events:none;opacity:0.5;");
+                    break;
                 case "foregroundColor":
                     if (Color(m.GetValueOrDefault("value") as string) is { } fc)
                         sb.Append(shapeFill ? $"background:{fc};" : $"color:{fc};");

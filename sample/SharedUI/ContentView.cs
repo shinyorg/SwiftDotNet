@@ -57,6 +57,9 @@ public sealed class ContentView : View
             new Toggle("Enable notifications", _notify),
             new Text(_notify.Value ? "🔔 On" : "🔕 Off").Font(Font.Caption).ForegroundColor(Color.Secondary),
 
+            // .Disabled() dims + blocks interaction on any control; here it's bound live to the toggle.
+            new Button("Configure…", () => _sheet.Value = true).Disabled(!_notify.Value),
+
             // A user-authored composite custom control (see Rating.cs) — works on every backend.
             new Text($"Rating: {_rating.Value}/5").Font(Font.Caption),
             new Rating(_rating)

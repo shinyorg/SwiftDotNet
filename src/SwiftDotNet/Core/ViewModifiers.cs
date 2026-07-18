@@ -75,6 +75,18 @@ public static class ViewModifiers
         return view;
     }
 
+    /// <summary>
+    /// Dims the view and blocks interaction on it (and its subtree) — the "greyed-out" state, mirroring
+    /// SwiftUI's <c>.disabled()</c>. Maps to each platform's native disabled semantics where available
+    /// (SwiftUI <c>.disabled</c>, GTK <c>Sensitive=false</c>, WinUI <c>IsEnabled=false</c>) and to
+    /// dim + no-hit-testing where not (Compose, Web).
+    /// </summary>
+    public static T Disabled<T>(this T view, bool disabled = true) where T : View
+    {
+        view.Modifiers.Add(new DisabledModifier(disabled));
+        return view;
+    }
+
     public static T NavigationTitle<T>(this T view, string title) where T : View
     {
         view.Modifiers.Add(new NavigationTitleModifier(title));
