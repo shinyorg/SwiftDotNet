@@ -90,6 +90,12 @@ Two ways to add your own control:
   are later phases — see [the animations plan](plans/animations-plan.md).
 - **Alignment**: `VStack.Alignment(HorizontalAlignment)`, `HStack.Alignment(VerticalAlignment)`,
   `ZStack.Alignment(Alignment)`; colors also via `Color.Hex("#RRGGBB")`
+- **Maps** (opt-in companion library): `new Map(cameraState).Pins(…).Polylines(…).OnTap(…)` renders a
+  **real native map** — MapLibre GL on Web, MapKit on Apple, MapLibre on Android — from one C# tree. Ships
+  as separate packages so the SDK weight stays opt-in and Core stays dependency-free: `SwiftDotNet.Maps`
+  (the view + data types), `SwiftDotNet.Maps.Web` (MapLibre, built & verified), plus Swift/Kotlin renderers
+  in [`native/maps`](native/maps) for Apple/Android. A platform with no map renderer shows the standard
+  `⚠️` placeholder. Phase 1 (static pins/polylines + tap-to-draw) — see [the maps plan](plans/maps-plan.md).
 
 ## Architecture
 

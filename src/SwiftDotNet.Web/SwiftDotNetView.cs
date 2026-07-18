@@ -81,6 +81,7 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
             case "Sheet": Overlay(b, n, isSheet: true); break;
             case "Alert": Overlay(b, n, isSheet: false); break;
 
+            case "WebView": WebFrame(b, n); break;
             case "Label": Label(b, n); break;
             case "ProgressView": Progress(b, n); break;
             case "Gauge": Gauge(b, n); break;
@@ -466,6 +467,16 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
 
     // ---- display -------------------------------------------------------------
 
+    void WebFrame(RenderTreeBuilder b, WebNode n)
+    {
+        b.OpenElement(_seq++, "iframe");
+        Style(b, n, "width:100%;height:300px;border:1px solid #ddd;border-radius:8px;");
+        if (n.Props.GetValueOrDefault("url") is string url) b.AddAttribute(_seq++, "src", url);
+        else if (n.Props.GetValueOrDefault("html") is string html) b.AddAttribute(_seq++, "srcdoc", html);
+        b.AddAttribute(_seq++, "sandbox", "allow-scripts allow-same-origin allow-forms allow-popups");
+        b.CloseElement();
+    }
+
     void Label(RenderTreeBuilder b, WebNode n)
     {
         b.OpenElement(_seq++, "span");
@@ -516,6 +527,19 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
 
     void Custom(RenderTreeBuilder b, WebNode n)
     {
+        if (WebRenderers.GetComponent(n.Type) is { } componentType)
+        {
+            // Persistent component: keyed by node id so Blazor preserves the instance (and its JS map handle)
+            // across renders instead of tearing it down.
+            b.OpenComponent(_seq++, componentType);
+            b.SetKey(n.Id);
+            b.AddComponentParameter(_seq++, "NodeId", n.Id);
+            b.AddComponentParameter(_seq++, "Props", n.Props);
+            b.AddComponentParameter(_seq++, "Emit", (Action<string, string?>)_bridge.Emit);
+            b.CloseComponent();
+            return;
+        }
+
         var r = WebRenderers.Get(n.Type);
         if (r is not null) r(b, new WebRenderContext(n.Id, n.Props, _bridge.Emit), ref _seq);
         else Leaf(b, n, "span", $"⚠️ {n.Type}", "color:#FF3B30;");

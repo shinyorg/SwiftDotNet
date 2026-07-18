@@ -87,6 +87,7 @@ sealed class WinNode
         "NavigationLink" => MakeNavLink(),
         "Sheet" => Children.Count > 0 ? Children[0].Element : Text(""),
         "Alert" => Children.Count > 0 ? Children[0].Element : Text(""),
+        "WebView" => MakeWebView(),
         "Image" => Text(WinStyle.Emoji(Str("system"))),
         "Label" => MakeLabel(),
         "ProgressView" => MakeProgress(),
@@ -110,6 +111,23 @@ sealed class WinNode
     WinRenderContext RenderCtx() => new(Id, Props, _bridge.Emit);
 
     static TextBlock Text(string text) => new() { Text = text, TextWrapping = TextWrapping.Wrap };
+
+    FrameworkElement MakeWebView()
+    {
+        var web = new WebView2 { MinHeight = 300, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var url = Str("url");
+        if (!string.IsNullOrEmpty(url) && Uri.TryCreate(url, UriKind.Absolute, out var u))
+            web.Source = u;
+        else if (Props.GetValueOrDefault("html") is string html)
+            _ = LoadHtmlAsync(web, html);
+        return web;
+    }
+
+    static async Task LoadHtmlAsync(WebView2 web, string html)
+    {
+        await web.EnsureCoreWebView2Async();
+        web.NavigateToString(html);
+    }
 
     FrameworkElement MakeButton()
     {

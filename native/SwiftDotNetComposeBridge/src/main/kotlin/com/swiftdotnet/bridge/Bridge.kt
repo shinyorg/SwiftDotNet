@@ -4,6 +4,8 @@ package com.swiftdotnet.bridge
 
 import android.content.Context
 import android.view.View
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -42,6 +44,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -449,6 +452,7 @@ private fun RawNode(node: VNode) {
         "Sheet" -> SheetNode(node)
         "Alert" -> AlertNode(node)
 
+        "WebView" -> WebViewNode(node)
         "Image" -> Text(emojiFor(node.s("system")), fontSize = 22.sp)
         "Label" -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(emojiFor(node.s("systemImage"))); Text(node.s("title"))
@@ -476,6 +480,34 @@ private fun RawNode(node: VNode) {
             else Text("⚠️ unknown view: ${node.type}", color = colorFor("red")!!)
         }
     }
+}
+
+// MARK: - WebView ------------------------------------------------------------
+
+@Composable
+private fun WebViewNode(node: VNode) {
+    val url = node.props["url"] as? String
+    val html = node.props["html"] as? String
+    AndroidView(
+        factory = { ctx ->
+            WebView(ctx).apply {
+                webViewClient = WebViewClient()
+                @Suppress("SetJavaScriptEnabled")
+                settings.javaScriptEnabled = true
+            }
+        },
+        modifier = Modifier.fillMaxWidth().height(300.dp),
+        update = { web ->
+            val key = url ?: html
+            if (web.tag != key) {
+                web.tag = key
+                when {
+                    url != null -> web.loadUrl(url)
+                    html != null -> web.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                }
+            }
+        },
+    )
 }
 
 // MARK: - Layout nodes -------------------------------------------------------

@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SwiftDotNet.Web\SwiftDotNet.Web.csproj" />
+    <ProjectReference Include="..\..\src\SwiftDotNet.Maps.Web\SwiftDotNet.Maps.Web.csproj" />
     <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
   </ItemGroup>
 

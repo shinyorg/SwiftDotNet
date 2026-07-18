@@ -1,6 +1,10 @@
 # Plan: Maps for SwiftDotNet (pins + polylines)
 
-**Status:** Draft for review
+**Status:** Phase 1 **shipped** as opt-in companion libraries. `SwiftDotNet.Maps` (view + data types +
+JSON-string prop shortcut) and `SwiftDotNet.Maps.Web` (MapLibre GL, persistent-component renderer) are
+built & verified; Apple (MapKit) and Android (MapLibre) renderers authored as native source in
+`native/maps` (not compiled in this environment). Interaction (`OnTap`/`OnCameraChanged`) is wired on the
+Web path. Structured wire model, WinUI/GTK, clustering remain future phases.
 **Date:** 2026-07-18
 **Scope:** A `Map` control that renders **real native maps** on each backend, supports **pins**
 (annotations) and **polylines** (drawn lines) both *declaratively* (bound to `State`) and *interactively*
@@ -166,8 +170,8 @@ Google/commercial tiles.
 
 | Phase | Deliverable | Backends | Risk |
 |-------|-------------|----------|------|
-| **1** | `Map` + data types; **static** pins + polylines (declarative, no interaction); JSON-string prop shortcut (§5.1) | **Web (MapLibre)** + **Apple (MapKit)** first | Med |
-| **2** | **Interaction**: `OnTap` (draw), `OnPinTap`, camera two-way `OnCameraChanged`; persistent/updatable renderers (§5.2); **Android** (MapLibre) | Web, Apple, Android | Med–high |
+| **1 ✅** | `Map` + data types; pins + polylines; JSON-string prop shortcut (§5.1); persistent-component Web renderer (§5.2); `OnTap`/`OnPinTap`/`OnCameraChanged` wired. Web built+verified; Apple (MapKit) + Android (MapLibre) authored as native source in `native/maps`. | **Web (MapLibre)** built; **Apple** + **Android** source-only | Med |
+| **2** | Compile/verify the Apple + Android renderers (bridge/AAR integration + sim/device run); draggable pins | Apple, Android | Med–high |
 | **3** | Structured wire model (§5.1 proper); **WinUI** + **GTK**; draggable pins; polygons/circles; clustering | all | Higher (WinUI/GTK map stories are the weakest) |
 
 Phase 1 puts a real map with pins and a drawn line on screen from C#. Phase 2 makes "tap to draw" work.

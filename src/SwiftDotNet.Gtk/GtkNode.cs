@@ -84,6 +84,7 @@ sealed class GtkNode
         "NavigationLink" => MakeNavLink(),
         "Sheet" => Children.Count > 0 ? Children[0].Widget : Label(""),
         "Alert" => Children.Count > 0 ? Children[0].Widget : Label(""),
+        "WebView" => MakeWebView(),
         "Image" => Label(GtkStyle.Emoji(Str("system"))),
         "Label" => MakeLabel(),
         "ProgressView" => MakeProgress(),
@@ -111,6 +112,16 @@ sealed class GtkNode
         var l = Gtk.Label.New(text);
         l.SetWrap(true);
         return l;
+    }
+
+    Gtk.Widget MakeWebView()
+    {
+        // WebKitGTK isn't referenced (keeps the GTK backend dependency-free / no native shim), so we
+        // surface a link to the content instead of embedding a browser engine.
+        var url = Str("url");
+        return string.IsNullOrEmpty(url)
+            ? Label("🌐 Web content (unavailable on GTK without WebKitGTK)")
+            : Gtk.LinkButton.NewWithLabel(url, "Open web page ↗");
     }
 
     Gtk.Widget MakeButton()

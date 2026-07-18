@@ -5,6 +5,10 @@ import UIKit
 #elseif canImport(AppKit)
 import AppKit
 #endif
+// WebKit is unavailable on tvOS; WebView falls back to a placeholder there.
+#if canImport(WebKit)
+import WebKit
+#endif
 
 // MARK: - Wire model (decoded from the C# patch protocol)
 
@@ -376,6 +380,8 @@ struct NodeView: View {
             SheetNode(node: node)
         case "Alert":
             AlertNode(node: node)
+        case "WebView":
+            WebViewNode(node: node)
         case "Image":
             SwiftUI.Image(systemName: str("system"))
         case "Label":
@@ -748,6 +754,64 @@ struct AlertNode: View {
         if !node.children.isEmpty { NodeView(node: node.children[0]) }
     }
 }
+
+// MARK: - WebView (native web engine)
+
+struct WebViewNode: View {
+    let node: VNode
+    var body: some View {
+        #if canImport(WebKit)
+        WebEngineView(node: node)
+        #else
+        // tvOS has no web engine.
+        SwiftUI.VStack(spacing: 8) {
+            SwiftUI.Image(systemName: "globe")
+            SwiftUI.Text("Web content is unavailable on this platform.")
+        }
+        .foregroundColor(.secondary)
+        #endif
+    }
+}
+
+#if canImport(WebKit)
+/// Tracks what a web view last loaded so an unchanged patch doesn't force a reload.
+final class WebViewCoordinator {
+    var loadedKey: String?
+}
+
+private func loadWeb(_ webView: WKWebView, _ node: VNode, _ coord: WebViewCoordinator) {
+    let url = node.props["url"]?.string
+    let html = node.props["html"]?.string
+    let key = url ?? html ?? ""
+    if coord.loadedKey == key { return }
+    coord.loadedKey = key
+    if let url, let u = URL(string: url) {
+        webView.load(URLRequest(url: u))
+    } else if let html {
+        webView.loadHTMLString(html, baseURL: nil)
+    }
+}
+
+#if canImport(UIKit)
+struct WebEngineView: UIViewRepresentable {
+    let node: VNode
+    func makeCoordinator() -> WebViewCoordinator { WebViewCoordinator() }
+    func makeUIView(context: Context) -> WKWebView { WKWebView() }
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        loadWeb(webView, node, context.coordinator)
+    }
+}
+#elseif canImport(AppKit)
+struct WebEngineView: NSViewRepresentable {
+    let node: VNode
+    func makeCoordinator() -> WebViewCoordinator { WebViewCoordinator() }
+    func makeNSView(context: Context) -> WKWebView { WKWebView() }
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        loadWeb(webView, node, context.coordinator)
+    }
+}
+#endif
+#endif
 
 struct RootHostView: View {
     var store = RenderStore.shared

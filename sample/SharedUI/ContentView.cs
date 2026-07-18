@@ -31,6 +31,10 @@ public sealed class ContentView : View
     readonly State<bool> _sheet = State(false);
     readonly State<bool> _alert = State(false);
 
+    // Maps (renders as MapLibre on Web / MapKit on Apple; graceful ⚠️ placeholder where no renderer is registered)
+    readonly State<MapCamera> _mapCamera = State(new MapCamera(new MapCoordinate(51.5074, -0.1278), 12));
+    readonly State<List<MapCoordinate>> _route = State(new List<MapCoordinate>());
+
     static readonly string[] Sizes = { "Small", "Medium", "Large" };
     static readonly string[] Fruits = { "🍎 Apple", "🍌 Banana", "🍒 Cherry", "🥝 Kiwi", "🍑 Peach" };
 
@@ -40,8 +44,23 @@ public sealed class ContentView : View
             new Tab("Layout", "square.grid.2x2", LayoutTab()),
             new Tab("Carousel", "rectangle.stack", CarouselTab()),
             new Tab("Lists", "list.bullet", ListsTab()),
+            new Tab("Maps", "map", MapsTab()),
             new Tab("Nav", "arrow.forward.circle", NavTab())
         );
+
+    View MapsTab() =>
+        new VStack(
+            new Text("Maps").Font(Font.LargeTitle),
+            new Text("Tap the map to drop a pin and extend the route.")
+                .Font(Font.Caption).ForegroundColor(Color.Secondary),
+            new Map(_mapCamera)
+                .Pins(_route.Value.Select((c, i) => new MapPin(c, $"Stop {i + 1}", Color.Red, Id: i.ToString())))
+                .Polylines(new[] { new MapPolyline(_route.Value, Color.Blue, 4) })
+                .OnTap(c => _route.Value = new List<MapCoordinate>(_route.Value) { c })
+                .OnCameraChanged(cam => _mapCamera.Value = cam)
+                .Frame(height: 420),
+            new Button("Clear route", () => _route.Value = new())
+        ).Spacing(8).Padding(16);
 
     View InputsTab() =>
         new ScrollView(
@@ -120,6 +139,16 @@ public sealed class ContentView : View
             ).Padding(),
             new ProgressView(0.6, "Downloading"),
             new Gauge(0.7, 0, 1, "Speed"),
+
+            // Embedded web content — WKWebView (Apple), WebView2 (Windows), android.webkit.WebView,
+            // and an <iframe> on the Web backend. HTML string renders with no network round-trip.
+            new Divider(),
+            new Text("WebView").Font(Font.Headline),
+            WebView.FromHtml(
+                "<div style='font-family:sans-serif;padding:16px;text-align:center'>" +
+                "<h2>Hello from HTML 👋</h2><p>Rendered by the native web engine.</p></div>")
+                .Frame(height: 160),
+            new WebView("https://example.com").Frame(height: 220),
 
             new Divider(),
             new Text("Alignment & borders").Font(Font.Headline),
