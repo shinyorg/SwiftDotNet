@@ -252,7 +252,27 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
             out = AnyView(out.navigationTitle(m.value ?? ""))
         case "onTapGesture":
             let event = m.event
-            out = AnyView(out.onTapGesture { if let event { emitEvent(event) } })
+            let count = max(1, Int(m.amount ?? 1))
+            out = AnyView(out.onTapGesture(count: count) { if let event { emitEvent(event) } })
+        case "onLongPress":
+            let event = m.event
+            out = AnyView(out.onLongPressGesture(minimumDuration: m.amount ?? 0.5) {
+                if let event { emitEvent(event) }
+            })
+        case "onSwipe":
+            let event = m.event
+            let direction = m.value
+            out = AnyView(out.gesture(DragGesture(minimumDistance: 20).onEnded { g in
+                guard let event, let direction else { return }
+                let dx = g.translation.width, dy = g.translation.height
+                let matched: Bool
+                if abs(dx) > abs(dy) {
+                    matched = dx < 0 ? direction == "left" : direction == "right"
+                } else {
+                    matched = dy < 0 ? direction == "up" : direction == "down"
+                }
+                if matched { emitEvent(event) }
+            }))
         default:
             break
         }

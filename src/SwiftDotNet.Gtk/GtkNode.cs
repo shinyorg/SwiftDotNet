@@ -498,9 +498,34 @@ sealed class GtkNode
                 case "onTapGesture":
                     if (m.GetValueOrDefault("event") is string ev)
                     {
+                        var required = (int)(Num(m, "amount") ?? 1);
                         var gesture = Gtk.GestureClick.New();
-                        gesture.OnReleased += (_, _) => _bridge.Emit(ev, null);
+                        gesture.OnReleased += (_, args) => { if (args.NPress >= required) _bridge.Emit(ev, null); };
                         w.AddController(gesture);
+                    }
+                    break;
+                case "onLongPress":
+                    if (m.GetValueOrDefault("event") is string lev)
+                    {
+                        var lp = Gtk.GestureLongPress.New();
+                        lp.OnPressed += (_, _) => _bridge.Emit(lev, null);
+                        w.AddController(lp);
+                    }
+                    break;
+                case "onSwipe":
+                    if (m.GetValueOrDefault("event") is string sev)
+                    {
+                        var dir = m.GetValueOrDefault("value") as string;
+                        var sw = Gtk.GestureSwipe.New();
+                        sw.OnSwipe += (_, args) =>
+                        {
+                            double vx = args.VelocityX, vy = args.VelocityY;
+                            var matched = Math.Abs(vx) > Math.Abs(vy)
+                                ? (vx < 0 ? dir == "left" : dir == "right")
+                                : (vy < 0 ? dir == "up" : dir == "down");
+                            if (matched && (Math.Abs(vx) > 40 || Math.Abs(vy) > 40)) _bridge.Emit(sev, null);
+                        };
+                        w.AddController(sw);
                     }
                     break;
             }

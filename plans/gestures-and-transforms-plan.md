@@ -1,6 +1,8 @@
 # Plan: Gestures & Transforms (scale / pinch-to-zoom, pan, rotate)
 
-**Status:** Draft. **Part 1 (`.ScaleEffect`) is being implemented now**; Parts 2–3 are future revisions.
+**Status:** Part 1 (`.ScaleEffect`) **shipped**. Phase 2 (one-shot gestures: `.OnLongPress`,
+`.OnSwipe`, `.OnTapGesture(count:)`) **shipped**. Phases 3–5 (transform siblings, continuous
+pan/pinch `Transformable`) are future revisions.
 **Date:** 2026-07-18
 **Scope:** A `.ScaleEffect` (and sibling transform) modifier now, and a `Transformable` **pinch-to-zoom /
 pan / rotate gesture** later, across all backends. Establishes the **continuous-gesture event model** the
@@ -132,8 +134,8 @@ new Transformable(_scale, minScale: 1, maxScale: 4)
 
 | Phase | Deliverable | Backends | Risk |
 |-------|-------------|----------|------|
-| **1 (now)** | `.ScaleEffect(scale/x,y, anchor)` modifier + wire + apply | SwiftUI/Compose/WinUI/Web; GTK no-op | Low |
-| **2** | One-shot gestures: `.OnLongPress`, `.OnSwipe(dir)` (+ `.OnTapGesture(count:)`) on the existing event channel | all | Low |
+| **1 ✅** | `.ScaleEffect(scale/x,y, anchor)` modifier + wire + apply | SwiftUI/Compose/WinUI/Web; GTK no-op | Low |
+| **2 ✅** | One-shot gestures: `.OnLongPress`, `.OnSwipe(dir)` (+ `.OnTapGesture(count:)`) on the existing event channel | all | Low |
 | **3** | `.Rotation` / `.Offset` transform siblings | same as 1 | Low |
 | **4** | Continuous/committed event mode; `Transformable` **pinch + pan** (model B) | SwiftUI, Compose, Web first; WinUI; GTK last | High |
 | **5** | Rotate combined; focal-point anchor; GTK scale via snapshot/zoom container | all | High |

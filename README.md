@@ -70,10 +70,17 @@ Two ways to add your own control:
 - **Modifiers** (order-preserving): `.Font`, `.ForegroundColor`, `.Background`, `.Padding` (uniform or
   per-`Edge`), `.Frame` (+ alignment), `.CornerRadius`, `.Border`, `.Shadow` (+ color/offset), `.Opacity`
   (clamped 0–1), `.Disabled` (dim + block interaction), `.ScaleEffect` (native scale transform, around an
-  anchor), `.Align` (fill width + align), `.NavigationTitle`, `.OnTapGesture`. Modifiers are a **universal
+  anchor), `.Align` (fill width + align), `.NavigationTitle`. Modifiers are a **universal
   wrapper** applied to any view via a single generic pass per backend — so `.Opacity`/`.Disabled`/
   `.ScaleEffect` work on every control, not a hand-picked subset. (`.ScaleEffect` is a documented no-op on
   GTK, which has no per-widget scale transform.)
+- **Gestures** (one-shot, on any view): `.OnTapGesture(count:)` (single or double-tap), `.OnLongPress`
+  (press-and-hold, `minimumDuration:`), `.OnSwipe(SwipeDirection, …)` (a directional drag committed on
+  release — add one call per direction). Each maps to the platform's native recognizer
+  (SwiftUI `onLongPressGesture`/`MagnifyGesture`-family, Compose `detectTapGestures`/`detectDragGestures`,
+  WinUI `Holding`/`ManipulationCompleted`, GTK `GestureLongPress`/`GestureSwipe`, Web Pointer Events) and
+  fires back through the same event channel as `.OnTapGesture`. Continuous pan/pinch (a `Transformable`
+  binding) is a later phase — see [the gestures plan](plans/gestures-and-transforms-plan.md).
 - **Alignment**: `VStack.Alignment(HorizontalAlignment)`, `HStack.Alignment(VerticalAlignment)`,
   `ZStack.Alignment(Alignment)`; colors also via `Color.Hex("#RRGGBB")`
 

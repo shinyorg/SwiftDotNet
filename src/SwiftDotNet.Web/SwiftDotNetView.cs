@@ -17,6 +17,8 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
     readonly WebBridge _bridge = new();
     readonly Dictionary<string, int> _tab = new();          // TabView selected index by node id
     readonly Dictionary<string, List<WebNode>> _nav = new(); // NavigationStack pushed screens by node id
+    readonly Dictionary<string, CancellationTokenSource> _longPress = new(); // in-flight long-press timers by event id
+    readonly Dictionary<string, (double X, double Y)> _swipeStart = new();    // pointer-down origin by event id
     int _seq;
 
     protected override void OnInitialized()
@@ -526,8 +528,73 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
         var isShape = n.Type is "Rectangle" or "Circle" or "Capsule" or "RoundedRectangle";
         var css = (baseStyle ?? "") + WebStyle.Modifiers(n.Modifiers, isShape);
         if (css.Length > 0) b.AddAttribute(_seq++, "style", css);
-        if (n.Modifiers.FirstOrDefault(m => m["type"] as string == "onTapGesture")?.GetValueOrDefault("event") is string ev)
-            b.AddAttribute(_seq++, "onclick", EventCallback.Factory.Create(this, () => _bridge.Emit(ev, null)));
+
+        var tap = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onTapGesture");
+        if (tap?.GetValueOrDefault("event") is string ev)
+        {
+            var name = Amount(tap, "amount", 1) >= 2 ? "ondblclick" : "onclick";
+            b.AddAttribute(_seq++, name, EventCallback.Factory.Create(this, () => _bridge.Emit(ev, null)));
+        }
+
+        var longPress = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onLongPress");
+        var swipe = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onSwipe");
+        if (longPress is null && swipe is null) return;
+
+        // Long-press and swipe share pointerdown/up, so merge them into one handler pair to avoid
+        // one attribute clobbering the other when a view carries both.
+        var lpEv = longPress?.GetValueOrDefault("event") as string;
+        var lpDur = Amount(longPress, "amount", 0.5);
+        var swEv = swipe?.GetValueOrDefault("event") as string;
+        var swDir = swipe?.GetValueOrDefault("value") as string;
+
+        b.AddAttribute(_seq++, "onpointerdown", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
+        {
+            if (lpEv is not null) StartLongPress(lpEv, lpDur);
+            if (swEv is not null) _swipeStart[swEv] = (e.ClientX, e.ClientY);
+        }));
+        b.AddAttribute(_seq++, "onpointerup", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
+        {
+            if (lpEv is not null) CancelLongPress(lpEv);
+            if (swEv is not null) EndSwipe(swEv, swDir, e);
+        }));
+        b.AddAttribute(_seq++, "onpointercancel", EventCallback.Factory.Create<PointerEventArgs>(this, _ =>
+        {
+            if (lpEv is not null) CancelLongPress(lpEv);
+            if (swEv is not null) _swipeStart.Remove(swEv);
+        }));
+        if (lpEv is not null)
+            b.AddAttribute(_seq++, "onpointerleave", EventCallback.Factory.Create<PointerEventArgs>(this, _ => CancelLongPress(lpEv)));
+    }
+
+    void StartLongPress(string ev, double seconds)
+    {
+        CancelLongPress(ev);
+        var cts = new CancellationTokenSource();
+        _longPress[ev] = cts;
+        _ = Task.Delay(TimeSpan.FromSeconds(seconds), cts.Token).ContinueWith(t =>
+        {
+            if (t.IsCanceled) return;
+            _ = InvokeAsync(() => { if (_longPress.Remove(ev)) _bridge.Emit(ev, null); });
+        }, TaskScheduler.Default);
+    }
+
+    void CancelLongPress(string ev)
+    {
+        if (_longPress.Remove(ev, out var cts)) cts.Cancel();
+    }
+
+    static double Amount(Dictionary<string, object?>? m, string key, double fallback)
+        => m is not null && m.TryGetValue(key, out var v) && v is double d ? d : fallback;
+
+    void EndSwipe(string ev, string? dir, PointerEventArgs e)
+    {
+        if (!_swipeStart.Remove(ev, out var start)) return;
+        var dx = e.ClientX - start.X;
+        var dy = e.ClientY - start.Y;
+        var matched = Math.Abs(dx) > Math.Abs(dy)
+            ? (dx < 0 ? dir == "left" : dir == "right")
+            : (dy < 0 ? dir == "up" : dir == "down");
+        if (matched && (Math.Abs(dx) > 40 || Math.Abs(dy) > 40)) _bridge.Emit(ev, null);
     }
 
     static string TitleOf(WebNode n) =>

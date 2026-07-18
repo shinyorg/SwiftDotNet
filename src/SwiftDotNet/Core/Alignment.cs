@@ -14,6 +14,9 @@ public enum Alignment
     BottomLeading, Bottom, BottomTrailing,
 }
 
+/// <summary>Direction of a swipe gesture — the axis SwiftUI's <c>DragGesture</c> reports on release.</summary>
+public enum SwipeDirection { Left, Right, Up, Down }
+
 /// <summary>Edges for per-edge padding (mirrors SwiftUI's <c>Edge.Set</c>).</summary>
 [Flags]
 public enum Edge
@@ -54,5 +57,13 @@ internal static class AlignmentTokens
         Alignment.Bottom => "bottom",
         Alignment.BottomTrailing => "bottomTrailing",
         _ => "center",
+    };
+
+    public static string Token(this SwipeDirection d) => d switch
+    {
+        SwipeDirection.Left => "left",
+        SwipeDirection.Right => "right",
+        SwipeDirection.Up => "up",
+        _ => "down",
     };
 }

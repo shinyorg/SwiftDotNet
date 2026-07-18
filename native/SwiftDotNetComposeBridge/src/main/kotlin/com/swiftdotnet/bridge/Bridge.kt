@@ -9,6 +9,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -253,7 +256,33 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                     awaitPointerEventScope { while (true) { awaitPointerEvent().changes.forEach { it.consume() } } }
                 }
             }
-            "onTapGesture" -> (mod["event"] as? String)?.let { e -> m = m.clickable { SwiftDotNetBridge.emit(e, null) } }
+            "onTapGesture" -> (mod["event"] as? String)?.let { e ->
+                val count = (numOf(mod["amount"]) ?: 1.0).toInt()
+                m = if (count >= 2)
+                    m.pointerInput(e) { detectTapGestures(onDoubleTap = { SwiftDotNetBridge.emit(e, null) }) }
+                else
+                    m.clickable { SwiftDotNetBridge.emit(e, null) }
+            }
+            "onLongPress" -> (mod["event"] as? String)?.let { e ->
+                m = m.pointerInput(e) { detectTapGestures(onLongPress = { SwiftDotNetBridge.emit(e, null) }) }
+            }
+            "onSwipe" -> (mod["event"] as? String)?.let { e ->
+                val dir = mod["value"] as? String
+                m = m.pointerInput(e, dir) {
+                    var dx = 0f; var dy = 0f
+                    detectDragGestures(
+                        onDragStart = { dx = 0f; dy = 0f },
+                        onDrag = { _, drag -> dx += drag.x; dy += drag.y },
+                        onDragEnd = {
+                            val matched = if (abs(dx) > abs(dy))
+                                (if (dx < 0) dir == "left" else dir == "right")
+                            else
+                                (if (dy < 0) dir == "up" else dir == "down")
+                            if (matched && (abs(dx) > 40f || abs(dy) > 40f)) SwiftDotNetBridge.emit(e, null)
+                        },
+                    )
+                }
+            }
             "font" -> textStyle = textStyleFor(mod["value"] as? String)
             "foregroundColor" -> contentColor = colorFor(mod["value"] as? String)
         }

@@ -423,7 +423,38 @@ sealed class WinNode
                     break;
                 case "onTapGesture":
                     if (m.GetValueOrDefault("event") is string ev)
-                        current.Tapped += (_, _) => _bridge.Emit(ev, null);
+                    {
+                        if (N(m, "amount", 1) >= 2)
+                            current.DoubleTapped += (_, _) => _bridge.Emit(ev, null);
+                        else
+                            current.Tapped += (_, _) => _bridge.Emit(ev, null);
+                    }
+                    break;
+                case "onLongPress":
+                    if (m.GetValueOrDefault("event") is string lev)
+                    {
+                        // Holding fires for touch/pen; RightTapped is the mouse/trackpad equivalent of a press-hold.
+                        current.Holding += (_, e) => { if (e.HoldingState == Microsoft.UI.Input.HoldingState.Started) _bridge.Emit(lev, null); };
+                        current.RightTapped += (_, _) => _bridge.Emit(lev, null);
+                    }
+                    break;
+                case "onSwipe":
+                    if (m.GetValueOrDefault("event") is string sev)
+                    {
+                        var dir = m.GetValueOrDefault("value") as string;
+                        // Translate* (not the default System) is required for ManipulationCompleted to raise.
+                        current.ManipulationMode = Microsoft.UI.Xaml.Input.ManipulationModes.TranslateX
+                                                 | Microsoft.UI.Xaml.Input.ManipulationModes.TranslateY;
+                        current.ManipulationCompleted += (_, e) =>
+                        {
+                            var dx = e.Cumulative.Translation.X;
+                            var dy = e.Cumulative.Translation.Y;
+                            var matched = Math.Abs(dx) > Math.Abs(dy)
+                                ? (dx < 0 ? dir == "left" : dir == "right")
+                                : (dy < 0 ? dir == "up" : dir == "down");
+                            if (matched && (Math.Abs(dx) > 40 || Math.Abs(dy) > 40)) _bridge.Emit(sev, null);
+                        };
+                    }
                     break;
                 case "foregroundColor":
                     if (Inner is TextBlock tbf && WinStyle.Brush(m.GetValueOrDefault("value") as string) is { } fg) tbf.Foreground = fg;

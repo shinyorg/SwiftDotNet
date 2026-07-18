@@ -21,6 +21,7 @@ public sealed class ContentView : View
     readonly State<string> _color = State("#FF3B30");
     readonly State<bool> _notify = State(true);
     readonly State<int> _rating = State(3);
+    readonly State<string> _gesture = State("Try the gestures below");
 
     // Lists
     readonly State<bool> _expanded = State(false);
@@ -65,7 +66,21 @@ public sealed class ContentView : View
 
             // A user-authored composite custom control (see Rating.cs) — works on every backend.
             new Text($"Rating: {_rating.Value}/5").Font(Font.Caption),
-            new Rating(_rating)
+            new Rating(_rating),
+
+            // One-shot gestures on the existing event channel — double-tap, long-press, and a directional swipe.
+            new Divider(),
+            new Text("Gestures").Font(Font.Headline),
+            new Text(_gesture.Value).Font(Font.Caption).ForegroundColor(Color.Secondary),
+            new Text("👆 Double-tap me")
+                .Padding(12).Background(Color.Hex("#EEF0FF")).CornerRadius(10)
+                .OnTapGesture(() => _gesture.Value = "Double-tapped 👆", count: 2),
+            new Text("👇 Long-press me")
+                .Padding(12).Background(Color.Hex("#EAF7EE")).CornerRadius(10)
+                .OnLongPress(() => _gesture.Value = "Long-pressed 👇"),
+            new Text("👈 Swipe me left")
+                .Padding(12).Background(Color.Hex("#FDECEC")).CornerRadius(10)
+                .OnSwipe(SwipeDirection.Left, () => _gesture.Value = "Swiped left 👈")
         ).Padding(20);
 
     View LayoutTab() =>

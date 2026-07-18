@@ -182,10 +182,40 @@ sealed class NavigationTitleModifier : Modifier
 sealed class OnTapGestureModifier : Modifier
 {
     readonly Action _action;
-    public OnTapGestureModifier(Action action) => _action = action;
+    readonly int _count;
+    public OnTapGestureModifier(Action action, int count) { _action = action; _count = Math.Max(1, count); }
     internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
     {
         ctx.RegisterAction(path, _ => _action());
-        return new() { ["type"] = "onTapGesture", ["event"] = path };
+        // `amount` carries the required tap count (1 = single, 2 = double-tap); reuses the existing wire field.
+        return new() { ["type"] = "onTapGesture", ["event"] = path, ["amount"] = (double)_count };
+    }
+}
+
+/// <summary>Fires once after a press-and-hold, mirroring SwiftUI's <c>.onLongPressGesture(minimumDuration:)</c>.</summary>
+sealed class OnLongPressModifier : Modifier
+{
+    readonly Action _action;
+    readonly double _minimumDuration;
+    public OnLongPressModifier(Action action, double minimumDuration) { _action = action; _minimumDuration = minimumDuration; }
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+    {
+        ctx.RegisterAction(path, _ => _action());
+        // `amount` carries the hold threshold in seconds; each backend maps it to its recognizer's minimum duration.
+        return new() { ["type"] = "onLongPress", ["event"] = path, ["amount"] = _minimumDuration };
+    }
+}
+
+/// <summary>Fires once when the view is swiped in a fixed direction — a directional drag committed on release.</summary>
+sealed class OnSwipeModifier : Modifier
+{
+    readonly Action _action;
+    readonly string _direction;
+    public OnSwipeModifier(Action action, string direction) { _action = action; _direction = direction; }
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+    {
+        ctx.RegisterAction(path, _ => _action());
+        // `value` carries the direction token (left/right/up/down); the native recognizer only emits on a match.
+        return new() { ["type"] = "onSwipe", ["event"] = path, ["value"] = _direction };
     }
 }

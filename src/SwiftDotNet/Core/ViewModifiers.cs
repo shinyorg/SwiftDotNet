@@ -107,9 +107,33 @@ public static class ViewModifiers
         return view;
     }
 
-    public static T OnTapGesture<T>(this T view, Action action) where T : View
+    /// <summary>
+    /// Fires <paramref name="action"/> on tap. Pass <paramref name="count"/> = 2 for a double-tap
+    /// (mirrors <c>.onTapGesture(count:)</c>).
+    /// </summary>
+    public static T OnTapGesture<T>(this T view, Action action, int count = 1) where T : View
     {
-        view.Modifiers.Add(new OnTapGestureModifier(action));
+        view.Modifiers.Add(new OnTapGestureModifier(action, count));
+        return view;
+    }
+
+    /// <summary>
+    /// Fires <paramref name="action"/> after a press-and-hold of at least <paramref name="minimumDuration"/>
+    /// seconds (mirrors <c>.onLongPressGesture(minimumDuration:)</c>).
+    /// </summary>
+    public static T OnLongPress<T>(this T view, Action action, double minimumDuration = 0.5) where T : View
+    {
+        view.Modifiers.Add(new OnLongPressModifier(action, minimumDuration));
+        return view;
+    }
+
+    /// <summary>
+    /// Fires <paramref name="action"/> when the view is swiped in <paramref name="direction"/> — a
+    /// directional drag committed on release. One-shot; add multiple calls for multiple directions.
+    /// </summary>
+    public static T OnSwipe<T>(this T view, SwipeDirection direction, Action action) where T : View
+    {
+        view.Modifiers.Add(new OnSwipeModifier(action, direction.Token()));
         return view;
     }
 }
