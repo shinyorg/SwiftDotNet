@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/SwiftDotNet/SwiftDotNet.csproj" />
     <Project Path="src/SwiftDotNet.Gtk/SwiftDotNet.Gtk.csproj" />
+    <Project Path="src/SwiftDotNet.Web/SwiftDotNet.Web.csproj" />
   </Folder>
   <Folder Name="/sample/">
     <Project Path="sample/SharedUI/SharedUI.csproj" />
@@ -11,5 +12,6 @@
     <Project Path="sample/SampleApp.Android/SampleApp.Android.csproj" />
     <Project Path="sample/SampleApp.Windows/SampleApp.Windows.csproj" />
     <Project Path="sample/SampleApp.Gtk/SampleApp.Gtk.csproj" />
+    <Project Path="sample/SampleApp.Web/SampleApp.Web.csproj" />
   </Folder>
 </Solution>

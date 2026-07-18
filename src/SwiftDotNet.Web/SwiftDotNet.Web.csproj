@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- References the combined library's neutral net10.0 (Core). Web/Blazor has no distinct TFM,
+         so this backend is a SEPARATE library (same reason as SwiftDotNet.Gtk). -->
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.*" />
+  </ItemGroup>
+
+</Project>

@@ -1,7 +1,26 @@
 # SwiftDotNet
 
-**SwiftUI for .NET iOS.** Write declarative UI in C# that renders as *real* SwiftUI — Apple's own
-layout, fonts, animations, and accessibility — not a reimplementation.
+**SwiftUI for .NET — everywhere.** Write declarative UI once in C# and render it as *real* native UI on
+each platform: **SwiftUI** on iOS/macOS/tvOS, **Jetpack Compose** on Android, **GTK4** on Linux, **WinUI 3**
+on Windows, and **HTML/DOM** on the Web. Not a reimplementation of each toolkit — the actual native controls,
+with the platform's own layout, fonts, animations, and accessibility.
+
+One `View` subclass, eight rendering backends:
+
+| Platform | Renders as | Route | Status |
+|----------|-----------|-------|--------|
+| iOS | SwiftUI | Swift shim (xcframework, P/Invoke) | ✅ Verified on simulator |
+| macOS | SwiftUI (AppKit-hosted) | Same Swift shim (`#if` UIKit→AppKit) | ✅ Verified on desktop |
+| tvOS | SwiftUI | Same Swift shim (`#if os(tvOS)` fallbacks) | ✅ Verified on Apple TV sim |
+| Android | Jetpack Compose | Kotlin shim (`.aar`, JNI) | ✅ Verified on emulator |
+| Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop |
+| Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded (needs Windows to build) |
+| Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
+
+Two backend routes: SwiftUI and Compose are **compiler-plugin frameworks**, so they need a thin native shim
+(Swift/Kotlin) that reconstructs the tree; GTK, WinUI, and the Web are fully C#-bindable, so those backends are
+**pure C#** with **no native code** — a retained-mode interpreter that maps the node tree straight to native
+controls (or DOM elements) and applies the same diff patches.
 
 ```csharp
 public sealed class ContentView : View
@@ -88,15 +107,23 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 |------|-----|------|
 | `src/SwiftDotNet` | **multi-target** | **One library.** `Core/` (platform-neutral DSL, `State<T>`, `Node`/JSON, diff engine, `IBridge`, `SwiftApp`) compiles for every TFM; `Platforms/{iOS,macOS,tvOS,Android,Windows}/` (the bridges + `SwiftDotNetHost`) are opted in per TFM. TFMs: `net10.0;net10.0-android` always, `net10.0-ios;-macos;-tvos` on a Mac, `net10.0-windows10.x` on Windows. iOS/macOS/tvOS pull the Swift xcframework (`SwiftDotNetBridge.targets`); Android binds the Compose `.aar` + `Xamarin.AndroidX.Compose.*`; Windows pulls WinUI 3. |
 | `src/SwiftDotNet.Gtk` | `net10.0` | **Separate** (Linux/GTK shares the `net10.0` TFM with Core, so folding it in would force every neutral consumer to take the GTK dependency). Pure-C# GTK4 backend over Gir.Core; references the combined `SwiftDotNet`. |
-| `native/SwiftDotNetBridge` | Swift | `Bridge.swift` + build script → `build/SwiftDotNetBridge.xcframework` (SwiftUI interpreter; iOS device/sim + macOS slices) |
+| `src/SwiftDotNet.Web` | `net10.0` (Razor lib) | **Separate** (Blazor has no distinct TFM either). Pure-C# **Blazor WebAssembly** backend — `SwiftDotNetView` renders the node tree to HTML/CSS via `RenderTreeBuilder`; DOM events call back into C#. |
+| `native/SwiftDotNetBridge` | Swift | `Bridge.swift` + build script → `build/SwiftDotNetBridge.xcframework` (SwiftUI interpreter; 5 slices — iOS device/sim, tvOS device/sim, macOS) |
 | `native/SwiftDotNetComposeBridge` | Kotlin | `Bridge.kt` + Gradle → `build/SwiftDotNetComposeBridge.aar` (Jetpack Compose interpreter) |
-| `sample/SharedUI` | `net10.0` | The demo `ContentView` (5-tab tour) — one file, shared by all apps |
+| `sample/SharedUI` | `net10.0` | The demo `ContentView` (5-tab tour) + composite `Rating` control — one file, shared by all apps |
 | `sample/SampleApp` | `net10.0-ios` | Thin iOS app: `SwiftDotNetHost.CreateRootController(new ContentView())` |
-| `sample/SampleApp.Mac` | `net10.0-macos` | Thin macOS app: hosts `SwiftDotNetHost.CreateRootController(new ContentView())` in an `NSWindow` |
+| `sample/SampleApp.Mac` | `net10.0-macos` | Thin macOS app: hosts the root controller in an `NSWindow` |
+| `sample/SampleApp.tvOS` | `net10.0-tvos` | Thin Apple TV app: same host controller, focus-driven UI |
 | `sample/SampleApp.Android` | `net10.0-android` | Thin Android app: `SwiftDotNetHost.CreateRootView(this, new ContentView())` |
+| `sample/SampleApp.Windows` | `net10.0-windows` | Thin WinUI 3 app (unpackaged + self-contained) |
+| `sample/SampleApp.Gtk` | `net10.0` | Thin GTK app: references `SwiftDotNet.Gtk` |
+| `sample/SampleApp.Web` | `net10.0` (Blazor WASM) | Thin web app: hosts `<SwiftDotNetView Root="new ContentView()">` |
+
+All ten projects are wired into **`SwiftDotNet.slnx`** at the repo root.
 
 The **same `SharedUI.ContentView`** renders as **SwiftUI on iOS**, **SwiftUI (AppKit-hosted) on macOS**,
-**SwiftUI on tvOS**, and **Jetpack Compose on Android** — verified on device/emulator/desktop/Apple TV sim.
+**SwiftUI on tvOS**, **Jetpack Compose on Android**, **GTK4 on Linux**, and **HTML/DOM on the Web** — verified
+on device/emulator/desktop/Apple TV sim/browser.
 The Apple platforms share one Swift interpreter with a few `#if` conditionals: macOS swaps UIKit→AppKit hosting;
 tvOS (focus-driven, no pointer) falls back for the controls Apple omits there — `Slider`/`DatePicker`/`ColorPicker`
 show a value/swatch, `Stepper`→focusable −/+ buttons, `DisclosureGroup`→a header button, `Gauge`→`ProgressView`.
