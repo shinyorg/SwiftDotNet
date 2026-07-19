@@ -88,6 +88,14 @@ public sealed class ControlsDemo : View
                 new Button("Confirm", () => Dialog.Confirm("Delete?", "This cannot be undone.",
                     ok => Toast.Show(ok ? "Deleted" : "Cancelled"), confirm: "Delete", destructive: true))
             ).Spacing(12),
+            new Button("Loading (2s)", () =>
+            {
+                var id = Loading.Show("Working…");
+                _ = HideAfter(id, 2);
+            }),
+
+            new Text("FAB").Font(Font.Headline),
+            new Fab("plus", () => Toast.Show("FAB tapped")),
 
             new Button("Floating panel", () => FloatingPanel.Present(
                 new VStack(
@@ -104,4 +112,10 @@ public sealed class ControlsDemo : View
         ).Padding(20).NavigationTitle("Shiny Controls");
 
     static readonly SwiftColor ControlPalette_AccentInfo = Color.Hex("#007AFF");
+
+    static async System.Threading.Tasks.Task HideAfter(string id, double seconds)
+    {
+        await System.Threading.Tasks.Task.Delay(System.TimeSpan.FromSeconds(seconds));
+        Loading.Hide(id);
+    }
 }

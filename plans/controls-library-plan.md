@@ -7,15 +7,36 @@ names the Plan-1 features (F1–F11) it needs; a wave cannot start before its fe
 
 ## Context
 
-> **Implementation status (2026-07-19):** `SwiftDotNet.Controls` is built out to **~35 controls** across
-> Waves 0–5 (all pure composites) — see [[swiftdotnet-controls-library]] in memory. **Wave 6 (Camera) core
-> landed:** `SwiftDotNet.Controls.Camera` (`CameraView` CustomView + analyzer flags + event grammar,
-> buildable+tested), `SwiftDotNet.Controls.Camera.Apple` (registration P/Invoke), and
-> `native/camera/CameraRenderer.swift` (AVFoundation preview + Vision barcode/face/text, type-checked
-> against the iOS SDK). Deviation from Shiny: the `Camera.Barcode/.Face/.Ocr/.Motion` package split is
-> folded into one `CameraAnalyzers` flag set (detection is native; only results cross the bridge). Not
-> runtime-verified — needs a real device/capture. **Skipped by the user:** SignaturePad/ImageEditor (F8
-> drawing), MediaPicker, ChatView attachments, AddressEntry. Still open: true windowed virtualization (F7d).
+> ## Implementation status (2026-07-19)
+>
+> **`SwiftDotNet.Controls` — ~33 controls built, all pure composites, 94 tests green.** Pills, badges,
+> skeleton, progress, FABs; Toast/Dialog/Loading/FloatingPanel (over the F2 overlay layer); Slider/
+> RangeSlider/SecurityPin/TextEntry/AutoComplete/CountryPicker; TableView(+Cells)/TreeView/DataGrid;
+> Scheduler (calendar+agenda); StaggeredGrid/CarouselGallery/ReorderableList; ImageViewer, ColorPicker,
+> FrostedGlassView, ChatView (no attachments).
+>
+> **Camera family (Wave 6) — core landed:** `SwiftDotNet.Controls.Camera` (`CameraView` CustomView +
+> `CameraAnalyzers` flags + `BarcodeFormat` + event grammar, buildable+tested), `.Camera.Apple`
+> (registration P/Invoke), `native/camera/CameraRenderer.swift` (AVFoundation preview + Vision
+> barcode/face/text, type-checked vs the iOS SDK). The Shiny `Camera.Barcode/.Face/.Ocr/.Motion` package
+> split is folded into one `CameraAnalyzers` flag set. Not runtime-verified — needs a device.
+>
+> **SKIPPED (per user — descoped from this plan):**
+> - **SignaturePad, ImageEditor** — need F8 (drawing canvas). Descoped.
+> - **MediaPickerButton, AddressEntry, ChatView attachments** — need F10 (platform services). Descoped.
+> - **Camera.Documents / Camera.Ai** (credit-card/business-card/AAMVA parsers) — descoped; barcode scanning
+>   is the camera-analysis scope kept.
+>
+> **STILL OPEN (not skipped, not yet done):**
+> - **VirtualizedGrid** — needs F7(d) true windowing (native lists already recycle; only C# build is O(n)).
+> - **ParallaxCollectionView** — needs F11 (scroll-offset geometry), which is deferred.
+> - **BorderlessEntry** — needs a clear/alpha background primitive.
+> - **FontPicker / FontSizePicker** — SwiftDotNet fonts are semantic tokens, not point sizes (needs a design call).
+> - **~8 remaining Cell types** — built 6 of 14 (Label/Switch/Button/Entry/Checkbox/Navigation); missing
+>   Radio, Command, Custom, SimpleCheck + the Date/Time/Number/Text/Duration picker cells.
+> - **Camera.Motion**, and the **Compose (CameraX) / WinUI** camera renderers (only the Swift renderer exists).
+>
+> **NEXT:** Skia backend focus (per user).
 
 Port the controls from `~/Desktop/dev/controls` into SwiftDotNet as a **separate control library**,
 mirroring the existing `SwiftDotNet.Maps` split exactly.

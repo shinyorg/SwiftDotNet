@@ -65,6 +65,19 @@ public class CameraTests
         Assert.Equal((0.25, 0.75), focus);
     }
 
+    [Theory]
+    [InlineData("VNBarcodeSymbologyQR", BarcodeFormat.QR)]
+    [InlineData("org.iso.QRCode", BarcodeFormat.QR)]
+    [InlineData("QR_CODE", BarcodeFormat.QR)]                 // ML Kit name
+    [InlineData("VNBarcodeSymbologyEAN13", BarcodeFormat.Ean13)]
+    [InlineData("VNBarcodeSymbologyCode128", BarcodeFormat.Code128)]
+    [InlineData("VNBarcodeSymbologyPDF417", BarcodeFormat.Pdf417)]
+    [InlineData("VNBarcodeSymbologyAztec", BarcodeFormat.Aztec)]
+    [InlineData("UPC_A", BarcodeFormat.UpcA)]
+    [InlineData("something-else", BarcodeFormat.Unknown)]
+    public void BarcodeFormat_MapsNativeSymbologyTokens(string raw, BarcodeFormat expected)
+        => Assert.Equal(expected, new DetectedBarcode("x", raw).Kind);
+
     static JsonElement Render(View view)
     {
         var bridge = new CamBridge();

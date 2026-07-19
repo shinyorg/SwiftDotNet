@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -440,7 +441,7 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                     // detectTransformGestures yields the incremental zoom; accumulate to the cumulative
                     // factor (1.0 = unchanged) the C# handler expects.
                     var scale = 1f
-                    androidx.compose.foundation.gestures.detectTransformGestures { _, _, zoom, _ ->
+                    detectTransformGestures { _, _, zoom, _ ->
                         scale *= zoom
                         SwiftDotNetBridge.emit(e, scale.toString())
                     }

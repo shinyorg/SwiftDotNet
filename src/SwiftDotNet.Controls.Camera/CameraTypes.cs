@@ -10,7 +10,11 @@ public enum CameraFlash { Off, On, Auto }
 public sealed record CameraPhoto(byte[] Data);
 
 /// <summary>A barcode/QR detected in the live preview (its decoded value and symbology).</summary>
-public sealed record DetectedBarcode(string Value, string Format);
+public sealed record DetectedBarcode(string Value, string Format)
+{
+    /// <summary>The symbology as a normalized <see cref="BarcodeFormat"/> (mapped from the native <see cref="Format"/> token).</summary>
+    public BarcodeFormat Kind => BarcodeFormats.Parse(Format);
+}
 
 /// <summary>Which live frame analyzers to run on the preview (native Vision / ML Kit).</summary>
 [Flags]

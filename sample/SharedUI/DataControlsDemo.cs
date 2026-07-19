@@ -42,9 +42,31 @@ public sealed class DataControlsDemo : View
         "Apple", "Apricot", "Banana", "Blueberry", "Cherry", "Grape", "Mango", "Orange", "Peach", "Pear",
     };
 
+    readonly State<bool> _notify = State(true);
+    readonly State<CameraFacing> _camera = State(CameraFacing.Back);
+
     public override View Body =>
         new ScrollView(
             new VStack(
+                new Text("Table (settings)").Font(Font.Headline),
+                new TableView(
+                    new TableSection("Account",
+                        Cell.Label("Name", "Allan Ritchie"),
+                        Cell.Switch("Notifications", _notify),
+                        Cell.Navigation("Privacy", new Text("Privacy detail").Padding(20))),
+                    new TableSection("Danger",
+                        Cell.Button("Delete account", () => Toast.Show("Deleted"), destructive: true))),
+
+                new Text("Image Viewer (tap)").Font(Font.Headline),
+                ImageViewer.FromUrl("https://picsum.photos/400/300").ThumbnailSize(120),
+
+                new Text("Camera").Font(Font.Headline),
+                new Text("Live preview on camera-capable backends; ⚠️ placeholder otherwise.").Font(Font.Caption),
+                new CameraView(_camera)
+                    .Analyze(CameraAnalyzers.Barcodes)
+                    .OnBarcode(b => Toast.Show($"{b.Kind}: {b.Value}"))
+                    .Frame(height: 200),
+
                 new Text("Scheduler").Font(Font.LargeTitle),
                 new SchedulerCalendarView(_month, _selected, Events),
                 new Text("Agenda").Font(Font.Headline),
