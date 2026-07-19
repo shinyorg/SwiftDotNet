@@ -32,7 +32,7 @@ public sealed class SkeletonView : View
 
             // A plain container (not a shape) so the gradient fills via the background decoration — shape
             // views fill with ForegroundColor and would paint over a background gradient.
-            var rect = new Group().Background(shimmer).CornerRadius(_cornerRadius);
+            var rect = new ZStack().Background(shimmer).CornerRadius(_cornerRadius);
             var sized = _width > 0 ? rect.Frame(_width, _height) : rect.Frame(height: _height);
             // Best-effort pulse: self-driving loops animate opacity on backends that support them (Web);
             // a static shimmer fill elsewhere still reads as a loading placeholder.

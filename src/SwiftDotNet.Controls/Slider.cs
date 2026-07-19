@@ -28,8 +28,8 @@ public sealed class Slider : View
         {
             var frac = _max > _min ? Math.Clamp((_value.Value - _min) / (_max - _min), 0, 1) : 0;
 
-            var track = new Group().Frame(_width, 4).Background(ControlPalette.Outline).CornerRadius(2);
-            var fill = new Group().Frame(Math.Max(0.001, frac * _width), 4).Background(_accent).CornerRadius(2);
+            var track = new ZStack().Frame(_width, 4).Background(ControlPalette.Outline).CornerRadius(2);
+            var fill = new ZStack().Frame(Math.Max(0.001, frac * _width), 4).Background(_accent).CornerRadius(2);
             var thumb = new Circle()
                 .Frame(24, 24)
                 .ForegroundColor(SwiftColor.Hex("#FFFFFF"))

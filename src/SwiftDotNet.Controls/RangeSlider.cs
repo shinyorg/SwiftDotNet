@@ -31,8 +31,8 @@ public sealed class RangeSlider : View
             var lo = Frac(_low.Value);
             var hi = Frac(_high.Value);
 
-            var track = new Group().Frame(_width, 4).Background(ControlPalette.Outline).CornerRadius(2);
-            var fill = new Group().Frame(Math.Max(0.001, (hi - lo) * _width), 4).Background(_accent).CornerRadius(2)
+            var track = new ZStack().Frame(_width, 4).Background(ControlPalette.Outline).CornerRadius(2);
+            var fill = new ZStack().Frame(Math.Max(0.001, (hi - lo) * _width), 4).Background(_accent).CornerRadius(2)
                 .Offset(lo * _width, 0);
             var lowThumb = Thumb(lo);
             var highThumb = Thumb(hi);

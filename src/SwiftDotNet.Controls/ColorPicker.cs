@@ -36,7 +36,7 @@ public sealed class ColorPicker : View
 
             // Plain containers fill via the background decoration; shape views fill via ForegroundColor
             // and would paint over a background gradient.
-            var bar = new Group()
+            var bar = new ZStack()
                 .Background(rainbow)
                 .Frame(_width, 24)
                 .CornerRadius(12)
@@ -54,7 +54,7 @@ public sealed class ColorPicker : View
                 .Border(ControlPalette.Outline, 2, cornerRadius: 11)
                 .Offset(thumbX - 11, 0);
 
-            var swatch = new Group()
+            var swatch = new ZStack()
                 .Frame(_width, 44)
                 .Background(SwiftColor.Hex(HsbToHex(_hue.Value, 1, 1)))
                 .CornerRadius(10)

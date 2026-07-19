@@ -19,7 +19,7 @@ public sealed class FrostedGlassView : View
     public FrostedGlassView Dark(bool dark = true) { _dark = dark; return this; }
 
     public override View Body =>
-        new Group(_content)
+        new ZStack(_content)
             .Padding(16)
             .Material(_style, _dark)
             .CornerRadius(_cornerRadius);
