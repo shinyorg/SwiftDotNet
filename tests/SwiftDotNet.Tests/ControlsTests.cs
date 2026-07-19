@@ -333,6 +333,40 @@ public class ControlsTests
         Assert.Contains(Walk(node), n => Text(n) == "05");   // 5 minutes
     }
 
+    // ---- collections: staggered / carousel / reorder ------------------------
+
+    [Fact]
+    public void StaggeredGrid_DistributesItemsAcrossColumns()
+    {
+        var node = Render(new StaggeredGrid(2,
+            new Text("a"), new Text("b"), new Text("c"), new Text("d")));
+        Assert.Equal("HStack", node.GetProperty("type").GetString());
+        Assert.Equal(2, node.GetProperty("children").GetArrayLength());     // two column stacks
+        foreach (var t in new[] { "a", "b", "c", "d" })
+            Assert.Contains(Walk(node), n => Text(n) == t);
+    }
+
+    [Fact]
+    public void CarouselGallery_LowersToPagedTabView()
+    {
+        var node = Render(new CarouselGallery(new State<int>(0), new Text("p1"), new Text("p2")));
+        Assert.Equal("TabView", node.GetProperty("type").GetString());
+        Assert.Equal("page", node.GetProperty("props").GetProperty("style").GetString());   // paged carousel
+    }
+
+    [Fact]
+    public void ReorderableList_DragMovesItem()
+    {
+        var items = new State<List<string>>(new List<string> { "A", "B", "C" });
+        var bridge = new CaptureBridge();
+        SwiftApp.Run(new ControlHost(new ReorderableList<string>(items, s => new Text(s)).RowHeight(50)), bridge);
+
+        var firstRow = Root(bridge.Json).GetProperty("children")[0];
+        bridge.Fire(DragEvent(firstRow), "e;0,100;0,0;0,0");   // drag row 0 down 100pt / 50 = 2 slots
+
+        Assert.Equal(new[] { "B", "C", "A" }, items.Value);
+    }
+
     // ---- helpers -------------------------------------------------------------
 
     static string DragEvent(JsonElement node) =>

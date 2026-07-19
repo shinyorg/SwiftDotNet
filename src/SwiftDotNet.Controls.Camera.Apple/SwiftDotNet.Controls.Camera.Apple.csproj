@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Apple (AVFoundation + Vision) renderer for the CameraView control. Companion to the pure-C#
+    SwiftDotNet.Controls.Camera, exactly mirroring SwiftDotNet.Maps.Apple: it carries the native
+    SwiftDotNetCamera.xcframework (built from native/camera/CameraRenderer.swift) and a tiny P/Invoke to
+    register it. Kept SEPARATE so AVFoundation/Vision are only linked by apps that opt into the camera.
+    Apple-only TFMs. (Requires the iOS/macOS workloads to build — not part of the headless build sweep.)
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.EndsWith('-ios'))">17.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.EndsWith('-maccatalyst'))">17.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Controls.Camera\SwiftDotNet.Controls.Camera.csproj" />
+  </ItemGroup>
+
+</Project>

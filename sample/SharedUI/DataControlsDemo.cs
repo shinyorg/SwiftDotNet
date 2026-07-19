@@ -13,6 +13,8 @@ public sealed class DataControlsDemo : View
     readonly State<Country?> _country = State<Country?>(null);
     readonly State<string> _fruit = State("");
     readonly State<TimeSpan> _duration = State(TimeSpan.FromMinutes(90));
+    readonly State<int> _carousel = State(0);
+    readonly State<List<string>> _tasks = State(new List<string> { "Buy milk", "Walk the dog", "Write code", "Sleep" });
     readonly State<string> _draft = State("");
     readonly State<List<ChatMessage>> _messages = State(new List<ChatMessage>
     {
@@ -54,6 +56,21 @@ public sealed class DataControlsDemo : View
                     new DataGridColumn<(string Name, string Role, int Age)>("Role", x => x.Role, 100),
                     new DataGridColumn<(string Name, string Role, int Age)>("Age", x => x.Age.ToString(), 60, x => x.Age)),
 
+                new Text("Staggered Grid").Font(Font.Headline),
+                new StaggeredGrid(2,
+                    Tile("A", Color.Red, 60), Tile("B", Color.Blue, 90),
+                    Tile("C", Color.Green, 100), Tile("D", Color.Accent, 50),
+                    Tile("E", Color.Hex("#FF9500"), 80)
+                ).ByHeight(i => new[] { 60.0, 90, 100, 50, 80 }[i]),
+
+                new Text("Carousel").Font(Font.Headline),
+                new CarouselGallery(_carousel,
+                    Tile("Page 1", Color.Red, 120), Tile("Page 2", Color.Green, 120), Tile("Page 3", Color.Blue, 120)
+                ).Height(150),
+
+                new Text("Reorderable (drag ≡)").Font(Font.Headline),
+                new ReorderableList<string>(_tasks, t => new Text(t)).RowHeight(48),
+
                 new Text("Country Picker").Font(Font.Headline),
                 new CountryPicker(_country),
 
@@ -74,4 +91,10 @@ public sealed class DataControlsDemo : View
                     })
             ).Spacing(14).Alignment(HorizontalAlignment.Leading)
         ).Padding(20).NavigationTitle("Data Controls");
+
+    static View Tile(string label, SwiftColor color, double height) =>
+        new ZStack(new Text(label).ForegroundColor(Color.Hex("#FFFFFF")))
+            .Frame(150, height)
+            .Background(color)
+            .CornerRadius(10);
 }

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The camera family core (Plan 2 Wave 6). Like SwiftDotNet.Maps: a pure-C# net10.0 package with the
+    CameraView (a CustomView) + wire types + the frame-analyzer enablement API. It only serializes props
+    and routes events, so it's referenceable from every head. The native live-preview + Vision/ML Kit
+    renderers live in the companion packages (SwiftDotNet.Controls.Camera.Apple + native/camera/*), exactly
+    as the Map renderers do. A backend with no camera renderer registered shows the ⚠️ placeholder.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

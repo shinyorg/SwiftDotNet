@@ -7,6 +7,16 @@ names the Plan-1 features (F1–F11) it needs; a wave cannot start before its fe
 
 ## Context
 
+> **Implementation status (2026-07-19):** `SwiftDotNet.Controls` is built out to **~35 controls** across
+> Waves 0–5 (all pure composites) — see [[swiftdotnet-controls-library]] in memory. **Wave 6 (Camera) core
+> landed:** `SwiftDotNet.Controls.Camera` (`CameraView` CustomView + analyzer flags + event grammar,
+> buildable+tested), `SwiftDotNet.Controls.Camera.Apple` (registration P/Invoke), and
+> `native/camera/CameraRenderer.swift` (AVFoundation preview + Vision barcode/face/text, type-checked
+> against the iOS SDK). Deviation from Shiny: the `Camera.Barcode/.Face/.Ocr/.Motion` package split is
+> folded into one `CameraAnalyzers` flag set (detection is native; only results cross the bridge). Not
+> runtime-verified — needs a real device/capture. **Skipped by the user:** SignaturePad/ImageEditor (F8
+> drawing), MediaPicker, ChatView attachments, AddressEntry. Still open: true windowed virtualization (F7d).
+
 Port the controls from `~/Desktop/dev/controls` into SwiftDotNet as a **separate control library**,
 mirroring the existing `SwiftDotNet.Maps` split exactly.
 

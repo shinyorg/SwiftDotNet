@@ -22,6 +22,7 @@
         <ProjectReference Include="..\..\src\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj"/>
         <!-- The ported controls library — pure composition over the core, driven headless in tests. -->
         <ProjectReference Include="..\..\src\SwiftDotNet.Controls\SwiftDotNet.Controls.csproj"/>
+        <ProjectReference Include="..\..\src\SwiftDotNet.Controls.Camera\SwiftDotNet.Controls.Camera.csproj"/>
     </ItemGroup>
 
 </Project>
