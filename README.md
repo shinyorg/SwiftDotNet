@@ -45,6 +45,20 @@ public sealed class ContentView : View
 }
 ```
 
+## Documentation
+
+Full docs live in **[`docs/`](docs/README.md)**. Quick links:
+
+- **[Getting Started](docs/getting-started.md)** · **[Architecture](docs/architecture.md)**
+- Authoring: **[Views & Controls](docs/views-and-controls.md)** ·
+  **[Modifiers, Gestures & Animation](docs/modifiers-gestures-animation.md)** ·
+  **[State & Binding](docs/state-and-binding.md)** · **[Collection View](docs/collection-view.md)** ·
+  **[Global Styles](docs/global-styles.md)** · **[Custom Controls](docs/custom-controls.md)**
+- Backends: **[Overview](docs/backends/README.md)** · [Apple](docs/backends/apple.md) ·
+  [Android](docs/backends/android.md) · [Linux/GTK](docs/backends/linux-gtk.md) ·
+  [Windows](docs/backends/windows.md) · [Web](docs/backends/web.md) · [Skia](docs/backends/skia.md)
+- **[Maps](docs/maps.md)** · **[Roadmap](docs/roadmap.md)**
+
 ## Custom controls
 
 Two ways to add your own control:
@@ -183,7 +197,7 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 | `src/SwiftDotNet.Skia` | `net10.0` | **Separate** (self-drawing engine; SkiaSharp on every neutral consumer). Pure-C# **SkiaSharp** backend — `SkiaBridge` keeps a retained scene tree and paints/measures/hit-tests it directly on an `SKCanvas`. Layout, HarfBuzz text, scrolling, overlays, input/focus, animation clock, `SkiaRenderers` registry. Host-agnostic via `ISkiaHost`. |
 | `native/SwiftDotNetBridge` | Swift | `Bridge.swift` + build script → `build/SwiftDotNetBridge.xcframework` (SwiftUI interpreter; 5 slices — iOS device/sim, tvOS device/sim, macOS) |
 | `native/SwiftDotNetComposeBridge` | Kotlin | `Bridge.kt` + Gradle → `build/SwiftDotNetComposeBridge.aar` (Jetpack Compose interpreter) |
-| `sample/SharedUI` | `net10.0` | The demo `ContentView` (5-tab tour) + composite `Rating` control — one file, shared by all apps |
+| `sample/SharedUI` | `net10.0` | The demo `ContentView` (MAUI-style flyout menu) + composite `Rating` control — one file, shared by all apps |
 | `sample/SampleApp` | **multi-target** | **One sample app**, multi-targeted like the library: `net10.0-android` always, `+ios;-macos;-tvos` on a Mac, `+windows` on Windows. `Platforms/{iOS,macOS,tvOS,Android,Windows}/` hold the thin per-OS entry points; the root view is registered once in `AppRoot.cs`. |
 | `sample/SampleApp.Gtk` | `net10.0` | Thin GTK app: references `SwiftDotNet.Gtk` (separate — no distinct TFM) |
 | `sample/SampleApp.Web` | `net10.0` (Blazor WASM) | Thin web app: hosts `<SwiftDotNetView Root="new ContentView()">` (separate — no distinct TFM) |
@@ -347,14 +361,17 @@ platforms; Windows is scaffolded pending a Windows build host:
 | Web | Chrome (Blazor WASM) | Real HTML/DOM, pure C# |
 | Windows | — | WinUI 3 backend scaffolded, not yet compiled |
 
-The demo exercises the whole vocabulary:
-- **Inputs** tab: TextField, SecureField, Slider, Stepper, Picker, DatePicker, ColorPicker, Toggle, + composite `Rating`.
-- **Layout** tab: Grid of shapes (color/frame/opacity), Divider, ZStack, HStack + SF Symbol Images/Label,
-  ProgressView, Gauge.
-- **Carousel** tab: paged `TabView` with page dots.
-- **Lists** tab: Form + Sections + List + DisclosureGroup + Menu.
-- **Nav** tab: NavigationStack + NavigationLink (push verified), Link, Sheet, Alert.
-- Interactions confirmed live on each backend: tab switching, navigation push, Menu action, and
+The demo is organized MAUI-Shell-style — a **flyout menu** (a grouped `Form` inside a `NavigationStack`)
+whose rows push detail pages — and exercises the whole vocabulary across seven sections:
+- **Controls**: Text & Input (TextField, SecureField, Toggle), Values & Steppers (Slider, Stepper, Picker,
+  DatePicker, ColorPicker), Rating (composite `Rating` + `.ScaleEffect`).
+- **Interaction**: Gestures (double-tap / long-press / swipe), Animation (spring height + opacity).
+- **Layout**: Shapes & Grid, Stacks & Alignment (SF Symbol Images/Label), Cards & Borders.
+- **Media**: Carousel (paged `TabView` with page dots), Indicators (ProgressView, Gauge), WebView, Maps.
+- **Data**: Lists & Selection (`List` + selection), Disclosure & Menus (DisclosureGroup + Menu).
+- **Styling**: Global Styles (environment cascade, reusable bundles, ambient control style, Theme).
+- **Navigation**: Sheets & Alerts — NavigationLink (push verified), Link, Sheet, Alert.
+- Interactions confirmed live on each backend: flyout navigation push/pop, Menu action, and
   Button/TextField/Toggle/Slider bindings — including the full **event → C# `State` → re-render** round-trip
   (e.g. tapping a star updates the composite `Rating` to "5/5" in the browser).
 - Diff engine + bool/text/value bindings verified deterministically via a Core test harness.

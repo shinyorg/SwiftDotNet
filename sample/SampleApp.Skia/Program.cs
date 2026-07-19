@@ -2,9 +2,13 @@ using SkiaSharp;
 using SwiftDotNet;
 using SwiftDotNet.Sample;
 
-// Headless harness: renders the SHARED ContentView (the same 6-tab tour every backend renders) through
-// the Skia self-drawing engine, writing PNGs. Exercises the full loop (tap → Emit → state → diff →
+// Headless harness: renders the SHARED ContentView (the same MAUI-style flyout every backend renders)
+// through the Skia self-drawing engine, writing PNGs. Exercises the full loop (tap → Emit → state → diff →
 // repaint), scrolling, and the overlays (sheet / alert / menu popover / nav push).
+//
+// The flyout is a NavigationStack("0") whose root Form("0.0") holds grouped Sections; each Section row is a
+// NavigationLink that pushes a detail page. Row ids are 0.0.{section}.{row}. Tapping a row pushes its page;
+// tapping the ‹ Back bar (top-left, within the 44pt nav bar) pops it.
 
 const int W = 440, H = 820;
 var outDir = args.Length > 0 ? args[0] : ".";
@@ -37,42 +41,57 @@ var bridge = new SkiaBridge();
 var host = new SkiaImageHost(bridge);
 SwiftApp.Run(view, bridge);
 
-float TabX(int i) => (i + 0.5f) * W / 6;
-const float BarY = H - 28;
-void Tab(int i) { host.RenderPng(W, H); host.Tap(TabX(i), BarY); host.RenderPng(W, H); }
-void TapId(string id) { if (bridge.TryGetFrame(id, out var f)) host.Tap(f.MidX, f.MidY); }
+void Render() => host.RenderPng(W, H);
 void Shot(string name) => host.RenderToFile(Path.Combine(outDir, name + ".png"), W, H);
+void TapId(string id) { if (bridge.TryGetFrame(id, out var f)) host.Tap(f.MidX, f.MidY); }
+void Back() { host.Tap(24, 22); Render(); }   // tap the ‹ Back bar (top-left of the 44pt nav bar) → pop
 
-string[] tabs = { "inputs", "layout", "carousel", "lists", "maps", "nav" };
-for (var i = 0; i < tabs.Length; i++) { Tab(i); Shot($"tab{i}_{tabs[i]}"); }
+// Push a flyout row's detail page by id, screenshot it, then pop back to the menu.
+void Page(string id, string name) { Render(); TapId(id); Shot(name); Back(); }
 
-// Scroll: reveal the lower half of the Layout tab.
-Tab(1);
-host.Scroll(W / 2, 300, 500);
-Shot("layout_scrolled");
+// The flyout menu itself.
+Render();
+Shot("flyout_menu");
 
-// Text editing: focus the Name field on the Inputs tab and type — the bound "Hello, {name}!" updates live.
-Tab(0);
-TapId("0.0.0.2");            // focus the Name TextField
-host.Type("Ada Lovelace");
-Shot("inputs_typed");
+// A page from each section (rows visible without scrolling: Controls, Interaction, Layout, Media).
+Page("0.0.0.1", "page_values");     // Controls → Values & Steppers
+Page("0.0.0.2", "page_rating");     // Controls → Rating
+Page("0.0.1.0", "page_gestures");   // Interaction → Gestures
+Page("0.0.2.0", "page_shapes");     // Layout → Shapes & Grid
+Page("0.0.3.0", "page_carousel");   // Media → Carousel
+Page("0.0.3.3", "page_maps");       // Media → Maps (uses the registered MapRenderer)
 
-// Overlays on the Nav tab. Node ids: TabView(0) → Tab(0.5) → Alert(0.5.0) → Sheet(0.5.0.0) →
-// NavigationStack(0.5.0.0.0) → Form(0.5.0.0.0.0) → [NavLink .0, "Present sheet" .1, "Show alert" .2, Link .3]
-Tab(5);
-TapId("0.5.0.0.0.0.1"); Shot("nav_sheet");      // present a sheet
-host.Tap(W / 2, 40);                             // tap scrim → dismiss
-host.RenderPng(W, H);
-TapId("0.5.0.0.0.0.2"); Shot("nav_alert");       // show an alert
-host.Tap(W / 2, 740);                             // tap scrim below the box → dismiss
-host.RenderPng(W, H);
-TapId("0.5.0.0.0.0.0"); Shot("nav_pushed");       // push details onto the nav stack
+// Text editing on a pushed page: push Controls → Text & Input (0.0.0.0), focus the Name field, type.
+// TextInputPage children: Title(0) Greeting(1) TextField(2)… → field id is <destination>.2 = 0.0.0.0.1.2.
+Render();
+TapId("0.0.0.0");                   // push the page
+Render();
+TapId("0.0.0.0.1.2");               // focus the Name TextField
+host.Type("Ada Lovelace");          // the bound "Hello, {name}!" greeting updates live
+Shot("page_text_typed");
+Back();
 
-// Menu popover on the Lists tab: Form(0.3.0) → Section(0.3.0.2) → Menu(0.3.0.2.0)
-Tab(3);
-TapId("0.3.0.2.0"); Shot("lists_menu");
+// The lower sections (Data, Styling, Navigation) — all fit on screen, so page straight into them.
+Page("0.0.4.0", "page_lists");      // Data → Lists & Selection
+Page("0.0.4.1", "page_disclosure"); // Data → Disclosure & Menus
+Page("0.0.5.0", "page_styles");     // Styling → Global Styles
 
-// (The Maps tab already uses the registered MapRenderer — see tab4_maps.png.)
+// Navigation page: push it and screenshot its Sheets & Alerts form. (Presenting the sheet/alert overlays
+// from *within* a pushed page is a real-SwiftUI feature the headless Skia overlay doesn't composite, so we
+// stop at the page itself — see the Skia.Mac window app to exercise it interactively.)
+Render();
+TapId("0.0.6.0"); Shot("page_nav"); // push Sheets & Alerts
+Back();                             // pop back to the menu before the next push
+
+// Animation page: push it, arm the spring panel, and settle a few frames so the interpolation is visible.
+Render();
+TapId("0.0.1.1");                   // Interaction → Animation
+Render();
+TapId("0.0.1.1.1.1");               // tap the Expand/Collapse button (ScrollView → Title(0), Button(1))
+Shot("page_animation_t0");
+host.Advance(0.12); Render(); Shot("page_animation_t1");
+host.Advance(0.60); Render(); Shot("page_animation_settled");
+
 Console.WriteLine("wrote all screenshots to " + Path.GetFullPath(outDir));
 
 /// <summary>A tiny screen whose panel animates (height + opacity) via .Animation(spring, on: state).</summary>
