@@ -262,7 +262,21 @@ sealed class WinNode
         var tabs = new TabView { IsAddTabButtonVisible = false, CanReorderTabs = false, CanDragTabs = false };
         foreach (var tab in Children)
             tabs.TabItems.Add(new TabViewItem { Header = tab.Str("title"), Content = tab.Element, IsClosable = false });
+        if (Props.ContainsKey("selectedIndex"))
+        {
+            tabs.SelectedIndex = (int)(Num("selectedIndex") ?? 0);
+            tabs.SelectionChanged += (_, _) => _bridge.Emit(Id, tabs.SelectedIndex.ToString());
+        }
         return tabs;
+    }
+
+    void SyncTabView()
+    {
+        if (Inner is TabView tv && Props.ContainsKey("selectedIndex"))
+        {
+            var idx = (int)(Num("selectedIndex") ?? 0);
+            if (tv.SelectedIndex != idx) tv.SelectedIndex = idx;
+        }
     }
 
     Button MakeMenu()
@@ -559,6 +573,7 @@ sealed class WinNode
             case "Toggle": if (((ToggleSwitch)Inner).IsOn != Bool("value")) ((ToggleSwitch)Inner).IsOn = Bool("value"); break;
             case "Slider": SyncSlider(); break;
             case "DisclosureGroup": ((Expander)Inner).IsExpanded = Bool("expanded"); break;
+            case "TabView": SyncTabView(); break;
             case "Sheet": SyncDialog(ref _sheet, sheet: true); break;
             case "Alert": SyncDialog(ref _alert, sheet: false); break;
             default: _customRenderer?.Update(Inner, RenderCtx()); break;

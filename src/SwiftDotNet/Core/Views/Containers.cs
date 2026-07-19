@@ -133,14 +133,32 @@ public sealed class TabView : View
 {
     readonly View[] _tabs;
     bool _paged;
+    State<int>? _selectedIndex;
+    bool _hidePageIndicator;
 
     public TabView(params View[] tabs) => _tabs = tabs;
+
+    /// <summary>Render as a swipeable carousel (paged) rather than a tab bar.</summary>
     public TabView Paged() { _paged = true; return this; }
+
+    /// <summary>Two-way binding of the current tab/page. Assign the state to switch pages programmatically;
+    /// it updates when the user selects a tab or swipes the carousel.</summary>
+    public TabView SelectedIndex(State<int> index) { _selectedIndex = index; return this; }
+
+    /// <summary>Hide the paged carousel's page-indicator dots.</summary>
+    public TabView HidePageIndicator() { _hidePageIndicator = true; return this; }
 
     internal override Node BuildNode(RenderContext ctx, string path)
     {
         var node = ctx.NewNode("TabView", path);
         if (_paged) node.Props["style"] = "page";
+        if (_hidePageIndicator) node.Props["pageIndicator"] = false;
+        if (_selectedIndex is not null)
+        {
+            node.Props["selectedIndex"] = (double)_selectedIndex.Value;
+            // Host emits the newly selected index as the value; map it back to the bound state.
+            ctx.RegisterAction(node.Id, val => { if (int.TryParse(val, out var i)) _selectedIndex.Value = i; });
+        }
         NodeBuilder.AddChildren(node, _tabs, ctx, path);
         return node;
     }

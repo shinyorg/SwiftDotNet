@@ -276,7 +276,21 @@ sealed class GtkNode
         var notebook = Gtk.Notebook.New();
         foreach (var tab in Children) // each is a Tab node
             notebook.AppendPage(tab.Widget, Gtk.Label.New(tab.Str("title")));
+        if (Props.ContainsKey("selectedIndex"))
+        {
+            notebook.Page = (int)(Num("selectedIndex") ?? 0);
+            notebook.OnSwitchPage += (_, args) => _bridge.Emit(Id, ((int)args.PageNum).ToString());
+        }
         return notebook;
+    }
+
+    void SyncTabView()
+    {
+        if (Widget is Gtk.Notebook nb && Props.ContainsKey("selectedIndex"))
+        {
+            var idx = (int)(Num("selectedIndex") ?? 0);
+            if (nb.Page != idx) nb.Page = idx;
+        }
     }
 
     Gtk.Widget MakeMenu()
@@ -617,6 +631,7 @@ sealed class GtkNode
             case "Sheet": SyncSheet(); break;
             case "Alert": SyncAlert(); break;
             case "DisclosureGroup": ((Gtk.Expander)Widget).SetExpanded(Bool("expanded")); break;
+            case "TabView": SyncTabView(); break;
             default: _customRenderer?.Update(Widget, RenderCtx()); break;
         }
 

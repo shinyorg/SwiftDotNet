@@ -66,6 +66,7 @@ sealed partial class SkiaNode
         if (node.Type == "NavigationStack") bridge.NavStack.Pop();
 
         if (!IsBuiltIn(node.Type)) node._custom = SkiaRenderers.Get(node.Type);
+        node.SyncTabIndex();
         return node;
     }
 
@@ -73,6 +74,21 @@ sealed partial class SkiaNode
     {
         Props = ReadDict(props);
         Modifiers = ReadDictArray(modifiers);
+        SyncTabIndex();
+    }
+
+    /// <summary>When a TabView's selected index is bound, C# state is the source of truth: mirror it into
+    /// the engine-local index so a programmatic change switches the page.</summary>
+    void SyncTabIndex()
+    {
+        if (Type == "TabView" && Props.GetValueOrDefault("selectedIndex") is double d)
+            _tabIndex = Math.Max(0, (int)d);
+    }
+
+    /// <summary>Report a user-driven tab/page change back to C# when the index is bound.</summary>
+    void EmitTabIndexIfBound()
+    {
+        if (HasProp("selectedIndex")) _bridge.Emit(Id, _tabIndex.ToString(CultureInfo.InvariantCulture));
     }
 
     public void SetChildren(JsonElement children)
@@ -675,6 +691,7 @@ sealed partial class SkiaNode
                 {
                     var idx = (int)((p.X - _content.Left) / (_content.Width / n));
                     _tabIndex = Math.Clamp(idx, 0, n - 1);
+                    EmitTabIndexIfBound();
                 }
                 return true;
             }
@@ -683,6 +700,7 @@ sealed partial class SkiaNode
                 _tabIndex = p.X < _content.MidX
                     ? Math.Max(0, _tabIndex - 1)
                     : Math.Min(Children.Count - 1, _tabIndex + 1);
+                EmitTabIndexIfBound();
                 return true;
             }
             return _tabIndex < Children.Count && Children[_tabIndex].HitTest(p);

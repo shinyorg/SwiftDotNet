@@ -246,8 +246,11 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
 
     void TabView(RenderTreeBuilder b, WebNode n)
     {
-        var selected = _tab.GetValueOrDefault(n.Id);
-        if (selected >= n.Children.Count) selected = 0;
+        // When SelectedIndex is bound, C# state drives the selection (and clicks emit back); otherwise the
+        // selection is engine-local in _tab.
+        var bound = n.Props.ContainsKey("selectedIndex");
+        var selected = bound ? (int)(n.N("selectedIndex") ?? 0) : _tab.GetValueOrDefault(n.Id);
+        if (selected >= n.Children.Count || selected < 0) selected = 0;
 
         b.OpenElement(_seq++, "div");
         Style(b, n, "display:flex;flex-direction:column;");
@@ -261,7 +264,11 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
             b.OpenElement(_seq++, "button");
             b.AddAttribute(_seq++, "style", "cursor:pointer;padding:6px 14px;border-radius:14px;border:none;" +
                 (i == selected ? "background:#007AFF;color:#fff;" : "background:transparent;"));
-            b.AddAttribute(_seq++, "onclick", EventCallback.Factory.Create(this, () => { _tab[n.Id] = idx; StateHasChanged(); }));
+            b.AddAttribute(_seq++, "onclick", EventCallback.Factory.Create(this, () =>
+            {
+                if (bound) _bridge.Emit(n.Id, idx.ToString());
+                else { _tab[n.Id] = idx; StateHasChanged(); }
+            }));
             b.AddContent(_seq++, WebStyle.Emoji(tab.S("systemImage")) + " " + tab.S("title"));
             b.CloseElement();
         }

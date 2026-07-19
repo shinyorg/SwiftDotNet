@@ -351,7 +351,11 @@ struct NodeView: View {
         case "Section":
             sectionView
         case "TabView":
-            tabView
+            if node.props["selectedIndex"] != nil {
+                SelectableTabView(node: node)
+            } else {
+                tabView
+            }
         case "Tab":
             tabContent
         case "Menu":
@@ -618,6 +622,47 @@ struct ToggleNode: View {
             .onChange(of: node.props["value"]?.bool ?? false) { _, incoming in
                 if incoming != isOn { isOn = incoming }
             }
+    }
+}
+
+/// A TabView with a two-way selected-index binding (SwiftDotNet `TabView.SelectedIndex`). Mirrors the
+/// bound index into SwiftUI's own selection and reports user swipes/taps back to C#.
+struct SelectableTabView: View {
+    let node: VNode
+    @State private var selection = 0
+
+    private var boundIndex: Int { Int(node.props["selectedIndex"]?.number ?? 0) }
+
+    var body: some View {
+        tabViewBody
+            .onAppear { selection = boundIndex }
+            .onChange(of: selection) { _, v in emitEvent(node.id, String(v)) }
+            .onChange(of: boundIndex) { _, incoming in
+                if incoming != selection { selection = incoming }
+            }
+    }
+
+    @ViewBuilder
+    private var tabViewBody: some View {
+        let content = SwiftUI.TabView(selection: $selection) {
+            ForEach(Array(node.children.enumerated()), id: \.offset) { idx, child in
+                NodeView(node: child).tag(idx)
+            }
+        }
+        #if os(macOS) || os(tvOS)
+        content   // PageTabViewStyle is unavailable on macOS/tvOS
+        #else
+        if node.props["style"]?.string == "page" {
+            if node.props["pageIndicator"]?.bool == false {
+                content.tabViewStyle(.page(indexDisplayMode: .never))
+            } else {
+                content.tabViewStyle(.page(indexDisplayMode: .always))
+                    .indexViewStyle(.page(backgroundDisplayMode: .always))
+            }
+        } else {
+            content
+        }
+        #endif
     }
 }
 

@@ -28,6 +28,9 @@ public sealed class ContentView : View
     readonly State<bool> _expanded = State(false);
     readonly State<string?> _selectedFruit = new(null);
 
+    // Carousel
+    readonly State<int> _carouselPage = State(0);
+
     // Nav
     readonly State<bool> _sheet = State(false);
     readonly State<bool> _alert = State(false);
@@ -171,13 +174,23 @@ public sealed class ContentView : View
              .Shadow(10, Color.Blue, y: 4)
         ).Padding(20);
 
+    static readonly string[] CardLabels = { "① Swipe me", "② Real SwiftUI", "③ Paged TabView", "④ From C#" };
+
     View CarouselTab() =>
-        new TabView(
-            Card("① Swipe me", Color.Red),
-            Card("② Real SwiftUI", Color.Green),
-            Card("③ Paged TabView", Color.Blue),
-            Card("④ From C#", Color.Accent)
-        ).Paged();
+        new VStack(
+            new Text($"Page {_carouselPage.Value + 1} of {CardLabels.Length}")
+                .Font(Font.Headline),
+            new TabView(
+                Card(CardLabels[0], Color.Red),
+                Card(CardLabels[1], Color.Green),
+                Card(CardLabels[2], Color.Blue),
+                Card(CardLabels[3], Color.Accent)
+            ).Paged().SelectedIndex(_carouselPage),
+            new HStack(
+                new Button("◀ Prev", () => _carouselPage.Value = Math.Max(0, _carouselPage.Value - 1)),
+                new Button("Next ▶", () => _carouselPage.Value = Math.Min(CardLabels.Length - 1, _carouselPage.Value + 1))
+            ).Spacing(24)
+        ).Spacing(12).Padding(16);
 
     static View Card(string title, SwiftColor color) =>
         new ZStack(

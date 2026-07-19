@@ -387,7 +387,8 @@ sealed partial class SkiaNode
     {
         if (Paged)
         {
-            // page dots
+            // page dots (hidden when .HidePageIndicator() sets pageIndicator=false)
+            if (HasProp("pageIndicator") && !Bool("pageIndicator")) return;
             var n = Children.Count;
             var cy = _content.Bottom - 14;
             var spacing = 16f;
