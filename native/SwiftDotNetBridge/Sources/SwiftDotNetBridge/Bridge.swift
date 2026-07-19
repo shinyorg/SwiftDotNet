@@ -54,6 +54,10 @@ struct ModifierData: Decodable, Equatable {
     let trigger: String?
     let stiffness: Double?
     let damping: Double?
+    let gradient: String?      // F5: Brush wire string on a `background` modifier
+    let degrees: Double?       // F4: rotation
+    let repeatCount: Double?   // F4: looping animation (-1 = forever)
+    let autoreverse: String?   // F4: "true"/"false"
 }
 
 final class WireNode: Decodable {
@@ -178,6 +182,55 @@ private func colorFor(_ token: String?) -> SwiftUI.Color? {
     }
 }
 
+// Cross-platform bitmap type so the raster Image path compiles on UIKit (iOS/tvOS) and AppKit (macOS).
+#if canImport(UIKit)
+typealias PlatformImage = UIKit.UIImage
+extension SwiftUI.Image { init(platformImage: UIImage) { self.init(uiImage: platformImage) } }
+#elseif canImport(AppKit)
+typealias PlatformImage = AppKit.NSImage
+extension SwiftUI.Image { init(platformImage: NSImage) { self.init(nsImage: platformImage) } }
+#endif
+
+// F5: parse a Brush wire string ("linear:<deg>:<c>@<loc>;…" / "radial:<c>@<loc>;…") into a SwiftUI gradient.
+private func gradientFor(_ spec: String) -> AnyShapeStyle? {
+    let firstColon = spec.firstIndex(of: ":")
+    guard let firstColon else { return nil }
+    let kind = String(spec[spec.startIndex..<firstColon])
+    let rest = String(spec[spec.index(after: firstColon)...])
+
+    func parseStops(_ s: String) -> [Gradient.Stop]? {
+        let items = s.split(separator: ";")
+        guard !items.isEmpty else { return nil }
+        var stops: [Gradient.Stop] = []
+        for item in items {
+            guard let at = item.lastIndex(of: "@") else { return nil }
+            let colorTok = String(item[item.startIndex..<at])
+            let loc = Double(item[item.index(after: at)...]) ?? 0
+            stops.append(.init(color: colorFor(colorTok) ?? .clear, location: loc))
+        }
+        return stops
+    }
+
+    if kind == "linear" {
+        guard let secondColon = rest.firstIndex(of: ":") else { return nil }
+        let angle = Double(rest[rest.startIndex..<secondColon]) ?? 90
+        guard let stops = parseStops(String(rest[rest.index(after: secondColon)...])) else { return nil }
+        // Map angle (0° = leading→trailing, 90° = top→bottom) onto SwiftUI's unit points.
+        let rad = angle * .pi / 180
+        let sx = 0.5 - cos(rad) * 0.5, sy = 0.5 - sin(rad) * 0.5
+        let ex = 0.5 + cos(rad) * 0.5, ey = 0.5 + sin(rad) * 0.5
+        return AnyShapeStyle(LinearGradient(gradient: Gradient(stops: stops),
+                                            startPoint: UnitPoint(x: sx, y: sy),
+                                            endPoint: UnitPoint(x: ex, y: ey)))
+    }
+    if kind == "radial" {
+        guard let stops = parseStops(rest) else { return nil }
+        return AnyShapeStyle(RadialGradient(gradient: Gradient(stops: stops),
+                                            center: .center, startRadius: 0, endRadius: 200))
+    }
+    return nil
+}
+
 private func hexString(from color: SwiftUI.Color) -> String {
     #if canImport(UIKit)
     let ui = UIColor(color)
@@ -253,7 +306,11 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
         case "foregroundColor":
             out = AnyView(out.foregroundColor(colorFor(m.value)))
         case "background":
-            out = AnyView(out.background(colorFor(m.value) ?? .clear))
+            if let spec = m.gradient, let g = gradientFor(spec) {
+                out = AnyView(out.background(g))
+            } else {
+                out = AnyView(out.background(colorFor(m.value) ?? .clear))
+            }
         case "frame":
             out = AnyView(out.frame(width: m.width.map { CGFloat($0) },
                                     height: m.height.map { CGFloat($0) },
@@ -274,10 +331,24 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
             out = AnyView(out.opacity(m.amount ?? 1))
         case "scaleEffect":
             out = AnyView(out.scaleEffect(x: CGFloat(m.x ?? 1), y: CGFloat(m.y ?? 1), anchor: unitPointFor(m.value)))
+        case "offset":
+            out = AnyView(out.offset(x: CGFloat(m.x ?? 0), y: CGFloat(m.y ?? 0)))
+        case "rotation":
+            out = AnyView(out.rotationEffect(.degrees(m.degrees ?? 0), anchor: unitPointFor(m.value)))
         case "animation":
-            // Re-arms whenever the trigger (stringified `on:` value) changes; SwiftUI interpolates the
-            // animatable modifiers applied earlier in the chain to their new values.
-            out = AnyView(out.animation(animationFor(m), value: m.trigger ?? ""))
+            if let rc = m.repeatCount {
+                // Self-playing repeat (shimmer/pulse): a repeatForever/repeatCount animation keyed to a
+                // constant so it starts on appear rather than waiting for an external trigger.
+                let autorev = m.autoreverse == "true"
+                let base = animationFor(m)
+                let anim = rc < 0 ? base.repeatForever(autoreverses: autorev)
+                                  : base.repeatCount(Int(rc), autoreverses: autorev)
+                out = AnyView(out.animation(anim, value: true))
+            } else {
+                // Re-arms whenever the trigger (stringified `on:` value) changes; SwiftUI interpolates the
+                // animatable modifiers applied earlier in the chain to their new values.
+                out = AnyView(out.animation(animationFor(m), value: m.trigger ?? ""))
+            }
         case "disabled":
             out = AnyView(out.disabled(m.value == "true"))
         case "navigationTitle":
@@ -305,11 +376,50 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
                 }
                 if matched { emitEvent(event) }
             }))
+        case "onDrag":
+            // F1 continuous drag → "<phase>;tx,ty;lx,ly;vx,vy". SwiftUI's DragGesture has no began phase,
+            // so the first onChanged is reported as begin via a per-gesture flag.
+            let event = m.event
+            let minDist = m.amount ?? 0
+            out = AnyView(out.modifier(DragEmitter(event: event, minimumDistance: minDist)))
+        case "onMagnify":
+            let event = m.event
+            out = AnyView(out.gesture(MagnificationGesture().onChanged { scale in
+                if let event { emitEvent(event, String(format: "%f", scale)) }
+            }.onEnded { scale in
+                if let event { emitEvent(event, String(format: "%f", scale)) }
+            }))
         default:
             break
         }
     }
     return out
+}
+
+// F1: bridges SwiftUI's phaseless DragGesture to the began/changed/ended grammar the C# side parses.
+private struct DragEmitter: ViewModifier {
+    let event: String?
+    let minimumDistance: Double
+    @State private var active = false
+
+    func body(content: Content) -> some View {
+        content.gesture(DragGesture(minimumDistance: minimumDistance)
+            .onChanged { g in
+                guard let event else { return }
+                let phase = active ? "c" : "b"
+                active = true
+                emitEvent(event, grammar(phase, g.translation, g.location, g.velocity))
+            }
+            .onEnded { g in
+                guard let event else { return }
+                emitEvent(event, grammar("e", g.translation, g.location, g.velocity))
+                active = false
+            })
+    }
+
+    private func grammar(_ phase: String, _ t: CGSize, _ l: CGPoint, _ v: CGSize) -> String {
+        String(format: "%@;%f,%f;%f,%f;%f,%f", phase, t.width, t.height, l.x, l.y, v.width, v.height)
+    }
 }
 
 // MARK: - Interpreter: VNode tree → real SwiftUI
@@ -391,7 +501,7 @@ struct NodeView: View {
         case "WebView":
             WebViewNode(node: node)
         case "Image":
-            SwiftUI.Image(systemName: str("system"))
+            rasterImage
         case "Label":
             SwiftUI.Label(str("title"), systemImage: str("systemImage"))
         case "ProgressView":
@@ -422,6 +532,23 @@ struct NodeView: View {
     private func str(_ key: String) -> String { node.props[key]?.string ?? "" }
     private func num(_ key: String) -> Double? { node.props[key]?.number }
     private var spacing: CGFloat? { node.props["spacing"]?.number.map { CGFloat($0) } }
+    private func has(_ key: String) -> Bool { !(node.props[key]?.string ?? "").isEmpty }
+
+    // F3 raster: a real image from url / file / bytes, or an SF Symbol fallback. contentMode fit=fit, fill=fill.
+    @ViewBuilder
+    private var rasterImage: some View {
+        let mode: ContentMode = str("contentMode") == "fill" ? .fill : .fit
+        if has("url"), let url = URL(string: str("url")) {
+            AsyncImage(url: url) { img in img.resizable().aspectRatio(contentMode: mode) }
+                placeholder: { ProgressView() }
+        } else if has("bytes"), let data = Data(base64Encoded: str("bytes")), let ui = PlatformImage(data: data) {
+            SwiftUI.Image(platformImage: ui).resizable().aspectRatio(contentMode: mode)
+        } else if has("file"), let ui = PlatformImage(contentsOfFile: str("file")) {
+            SwiftUI.Image(platformImage: ui).resizable().aspectRatio(contentMode: mode)
+        } else {
+            SwiftUI.Image(systemName: str("system"))
+        }
+    }
 
     @ViewBuilder
     private var childViews: some View {

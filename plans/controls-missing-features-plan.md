@@ -5,6 +5,30 @@
 **Companion:** [Plan 2 — the controls library itself](controls-library-plan.md). This plan lands the
 framework primitives **first**; Plan 2 builds the controls on top.
 
+## Implementation status (2026-07-19)
+
+**Wave A is implemented** — F1–F5 landed across Core and every backend, with 17 new tests
+(`tests/SwiftDotNet.Tests/WaveAFeatureTests.cs`, 49 total green).
+
+| Feature | Core | GTK | Web | Skia | SwiftUI | Compose | WinUI |
+|---|---|---|---|---|---|---|---|
+| F5 gradients | ✅ | ✅ | ✅ | ✅ | ✅¹ | ✅² | ✅² |
+| F4 transforms + loop-anim | ✅ | ➖³ | ✅ | ✅ | ✅¹ | ✅² | ✅² |
+| F3 raster images | ✅ | ✅ | ✅ | ✅ | ✅¹ | ✅² | ✅² |
+| F1 drag/pan + pinch | ✅ | ✅ | ✅⁴ | ✅⁵ | ✅¹ | ✅² | ✅² |
+| F2 overlay host + service | ✅⁶ | ✅⁶ | ✅⁶ | ✅⁶ | ✅⁶ | ✅⁶ | ✅⁶ |
+
+¹ Swift shim `typecheck`-verified against the macOS + iOS SDKs (xcframework not rebuilt here).
+² Compose/WinUI written to match; not compilable on this Mac (no Android SDK / Windows) — the repo's
+standing constraint. ³ GTK4 has no per-widget affine transform → documented no-op (mirrors `scaleEffect`);
+gradients work. ⁴ Web drag lands; multi-pointer pinch is a follow-up. ⁵ Skia exposes
+`SkiaHost.Drag/Magnify`; each Skia host still wires its raw pointer stream to them. ⁶ **F2 is pure
+composition** (`OverlayHost` lowers to `ZStack`+`Rectangle`+gesture) so it needs **zero backend code** —
+`Overlay.Present/Dismiss/DismissAll` + `new OverlayHost(new ContentView())`.
+
+Deferred to later waves (unchanged from below): **F6** blur, **F7** collection upgrades, **F8** drawing
+canvas, **F9** focus/keyboard, **F10** services, **F11** geometry.
+
 ## Context
 
 The goal is a **separate control library** that ports the controls from `~/Desktop/dev/controls`

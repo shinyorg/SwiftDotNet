@@ -24,6 +24,13 @@ public static class ViewModifiers
         return view;
     }
 
+    /// <summary>Fills the view's background with a gradient <see cref="Brush"/> (<c>LinearGradient</c>/<c>RadialGradient</c>).</summary>
+    public static T Background<T>(this T view, Brush brush) where T : View
+    {
+        view.Modifiers.Add(new BackgroundModifier(brush));
+        return view;
+    }
+
     public static T Padding<T>(this T view, double all = 16) where T : View
     {
         view.Modifiers.Add(new PaddingModifier(all));
@@ -101,6 +108,20 @@ public static class ViewModifiers
         return view;
     }
 
+    /// <summary>Shifts the view by <paramref name="x"/>/<paramref name="y"/> points without affecting layout (mirrors <c>.offset(x:y:)</c>).</summary>
+    public static T Offset<T>(this T view, double x = 0, double y = 0) where T : View
+    {
+        view.Modifiers.Add(new OffsetModifier(x, y));
+        return view;
+    }
+
+    /// <summary>Rotates the view by <paramref name="degrees"/> around <paramref name="anchor"/> (mirrors <c>.rotationEffect(.degrees(_:))</c>).</summary>
+    public static T Rotation<T>(this T view, double degrees, Alignment anchor = Alignment.Center) where T : View
+    {
+        view.Modifiers.Add(new RotationModifier(degrees, anchor.Token()));
+        return view;
+    }
+
     /// <summary>
     /// Animates this view's animatable modifiers (opacity, scale, frame, offset, color) whenever the
     /// <paramref name="on"/> value changes — mirrors SwiftUI's <c>.animation(_:value:)</c>. Pass the state
@@ -146,6 +167,28 @@ public static class ViewModifiers
     public static T OnSwipe<T>(this T view, SwipeDirection direction, Action action) where T : View
     {
         view.Modifiers.Add(new OnSwipeModifier(action, direction.Token()));
+        return view;
+    }
+
+    /// <summary>
+    /// F1 — a continuous drag/pan gesture. <paramref name="handler"/> fires on began/changed/ended with the
+    /// cumulative translation, current location, and release velocity (mirrors SwiftUI's <c>DragGesture</c>).
+    /// Each event modifier gets its own event id, so a view may carry both <c>OnDrag</c> and <c>OnMagnify</c>
+    /// (e.g. a pinch-and-pan zoomable image).
+    /// </summary>
+    public static T OnDrag<T>(this T view, Action<DragInfo> handler, double minimumDistance = 0) where T : View
+    {
+        view.Modifiers.Add(new OnDragModifier(handler, minimumDistance));
+        return view;
+    }
+
+    /// <summary>
+    /// F1 — a continuous pinch/magnify gesture. <paramref name="handler"/> fires with the cumulative scale
+    /// factor (1.0 = unchanged) as the pinch updates (mirrors SwiftUI's <c>MagnificationGesture</c>).
+    /// </summary>
+    public static T OnMagnify<T>(this T view, Action<double> handler) where T : View
+    {
+        view.Modifiers.Add(new OnMagnifyModifier(handler));
         return view;
     }
 }

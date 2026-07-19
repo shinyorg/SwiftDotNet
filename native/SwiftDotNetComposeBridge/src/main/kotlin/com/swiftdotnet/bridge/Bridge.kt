@@ -38,7 +38,11 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
@@ -180,6 +184,75 @@ private fun colorFor(token: String?): Color? = when {
     else -> null
 }
 
+// F5: parse a Brush wire string into a Compose gradient Brush ("linear:<deg>:<c>@<loc>;…" / "radial:…").
+private fun gradientBrushFor(spec: String): Brush? {
+    val firstColon = spec.indexOf(':')
+    if (firstColon < 0) return null
+    val kind = spec.substring(0, firstColon)
+    val rest = spec.substring(firstColon + 1)
+
+    fun parseStops(s: String): Array<Pair<Float, Color>>? {
+        val items = s.split(';').filter { it.isNotEmpty() }
+        if (items.isEmpty()) return null
+        return items.map {
+            val at = it.lastIndexOf('@')
+            if (at < 0) return null
+            val color = colorFor(it.substring(0, at)) ?: Color.Transparent
+            val loc = it.substring(at + 1).toFloatOrNull() ?: 0f
+            loc to color
+        }.toTypedArray()
+    }
+
+    return when (kind) {
+        "linear" -> {
+            val secondColon = rest.indexOf(':')
+            if (secondColon < 0) return null
+            val angle = rest.substring(0, secondColon).toDoubleOrNull() ?: 90.0
+            val stops = parseStops(rest.substring(secondColon + 1)) ?: return null
+            val rad = angle * Math.PI / 180.0
+            // Large finite endpoints approximate the sweep direction (Compose gradients take pixel points).
+            val dx = (Math.cos(rad) * 1000).toFloat()
+            val dy = (Math.sin(rad) * 1000).toFloat()
+            Brush.linearGradient(
+                colorStops = stops,
+                start = androidx.compose.ui.geometry.Offset(500f - dx / 2, 500f - dy / 2),
+                end = androidx.compose.ui.geometry.Offset(500f + dx / 2, 500f + dy / 2),
+            )
+        }
+        "radial" -> {
+            val stops = parseStops(rest) ?: return null
+            Brush.radialGradient(colorStops = stops)
+        }
+        else -> null
+    }
+}
+
+// F3 raster: decode bytes/file into a Bitmap and show it; an SF-Symbol name falls back to an emoji glyph.
+// (Remote URLs need an async image loader like Coil, not a bridge dependency — documented gap on Android.)
+@Composable
+private fun RasterImage(node: VNode) {
+    val scale = if (node.s("contentMode") == "fill") ContentScale.Crop else ContentScale.Fit
+    val bytesProp = node.s("bytes")
+    val fileProp = node.s("file")
+    val bitmap = remember(bytesProp, fileProp) {
+        runCatching {
+            when {
+                bytesProp.isNotEmpty() -> {
+                    val bytes = android.util.Base64.decode(bytesProp, android.util.Base64.DEFAULT)
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }
+                fileProp.isNotEmpty() -> android.graphics.BitmapFactory.decodeFile(fileProp)
+                else -> null
+            }
+        }.getOrNull()
+    }
+    if (bitmap != null) {
+        Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, contentScale = scale)
+    } else {
+        Text(emojiFor(node.s("system")), fontSize = 22.sp)
+    }
+}
+
 private fun textStyleFor(token: String?): TextStyle? = when (token) {
     "largeTitle" -> TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold)
     "title" -> TextStyle(fontSize = 28.sp)
@@ -263,7 +336,11 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                 (mod["alignment"] as? String)?.let { boxAlignment = boxAlignmentFor(it) }
             }
             "align" -> { m = m.fillMaxWidth(); boxAlignment = boxAlignmentFor(mod["value"] as? String) }
-            "background" -> colorFor(mod["value"] as? String)?.let { m = m.background(it) }
+            "background" -> {
+                val grad = (mod["gradient"] as? String)?.let { gradientBrushFor(it) }
+                if (grad != null) m = m.background(grad)
+                else colorFor(mod["value"] as? String)?.let { m = m.background(it) }
+            }
             "cornerRadius" -> m = m.clip(RoundedCornerShape((numOf(mod["radius"]) ?: 0.0).dp))
             "border" -> m = m.border(
                 (numOf(mod["width"]) ?: 1.0).dp,
@@ -284,6 +361,21 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                 m = m.graphicsLayer(
                     scaleX = (numOf(mod["x"]) ?: 1.0).toFloat(),
                     scaleY = (numOf(mod["y"]) ?: 1.0).toFloat(),
+                    transformOrigin = TransformOrigin(fx, fy),
+                )
+            }
+            "offset" -> m = m.offset(
+                x = (numOf(mod["x"]) ?: 0.0).dp,
+                y = (numOf(mod["y"]) ?: 0.0).dp,
+            )
+            "rotation" -> {
+                val t = mod["value"] as? String
+                val fx = if (t == "leading" || t == "topLeading" || t == "bottomLeading") 0f
+                         else if (t == "trailing" || t == "topTrailing" || t == "bottomTrailing") 1f else 0.5f
+                val fy = if (t == "top" || t == "topLeading" || t == "topTrailing") 0f
+                         else if (t == "bottom" || t == "bottomLeading" || t == "bottomTrailing") 1f else 0.5f
+                m = m.graphicsLayer(
+                    rotationZ = (numOf(mod["degrees"]) ?: 0.0).toFloat(),
                     transformOrigin = TransformOrigin(fx, fy),
                 )
             }
@@ -318,6 +410,31 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                             if (matched && (abs(dx) > 40f || abs(dy) > 40f)) SwiftDotNetBridge.emit(e, null)
                         },
                     )
+                }
+            }
+            "onDrag" -> (mod["event"] as? String)?.let { e ->
+                // F1 continuous drag → "<phase>;tx,ty;lx,ly;vx,vy". Compose gives per-event position; the
+                // cumulative translation is tracked here. Velocity isn't tracked, sent as 0.
+                m = m.pointerInput(e) {
+                    var tx = 0f; var ty = 0f; var lx = 0f; var ly = 0f
+                    detectDragGestures(
+                        onDragStart = { pos -> tx = 0f; ty = 0f; lx = pos.x; ly = pos.y
+                            SwiftDotNetBridge.emit(e, "b;0,0;$lx,$ly;0,0") },
+                        onDrag = { change, drag -> tx += drag.x; ty += drag.y; lx = change.position.x; ly = change.position.y
+                            SwiftDotNetBridge.emit(e, "c;$tx,$ty;$lx,$ly;0,0") },
+                        onDragEnd = { SwiftDotNetBridge.emit(e, "e;$tx,$ty;$lx,$ly;0,0") },
+                    )
+                }
+            }
+            "onMagnify" -> (mod["event"] as? String)?.let { e ->
+                m = m.pointerInput(e) {
+                    // detectTransformGestures yields the incremental zoom; accumulate to the cumulative
+                    // factor (1.0 = unchanged) the C# handler expects.
+                    var scale = 1f
+                    androidx.compose.foundation.gestures.detectTransformGestures { _, _, zoom, _ ->
+                        scale *= zoom
+                        SwiftDotNetBridge.emit(e, scale.toString())
+                    }
                 }
             }
             "font" -> textStyle = textStyleFor(mod["value"] as? String)
@@ -453,7 +570,7 @@ private fun RawNode(node: VNode) {
         "Alert" -> AlertNode(node)
 
         "WebView" -> WebViewNode(node)
-        "Image" -> Text(emojiFor(node.s("system")), fontSize = 22.sp)
+        "Image" -> RasterImage(node)
         "Label" -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(emojiFor(node.s("systemImage"))); Text(node.s("title"))
         }

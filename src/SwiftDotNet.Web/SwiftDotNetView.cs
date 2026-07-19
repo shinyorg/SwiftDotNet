@@ -19,6 +19,7 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
     readonly Dictionary<string, List<WebNode>> _nav = new(); // NavigationStack pushed screens by node id
     readonly Dictionary<string, CancellationTokenSource> _longPress = new(); // in-flight long-press timers by event id
     readonly Dictionary<string, (double X, double Y)> _swipeStart = new();    // pointer-down origin by event id
+    readonly Dictionary<string, (double X, double Y)> _dragStart = new();      // F1 continuous-drag origin by event id
     int _seq;
 
     protected override void OnInitialized()
@@ -35,6 +36,11 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
         _seq = 0;
         b.OpenElement(_seq++, "div");
         b.AddAttribute(_seq++, "style", "font-family:-apple-system,system-ui,sans-serif;min-height:100vh;");
+        // Generic repeating-animation keyframes (F4): a subtle opacity pulse used by shimmer/pulse/spinner
+        // effects declared via `.Animation(spec.Repeating(), …)`. Shipped by the library so any consumer gets it.
+        b.OpenElement(_seq++, "style");
+        b.AddMarkupContent(_seq++, "@keyframes sdn-pulse{from{opacity:1}to{opacity:.4}}");
+        b.CloseElement();
         if (_bridge.Root is { } root) RenderNode(b, root);
         b.CloseElement();
     }
@@ -44,7 +50,7 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
         switch (n.Type)
         {
             case "Text": Leaf(b, n, "span", n.S("text")); break;
-            case "Image": Leaf(b, n, "span", WebStyle.Emoji(n.S("system")), "font-size:22px;"); break;
+            case "Image": ImageNode(b, n); break;
             case "Divider": Element(b, n, "hr", "border:none;border-top:1px solid #ccc;width:100%;", null); break;
             case "Spacer": Element(b, n, "div", "flex:1;", null); break;
 
@@ -516,6 +522,22 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
         b.CloseElement();
     }
 
+    void ImageNode(RenderTreeBuilder b, WebNode n)
+    {
+        // F3 raster: url / file (served path) / bytes (data URI) render an <img>; an SF-Symbol name
+        // falls back to the emoji glyph (backends without SF Symbols).
+        var src = n.S("url") is { Length: > 0 } u ? u
+                : n.S("file") is { Length: > 0 } f ? f
+                : n.S("bytes") is { Length: > 0 } bytes ? $"data:image/png;base64,{bytes}"
+                : null;
+        if (src is null) { Leaf(b, n, "span", WebStyle.Emoji(n.S("system")), "font-size:22px;"); return; }
+        var fit = n.S("contentMode") == "fill" ? "cover" : "contain";
+        b.OpenElement(_seq++, "img");
+        Style(b, n, $"object-fit:{fit};max-width:100%;");
+        b.AddAttribute(_seq++, "src", src);
+        b.CloseElement();
+    }
+
     void Label(RenderTreeBuilder b, WebNode n)
     {
         b.OpenElement(_seq++, "span");
@@ -599,6 +621,27 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
             b.AddAttribute(_seq++, name, EventCallback.Factory.Create(this, () => _bridge.Emit(ev, null)));
         }
 
+        // F1 continuous drag: pointerdown/move/up emit the drag grammar ("<phase>;tx,ty;lx,ly;vx,vy").
+        var drag = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onDrag");
+        if (drag?.GetValueOrDefault("event") is string dragEv)
+        {
+            b.AddAttribute(_seq++, "onpointerdown", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
+            {
+                _dragStart[dragEv] = (e.ClientX, e.ClientY);
+                _bridge.Emit(dragEv, $"b;0,0;{Inv(e.OffsetX)},{Inv(e.OffsetY)};0,0");
+            }));
+            b.AddAttribute(_seq++, "onpointermove", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
+            {
+                if (!_dragStart.TryGetValue(dragEv, out var s)) return;
+                _bridge.Emit(dragEv, $"c;{Inv(e.ClientX - s.X)},{Inv(e.ClientY - s.Y)};{Inv(e.OffsetX)},{Inv(e.OffsetY)};0,0");
+            }));
+            b.AddAttribute(_seq++, "onpointerup", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
+            {
+                if (!_dragStart.Remove(dragEv, out var s)) return;
+                _bridge.Emit(dragEv, $"e;{Inv(e.ClientX - s.X)},{Inv(e.ClientY - s.Y)};{Inv(e.OffsetX)},{Inv(e.OffsetY)};0,0");
+            }));
+        }
+
         var longPress = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onLongPress");
         var swipe = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onSwipe");
         if (longPress is null && swipe is null) return;
@@ -648,6 +691,8 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
 
     static double Amount(Dictionary<string, object?>? m, string key, double fallback)
         => m is not null && m.TryGetValue(key, out var v) && v is double d ? d : fallback;
+
+    static string Inv(double v) => v.ToString(CultureInfo.InvariantCulture);
 
     void EndSwipe(string ev, string? dir, PointerEventArgs e)
     {

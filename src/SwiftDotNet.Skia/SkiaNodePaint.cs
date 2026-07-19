@@ -12,6 +12,8 @@ sealed partial class SkiaNode
     {
         var count = canvas.Save();
         ApplyScale(canvas);
+        ApplyOffset(canvas);
+        ApplyRotation(canvas);
 
         var opacity = Opacity();
         SKPaint? layerPaint = null;
@@ -39,6 +41,35 @@ sealed partial class SkiaNode
         canvas.Translate(ax, ay);
         canvas.Scale((float)s.x, (float)s.y);
         canvas.Translate(-ax, -ay);
+    }
+
+    void ApplyOffset(SKCanvas canvas)
+    {
+        if (Offset() is { } o) canvas.Translate((float)o.x, (float)o.y);
+    }
+
+    // Aspect-preserving placement of a source image into a destination rect (fit = contain, fill = cover).
+    static SKRect FitRect(int srcW, int srcH, SKRect dst, bool fill)
+    {
+        if (srcW <= 0 || srcH <= 0) return dst;
+        var scale = fill
+            ? Math.Max(dst.Width / srcW, dst.Height / srcH)
+            : Math.Min(dst.Width / srcW, dst.Height / srcH);
+        var w = srcW * scale;
+        var h = srcH * scale;
+        var x = dst.MidX - w / 2f;
+        var y = dst.MidY - h / 2f;
+        return new SKRect(x, y, x + w, y + h);
+    }
+
+    void ApplyRotation(SKCanvas canvas)
+    {
+        if (Rotation() is not { } r || Math.Abs(r.degrees) < 0.0001) return;
+        var ax = r.anchor is "leading" or "topLeading" or "bottomLeading" ? Frame.Left
+            : r.anchor is "trailing" or "topTrailing" or "bottomTrailing" ? Frame.Right : Frame.MidX;
+        var ay = r.anchor is "top" or "topLeading" or "topTrailing" ? Frame.Top
+            : r.anchor is "bottom" or "bottomLeading" or "bottomTrailing" ? Frame.Bottom : Frame.MidY;
+        canvas.RotateDegrees((float)r.degrees, ax, ay);
     }
 
     void PaintChildren(SKCanvas canvas, bool dark)
@@ -98,7 +129,16 @@ sealed partial class SkiaNode
     {
         var radius = CornerRadius();
 
-        if (BackgroundColor(dark) is { } bg)
+        if (BackgroundShader(dark) is { } shader)
+        {
+            using var paint = new SKPaint { Shader = shader, IsAntialias = true, Style = SKPaintStyle.Fill };
+            if (Shadow() is { } sh)
+                paint.ImageFilter = SKImageFilter.CreateDropShadow(
+                    (float)sh.x, (float)sh.y, (float)sh.radius, (float)sh.radius, sh.color);
+            canvas.DrawRoundRect(Frame, radius, radius, paint);
+            shader.Dispose();
+        }
+        else if (BackgroundColor(dark) is { } bg)
         {
             using var paint = new SKPaint { Color = bg, IsAntialias = true, Style = SKPaintStyle.Fill };
             if (Shadow() is { } sh)
@@ -139,7 +179,16 @@ sealed partial class SkiaNode
                 PaintButton(canvas, dark);
                 break;
             case "Image":
-                SkiaText.DrawLine(canvas, SkiaTheme.Icon(Str("system")), _content.Left, Baseline(_content, IconFont(22)), IconFont(22), ForegroundColor(dark));
+                if (RasterImage() is { } img)
+                {
+                    var dst = FitRect(img.Width, img.Height, _content, Str("contentMode") == "fill");
+                    var save = canvas.Save();
+                    canvas.ClipRect(_content);
+                    canvas.DrawImage(img, dst, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+                    canvas.RestoreToCount(save);
+                }
+                else
+                    SkiaText.DrawLine(canvas, SkiaTheme.Icon(Str("system")), _content.Left, Baseline(_content, IconFont(22)), IconFont(22), ForegroundColor(dark));
                 break;
             case "Label":
                 SkiaText.DrawLine(canvas, SkiaTheme.Icon(Str("systemImage")) + "  " + Str("title"), _content.Left, Baseline(_content, Font()), Font(), ForegroundColor(dark));

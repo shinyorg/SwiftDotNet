@@ -64,6 +64,18 @@ public sealed class SkiaImageHost
     /// <summary>Fire a directional swipe (left/right/up/down) at (x,y).</summary>
     public bool Swipe(float x, float y, string direction) => _bridge.Swipe(new SKPoint(x, y), direction);
 
+    /// <summary>
+    /// Feed a continuous drag/pan (F1). Call with <see cref="GesturePhase.Began"/> on pointer-down (captures
+    /// the target under (x,y)), <see cref="GesturePhase.Changed"/> on each move with the cumulative
+    /// translation (tx,ty), and <see cref="GesturePhase.Ended"/> on release with the fling velocity (vx,vy).
+    /// </summary>
+    public bool Drag(float x, float y, GesturePhase phase, float tx, float ty, float vx = 0, float vy = 0)
+        => _bridge.Drag(new SKPoint(x, y), phase, tx, ty, vx, vy);
+
+    /// <summary>Feed a continuous pinch/magnify (F1) with the cumulative scale factor (1.0 = unchanged).</summary>
+    public bool Magnify(float x, float y, GesturePhase phase, float scale)
+        => _bridge.Magnify(new SKPoint(x, y), phase, scale);
+
     /// <summary>Advance implicit animations by dt seconds; returns true while still animating.</summary>
     public bool Advance(double dt) => _bridge.Tick(dt);
 }

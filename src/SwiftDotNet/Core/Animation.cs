@@ -14,7 +14,19 @@ public readonly record struct AnimationSpec(
     double Duration = 0.3,   // seconds; ignored for a pure spring
     double Delay = 0,
     double? SpringStiffness = null,
-    double? SpringDamping = null);
+    double? SpringDamping = null,
+    int? RepeatCount = null, // null = play once; -1 = forever (shimmer/pulse); n = n cycles
+    bool AutoReverse = false)
+{
+    /// <summary>
+    /// Turns this into a self-playing, repeating animation for continuous effects (shimmer, pulse,
+    /// spinner) — no <c>on:</c> trigger needed. <paramref name="count"/> defaults to forever;
+    /// <paramref name="autoreverse"/> yo-yos each cycle. Mirrors SwiftUI's
+    /// <c>.repeatForever(autoreverses:)</c> / <c>.repeatCount(_:autoreverses:)</c>.
+    /// </summary>
+    public AnimationSpec Repeating(int count = -1, bool autoreverse = true) =>
+        this with { RepeatCount = count, AutoReverse = autoreverse };
+}
 
 /// <summary>Ergonomic factories for <see cref="AnimationSpec"/> — <c>Anim.EaseInOut(0.25)</c>, <c>Anim.Spring()</c>.</summary>
 public static class Anim

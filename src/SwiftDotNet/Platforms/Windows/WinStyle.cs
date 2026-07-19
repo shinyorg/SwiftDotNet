@@ -24,6 +24,59 @@ static class WinStyle
 
     public static SolidColorBrush? Brush(string? token) => Color(token) is { } c ? new SolidColorBrush(c) : null;
 
+    // F5: parse a Brush wire string ("linear:<deg>:<c>@<loc>;…" / "radial:<c>@<loc>;…") into a WinUI brush.
+    // WinUI has no built-in radial gradient before the newer RadialGradientBrush; both map to a gradient brush.
+    public static Microsoft.UI.Xaml.Media.Brush? Gradient(string spec)
+    {
+        var firstColon = spec.IndexOf(':');
+        if (firstColon < 0) return null;
+        var kind = spec[..firstColon];
+        var rest = spec[(firstColon + 1)..];
+        if (kind == "linear")
+        {
+            var secondColon = rest.IndexOf(':');
+            if (secondColon < 0) return null;
+            var angle = double.TryParse(rest[..secondColon], System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var a) ? a : 90;
+            var stops = Stops(rest[(secondColon + 1)..]);
+            if (stops is null) return null;
+            var rad = angle * Math.PI / 180.0;
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new Windows.Foundation.Point(0.5 - Math.Cos(rad) * 0.5, 0.5 - Math.Sin(rad) * 0.5),
+                EndPoint = new Windows.Foundation.Point(0.5 + Math.Cos(rad) * 0.5, 0.5 + Math.Sin(rad) * 0.5),
+            };
+            foreach (var s in stops) brush.GradientStops.Add(s);
+            return brush;
+        }
+        if (kind == "radial")
+        {
+            var stops = Stops(rest);
+            if (stops is null) return null;
+            var brush = new RadialGradientBrush();
+            foreach (var s in stops) brush.GradientStops.Add(s);
+            return brush;
+        }
+        return null;
+    }
+
+    static List<GradientStop>? Stops(string spec)
+    {
+        var parts = spec.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return null;
+        var list = new List<GradientStop>();
+        foreach (var part in parts)
+        {
+            var at = part.LastIndexOf('@');
+            if (at < 0) return null;
+            var color = Color(part[..at]) ?? Windows.UI.Color.FromArgb(0xFF, 0, 0, 0);
+            var loc = double.TryParse(part[(at + 1)..], System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var l) ? l : 0;
+            list.Add(new GradientStop { Color = color, Offset = loc });
+        }
+        return list;
+    }
+
     static Color FromRgb(byte r, byte g, byte b) => Windows.UI.Color.FromArgb(0xFF, r, g, b);
 
     static Color? FromHex(string hex)

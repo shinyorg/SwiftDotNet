@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using SkiaSharp;
 
@@ -146,6 +147,35 @@ public sealed class SkiaBridge : IBridge
         var handled = _root?.DispatchGesture(point, "onSwipe", direction) ?? false;
         if (handled) Invalidate?.Invoke();
         return handled;
+    }
+
+    // F1 continuous drag/pinch. The host feeds a raw pointer stream; the engine captures the target node
+    // at Began and routes subsequent Changed/Ended to it, emitting the shared drag grammar.
+    SkiaNode? _dragTarget;
+    SkiaNode? _magnifyTarget;
+
+    /// <summary>Feed a continuous drag. <paramref name="phase"/>: begin captures the target; change/end reuse it.</summary>
+    public bool Drag(SKPoint point, GesturePhase phase, float tx, float ty, float vx, float vy)
+    {
+        if (phase == GesturePhase.Began) _dragTarget = _root?.NodeWithModAt(point, "onDrag");
+        if (_dragTarget?.ModEvent("onDrag") is not { } ev) return false;
+        var ph = phase switch { GesturePhase.Began => "b", GesturePhase.Ended => "e", _ => "c" };
+        Emit(ev, string.Format(CultureInfo.InvariantCulture, "{0};{1},{2};{3},{4};{5},{6}",
+            ph, tx, ty, point.X, point.Y, vx, vy));
+        if (phase == GesturePhase.Ended) _dragTarget = null;
+        Invalidate?.Invoke();
+        return true;
+    }
+
+    /// <summary>Feed a continuous pinch. <paramref name="phase"/>: begin captures the target; scale is cumulative.</summary>
+    public bool Magnify(SKPoint point, GesturePhase phase, float scale)
+    {
+        if (phase == GesturePhase.Began) _magnifyTarget = _root?.NodeWithModAt(point, "onMagnify");
+        if (_magnifyTarget?.ModEvent("onMagnify") is not { } ev) return false;
+        Emit(ev, scale.ToString(CultureInfo.InvariantCulture));
+        if (phase == GesturePhase.Ended) _magnifyTarget = null;
+        Invalidate?.Invoke();
+        return true;
     }
 
     /// <summary>Append typed text to the focused text control (routes through its C# binding).</summary>

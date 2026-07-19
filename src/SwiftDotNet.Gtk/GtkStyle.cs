@@ -71,7 +71,8 @@ static class GtkStyle
                     sb.Append($"padding:{Num(N(m, "top"))}px {Num(N(m, "trailing"))}px {Num(N(m, "bottom"))}px {Num(N(m, "leading"))}px;");
                     break;
                 case "background":
-                    if (Hex(m.GetValueOrDefault("value") as string) is { } bg) sb.Append($"background-color:{bg};");
+                    if (m.GetValueOrDefault("gradient") is string grad && Gradient(grad) is { } g) sb.Append($"background-image:{g};");
+                    else if (Hex(m.GetValueOrDefault("value") as string) is { } bg) sb.Append($"background-color:{bg};");
                     break;
                 case "cornerRadius":
                     sb.Append($"border-radius:{Num(N(m, "radius"))}px;");
@@ -113,6 +114,46 @@ static class GtkStyle
         "easeOut" => "ease-out",
         _ => "ease-in-out",   // spring → ease-in-out (GTK CSS has no spring)
     };
+
+    /// <summary>Parses a <see cref="Brush"/> wire string into a GTK CSS gradient (GTK4 supports these), or null.</summary>
+    static string? Gradient(string spec)
+    {
+        var firstColon = spec.IndexOf(':');
+        if (firstColon < 0) return null;
+        var kind = spec[..firstColon];
+        var rest = spec[(firstColon + 1)..];
+        if (kind == "linear")
+        {
+            var secondColon = rest.IndexOf(':');
+            if (secondColon < 0) return null;
+            var angle = double.TryParse(rest[..secondColon], NumberStyles.Float, CultureInfo.InvariantCulture, out var a) ? a : 90;
+            var stops = Stops(rest[(secondColon + 1)..]);
+            return stops is null ? null : $"linear-gradient({Num(angle)}deg,{stops})";
+        }
+        if (kind == "radial")
+        {
+            var stops = Stops(rest);
+            return stops is null ? null : $"radial-gradient(circle,{stops})";
+        }
+        return null;
+    }
+
+    static string? Stops(string spec)
+    {
+        var parts = spec.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return null;
+        var sb = new StringBuilder();
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var at = parts[i].LastIndexOf('@');
+            if (at < 0) return null;
+            var color = Hex(parts[i][..at]) ?? "#000000";
+            var loc = double.TryParse(parts[i][(at + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out var l) ? l : 0;
+            if (i > 0) sb.Append(',');
+            sb.Append($"{color} {Num(loc * 100)}%");
+        }
+        return sb.ToString();
+    }
 
     static double N(Dictionary<string, object?> m, string key, double fallback = 0)
         => m.TryGetValue(key, out var v) && v is double d ? d : fallback;

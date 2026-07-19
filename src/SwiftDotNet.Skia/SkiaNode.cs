@@ -850,6 +850,21 @@ sealed partial class SkiaNode
         return false;
     }
 
+    // F1: deepest visible node under `p` that carries `modType` (onDrag/onMagnify), or null. Used to
+    // capture a continuous-gesture target at gesture-begin so subsequent moves route to the same node.
+    internal SkiaNode? NodeWithModAt(SKPoint p, string modType)
+    {
+        if (!Frame.Contains(p)) return null;
+        for (var i = Children.Count - 1; i >= 0; i--)
+        {
+            if (Type == "TabView" && i != _tabIndex) continue;
+            if (Children[i].NodeWithModAt(p, modType) is { } hit) return hit;
+        }
+        return Mod(modType)?.GetValueOrDefault("event") is string ? this : null;
+    }
+
+    internal string? ModEvent(string modType) => Mod(modType)?.GetValueOrDefault("event") as string;
+
     /// <summary>Children that are actually on screen (a TabView shows only its selected tab) — for the overlay walk.</summary>
     internal IEnumerable<SkiaNode> VisibleOverlayChildren()
     {
@@ -909,6 +924,47 @@ sealed partial class SkiaNode
         var m = Mod("scaleEffect");
         if (m is null) return null;
         return (MNull(m, "x") ?? 1, MNull(m, "y") ?? 1, m.GetValueOrDefault("value") as string ?? "center");
+    }
+
+    // F4 transforms: translation (no layout effect) and rotation around an anchor.
+    (double x, double y)? Offset()
+    {
+        var m = Mod("offset");
+        return m is null ? null : (MNull(m, "x") ?? 0, MNull(m, "y") ?? 0);
+    }
+
+    (double degrees, string anchor)? Rotation()
+    {
+        var m = Mod("rotation");
+        return m is null ? null : (MNull(m, "degrees") ?? 0, m.GetValueOrDefault("value") as string ?? "center");
+    }
+
+    // F5 gradient background: a shader painted in place of the flat background fill when present.
+    internal SKShader? BackgroundShader(bool dark)
+    {
+        if (Mod("background")?.GetValueOrDefault("gradient") is not string spec) return null;
+        return SkiaGradient.Shader(spec, Frame, dark);
+    }
+
+    // F3 raster: decode once and cache (keyed by the source string) so paint doesn't decode per frame.
+    SKImage? _rasterImage;
+    string? _rasterKey;
+    internal SKImage? RasterImage()
+    {
+        var src = HasProp("bytes") ? "b:" + Str("bytes")
+                : HasProp("file") ? "f:" + Str("file")
+                : null;
+        if (src is null) return null;
+        if (src == _rasterKey) return _rasterImage;
+        _rasterKey = src;
+        _rasterImage?.Dispose();
+        try
+        {
+            if (src[0] == 'b') _rasterImage = SKImage.FromEncodedData(Convert.FromBase64String(Str("bytes")));
+            else _rasterImage = SKImage.FromEncodedData(Str("file"));
+        }
+        catch { _rasterImage = null; }
+        return _rasterImage;
     }
 
     float CornerRadius()

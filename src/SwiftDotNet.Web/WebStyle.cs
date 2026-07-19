@@ -48,6 +48,9 @@ static class WebStyle
     public static string Modifiers(List<Dictionary<string, object?>> modifiers, bool shapeFill)
     {
         var sb = new StringBuilder();
+        // CSS allows only one `transform` declaration, so scale/offset/rotation accumulate here and emit once.
+        var transform = new StringBuilder();
+        string? origin = null;
         foreach (var m in modifiers)
         {
             switch (m["type"] as string)
@@ -56,7 +59,8 @@ static class WebStyle
                     sb.Append($"padding:{Px(N(m, "top"))} {Px(N(m, "trailing"))} {Px(N(m, "bottom"))} {Px(N(m, "leading"))};");
                     break;
                 case "background":
-                    if (Color(m.GetValueOrDefault("value") as string) is { } bg) sb.Append($"background:{bg};");
+                    if (m.GetValueOrDefault("gradient") is string grad && Gradient(grad) is { } g) sb.Append($"background:{g};");
+                    else if (Color(m.GetValueOrDefault("value") as string) is { } bg) sb.Append($"background:{bg};");
                     break;
                 case "cornerRadius":
                     sb.Append($"border-radius:{Px(N(m, "radius"))};");
@@ -78,14 +82,29 @@ static class WebStyle
                         sb.Append("pointer-events:none;opacity:0.5;");
                     break;
                 case "scaleEffect":
-                    sb.Append($"transform:scale({N(m, "x", 1).ToString(CultureInfo.InvariantCulture)},{N(m, "y", 1).ToString(CultureInfo.InvariantCulture)});");
-                    if (m.GetValueOrDefault("value") is string sanchor) sb.Append($"transform-origin:{OriginCss(sanchor)};");
+                    transform.Append($"scale({N(m, "x", 1).ToString(CultureInfo.InvariantCulture)},{N(m, "y", 1).ToString(CultureInfo.InvariantCulture)}) ");
+                    if (m.GetValueOrDefault("value") is string sanchor) origin = OriginCss(sanchor);
+                    break;
+                case "offset":
+                    transform.Append($"translate({Px(N(m, "x"))},{Px(N(m, "y"))}) ");
+                    break;
+                case "rotation":
+                    transform.Append($"rotate({N(m, "degrees").ToString(CultureInfo.InvariantCulture)}deg) ");
+                    if (m.GetValueOrDefault("value") is string ranchor) origin = OriginCss(ranchor);
                     break;
                 case "animation":
-                    // CSS animates whenever a transitioned property changes, so the `trigger` isn't needed here.
+                    // A repeating animation maps to a CSS @keyframes loop; a one-shot maps to a transition.
                     var dur = N(m, "duration", 0.3).ToString(CultureInfo.InvariantCulture);
                     var delay = N(m, "delay", 0).ToString(CultureInfo.InvariantCulture);
-                    sb.Append($"transition:all {dur}s {TimingFunction(m.GetValueOrDefault("curve") as string)} {delay}s;");
+                    if (m.GetValueOrDefault("repeatCount") is double rc)
+                    {
+                        // -1 = forever; the generic `sdn-pulse` keyframes (defined in the host CSS) fade+scale.
+                        var iter = rc < 0 ? "infinite" : ((int)rc).ToString(CultureInfo.InvariantCulture);
+                        var dir = (m.GetValueOrDefault("autoreverse") as string) == "true" ? "alternate" : "normal";
+                        sb.Append($"animation:sdn-pulse {dur}s {TimingFunction(m.GetValueOrDefault("curve") as string)} {delay}s {iter} {dir};");
+                    }
+                    else
+                        sb.Append($"transition:all {dur}s {TimingFunction(m.GetValueOrDefault("curve") as string)} {delay}s;");
                     break;
                 case "foregroundColor":
                     if (Color(m.GetValueOrDefault("value") as string) is { } fc)
@@ -105,6 +124,48 @@ static class WebStyle
                     sb.Append(m.GetValueOrDefault("value") is string av ? TextAlign(av) : "");
                     break;
             }
+        }
+        if (transform.Length > 0) sb.Append($"transform:{transform.ToString().TrimEnd()};");
+        if (origin is not null) sb.Append($"transform-origin:{origin};");
+        return sb.ToString();
+    }
+
+    /// <summary>Parses a <see cref="Brush"/> wire string into a CSS gradient, or null if unparseable.</summary>
+    static string? Gradient(string spec)
+    {
+        var firstColon = spec.IndexOf(':');
+        if (firstColon < 0) return null;
+        var kind = spec[..firstColon];
+        var rest = spec[(firstColon + 1)..];
+        if (kind == "linear")
+        {
+            var secondColon = rest.IndexOf(':');
+            if (secondColon < 0) return null;
+            var angle = double.TryParse(rest[..secondColon], NumberStyles.Float, CultureInfo.InvariantCulture, out var a) ? a : 90;
+            var stops = GradientStops(rest[(secondColon + 1)..]);
+            return stops is null ? null : $"linear-gradient({angle.ToString(CultureInfo.InvariantCulture)}deg,{stops})";
+        }
+        if (kind == "radial")
+        {
+            var stops = GradientStops(rest);
+            return stops is null ? null : $"radial-gradient(circle,{stops})";
+        }
+        return null;
+    }
+
+    static string? GradientStops(string spec)
+    {
+        var parts = spec.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return null;
+        var sb = new StringBuilder();
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var at = parts[i].LastIndexOf('@');
+            if (at < 0) return null;
+            var color = Color(parts[i][..at]) ?? "transparent";
+            var loc = double.TryParse(parts[i][(at + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out var l) ? l : 0;
+            if (i > 0) sb.Append(',');
+            sb.Append($"{color} {(loc * 100).ToString(CultureInfo.InvariantCulture)}%");
         }
         return sb.ToString();
     }

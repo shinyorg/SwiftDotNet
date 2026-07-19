@@ -88,7 +88,7 @@ sealed class WinNode
         "Sheet" => Children.Count > 0 ? Children[0].Element : Text(""),
         "Alert" => Children.Count > 0 ? Children[0].Element : Text(""),
         "WebView" => MakeWebView(),
-        "Image" => Text(WinStyle.Emoji(Str("system"))),
+        "Image" => MakeImage(),
         "Label" => MakeLabel(),
         "ProgressView" => MakeProgress(),
         "Gauge" => MakeGauge(),
@@ -409,6 +409,41 @@ sealed class WinNode
         return panel;
     }
 
+    // F3 raster: a real bitmap from url / file / bytes; an SF-Symbol name falls back to the emoji glyph.
+    FrameworkElement MakeImage()
+    {
+        try
+        {
+            var stretch = Str("contentMode") == "fill"
+                ? Microsoft.UI.Xaml.Media.Stretch.UniformToFill
+                : Microsoft.UI.Xaml.Media.Stretch.Uniform;
+            Microsoft.UI.Xaml.Media.Imaging.BitmapImage? source = null;
+            if (Str("url") is { Length: > 0 } url)
+                source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(url));
+            else if (Str("file") is { Length: > 0 } file)
+                source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(file, UriKind.RelativeOrAbsolute));
+            else if (Str("bytes") is { Length: > 0 } b64)
+            {
+                var bytes = Convert.FromBase64String(b64);
+                var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+                using (var writer = new Windows.Storage.Streams.DataWriter(stream))
+                {
+                    writer.WriteBytes(bytes);
+                    writer.StoreAsync().GetAwaiter().GetResult();
+                    writer.DetachStream();
+                }
+                stream.Seek(0);
+                bmp.SetSource(stream);
+                source = bmp;
+            }
+            if (source is not null)
+                return new Microsoft.UI.Xaml.Controls.Image { Source = source, Stretch = stretch };
+        }
+        catch { /* fall through to the glyph on any decode error */ }
+        return Text(WinStyle.Emoji(Str("system")));
+    }
+
     StackPanel MakeProgress()
     {
         var panel = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center };
@@ -444,8 +479,11 @@ sealed class WinNode
         FrameworkElement current = Inner;
         Thickness? padding = null;
         Windows.UI.Color? background = null;
+        Microsoft.UI.Xaml.Media.Brush? backgroundBrush = null;   // F5: gradient fill takes precedence over the flat color
         Windows.UI.Color? borderColor = null;
         double borderWidth = 1, corner = 0;
+        var transforms = new Microsoft.UI.Xaml.Media.TransformGroup();  // F4: scale/offset/rotation compose here
+        string? transformOrigin = null;
 
         foreach (var m in Modifiers)
         {
@@ -455,7 +493,8 @@ sealed class WinNode
                     padding = new Thickness(N(m, "leading"), N(m, "top"), N(m, "trailing"), N(m, "bottom"));
                     break;
                 case "background":
-                    background = WinStyle.Color(m.GetValueOrDefault("value") as string);
+                    if (m.GetValueOrDefault("gradient") is string grad) backgroundBrush = WinStyle.Gradient(grad);
+                    else background = WinStyle.Color(m.GetValueOrDefault("value") as string);
                     break;
                 case "cornerRadius":
                     corner = N(m, "radius");
@@ -474,8 +513,15 @@ sealed class WinNode
                     else { current.IsHitTestVisible = !disabled; if (disabled) Inner.Opacity = 0.5; }
                     break;
                 case "scaleEffect":
-                    Inner.RenderTransform = new ScaleTransform { ScaleX = N(m, "x", 1), ScaleY = N(m, "y", 1) };
-                    Inner.RenderTransformOrigin = OriginPoint(m.GetValueOrDefault("value") as string);
+                    transforms.Children.Add(new ScaleTransform { ScaleX = N(m, "x", 1), ScaleY = N(m, "y", 1) });
+                    transformOrigin ??= m.GetValueOrDefault("value") as string;
+                    break;
+                case "offset":
+                    transforms.Children.Add(new TranslateTransform { X = N(m, "x"), Y = N(m, "y") });
+                    break;
+                case "rotation":
+                    transforms.Children.Add(new RotateTransform { Angle = N(m, "degrees") });
+                    transformOrigin ??= m.GetValueOrDefault("value") as string;
                     break;
                 case "animation":
                     // WinUI Phase 1: implicit theme transitions animate this element's layout repositioning
@@ -529,6 +575,29 @@ sealed class WinNode
                         };
                     }
                     break;
+                case "onDrag":
+                    // F1 continuous drag → "<phase>;tx,ty;lx,ly;vx,vy" via manipulation events.
+                    if (m.GetValueOrDefault("event") is string dev)
+                    {
+                        current.ManipulationMode = Microsoft.UI.Xaml.Input.ManipulationModes.TranslateX
+                                                 | Microsoft.UI.Xaml.Input.ManipulationModes.TranslateY;
+                        current.ManipulationStarted += (_, e) =>
+                            _bridge.Emit(dev, System.FormattableString.Invariant($"b;0,0;{e.Position.X},{e.Position.Y};0,0"));
+                        current.ManipulationDelta += (_, e) =>
+                            _bridge.Emit(dev, System.FormattableString.Invariant($"c;{e.Cumulative.Translation.X},{e.Cumulative.Translation.Y};{e.Position.X},{e.Position.Y};0,0"));
+                        current.ManipulationCompleted += (_, e) =>
+                            _bridge.Emit(dev, System.FormattableString.Invariant($"e;{e.Cumulative.Translation.X},{e.Cumulative.Translation.Y};{e.Position.X},{e.Position.Y};{e.Velocities.Linear.X},{e.Velocities.Linear.Y}"));
+                    }
+                    break;
+                case "onMagnify":
+                    // F1 pinch → cumulative scale factor via the Scale manipulation.
+                    if (m.GetValueOrDefault("event") is string mev)
+                    {
+                        current.ManipulationMode |= Microsoft.UI.Xaml.Input.ManipulationModes.Scale;
+                        current.ManipulationDelta += (_, e) =>
+                            _bridge.Emit(mev, e.Cumulative.Scale.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    }
+                    break;
                 case "foregroundColor":
                     if (Inner is TextBlock tbf && WinStyle.Brush(m.GetValueOrDefault("value") as string) is { } fg) tbf.Foreground = fg;
                     break;
@@ -539,11 +608,18 @@ sealed class WinNode
             }
         }
 
-        if (padding is not null || background is not null || borderColor is not null || corner > 0)
+        if (transforms.Children.Count > 0)
+        {
+            Inner.RenderTransform = transforms;
+            Inner.RenderTransformOrigin = OriginPoint(transformOrigin);
+        }
+
+        if (padding is not null || background is not null || backgroundBrush is not null || borderColor is not null || corner > 0)
         {
             var wrapper = new Border { Child = Inner };
             if (padding is { } p) wrapper.Padding = p;
-            if (background is { } bg) wrapper.Background = new SolidColorBrush(bg);
+            if (backgroundBrush is { } gb) wrapper.Background = gb;
+            else if (background is { } bg) wrapper.Background = new SolidColorBrush(bg);
             if (borderColor is { } bc) { wrapper.BorderBrush = new SolidColorBrush(bc); wrapper.BorderThickness = new Thickness(borderWidth); }
             if (corner > 0) wrapper.CornerRadius = new CornerRadius(corner);
             wrapper.HorizontalAlignment = Inner.HorizontalAlignment;

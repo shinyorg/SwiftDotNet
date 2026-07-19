@@ -85,7 +85,7 @@ sealed class GtkNode
         "Sheet" => Children.Count > 0 ? Children[0].Widget : Label(""),
         "Alert" => Children.Count > 0 ? Children[0].Widget : Label(""),
         "WebView" => MakeWebView(),
-        "Image" => Label(GtkStyle.Emoji(Str("system"))),
+        "Image" => MakeImage(),
         "Label" => MakeLabel(),
         "ProgressView" => MakeProgress(),
         "Gauge" => MakeGauge(),
@@ -489,6 +489,33 @@ sealed class GtkNode
         return box;
     }
 
+    // F3 raster: load a real bitmap into a Gtk.Picture from a file path or PNG bytes; an SF-Symbol name
+    // falls back to the emoji glyph. (Remote URLs aren't fetched synchronously here — a documented gap;
+    // pass file/bytes on GTK.)
+    Gtk.Widget MakeImage()
+    {
+        try
+        {
+            if (Props.GetValueOrDefault("file") is string file && file.Length > 0)
+            {
+                var pic = Gtk.Picture.NewForFilename(file);
+                pic.ContentFit = Str("contentMode") == "fill" ? Gtk.ContentFit.Cover : Gtk.ContentFit.Contain;
+                return pic;
+            }
+            if (Props.GetValueOrDefault("bytes") is string b64 && b64.Length > 0)
+            {
+                var bytes = Convert.FromBase64String(b64);
+                var gbytes = GLib.Bytes.New(bytes);
+                var texture = Gdk.Texture.NewFromBytes(gbytes);
+                var pic = Gtk.Picture.NewForPaintable(texture);
+                pic.ContentFit = Str("contentMode") == "fill" ? Gtk.ContentFit.Cover : Gtk.ContentFit.Contain;
+                return pic;
+            }
+        }
+        catch { /* fall through to a placeholder glyph on any decode error */ }
+        return Label(GtkStyle.Emoji(Str("system")));
+    }
+
     Gtk.Widget MakeProgress()
     {
         var box = Gtk.Box.New(Gtk.Orientation.Vertical, 4);
@@ -556,8 +583,10 @@ sealed class GtkNode
                     w.Sensitive = (m.GetValueOrDefault("value") as string) != "true";
                     break;
                 case "scaleEffect":
-                    // GTK4 has no generic per-widget scale transform — documented no-op
-                    // (see plans/gestures-and-transforms-plan.md); revisit via snapshot/zoom container.
+                case "offset":
+                case "rotation":
+                    // GTK4 has no generic per-widget affine transform (scale/translate/rotate) — documented
+                    // no-op (see plans/controls-missing-features-plan.md F4); revisit via a snapshot container.
                     break;
                 case "onTapGesture":
                     if (m.GetValueOrDefault("event") is string ev)
@@ -590,6 +619,28 @@ sealed class GtkNode
                             if (matched && (Math.Abs(vx) > 40 || Math.Abs(vy) > 40)) _bridge.Emit(sev, null);
                         };
                         w.AddController(sw);
+                    }
+                    break;
+                case "onDrag":
+                    // F1 continuous drag → the "<phase>;tx,ty;lx,ly;vx,vy" grammar. GestureDrag gives the
+                    // start point and running offset; velocity is unavailable here, sent as 0.
+                    if (m.GetValueOrDefault("event") is string dev)
+                    {
+                        var gd = Gtk.GestureDrag.New();
+                        double sx = 0, sy = 0;
+                        gd.OnDragBegin += (_, a) => { sx = a.StartX; sy = a.StartY; _bridge.Emit(dev, $"b;0,0;{F(sx)},{F(sy)};0,0"); };
+                        gd.OnDragUpdate += (_, a) => _bridge.Emit(dev, $"c;{F(a.OffsetX)},{F(a.OffsetY)};{F(sx + a.OffsetX)},{F(sy + a.OffsetY)};0,0");
+                        gd.OnDragEnd += (_, a) => _bridge.Emit(dev, $"e;{F(a.OffsetX)},{F(a.OffsetY)};{F(sx + a.OffsetX)},{F(sy + a.OffsetY)};0,0");
+                        w.AddController(gd);
+                    }
+                    break;
+                case "onMagnify":
+                    // F1 pinch → cumulative scale factor. GestureZoom reports the running scale delta.
+                    if (m.GetValueOrDefault("event") is string mev)
+                    {
+                        var gz = Gtk.GestureZoom.New();
+                        gz.OnScaleChanged += (_, a) => _bridge.Emit(mev, F(a.Scale));
+                        w.AddController(gz);
                     }
                     break;
             }
@@ -762,6 +813,8 @@ sealed class GtkNode
     // ---- helpers -------------------------------------------------------------
 
     string Str(string key) => Props.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
+
+    static string F(double v) => v.ToString(CultureInfo.InvariantCulture);
     double? Num(string key) => Props.TryGetValue(key, out var v) && v is double d ? d : null;
     bool Bool(string key) => Props.TryGetValue(key, out var v) && v is bool b && b;
     static double? Num(Dictionary<string, object?> m, string key) => m.TryGetValue(key, out var v) && v is double d ? d : null;

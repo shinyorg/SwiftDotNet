@@ -1,18 +1,41 @@
 namespace SwiftDotNet;
 
-/// <summary>An SF Symbol image: <c>Image.System("star.fill")</c>.</summary>
+/// <summary>How a raster <see cref="Image"/> fills its frame (mirrors SwiftUI's <c>.resizable().scaledToFit/Fill</c>).</summary>
+public enum ImageContentMode { Fit, Fill }
+
+/// <summary>
+/// An image. <see cref="System"/> is an SF Symbol (mapped to an emoji glyph on backends without SF
+/// Symbols); <see cref="FromUrl"/>/<see cref="FromFile"/>/<see cref="FromBytes"/> are real raster images
+/// (F3) loaded by each backend's native image pipeline. Bytes cross the wire as a base64 string prop.
+/// </summary>
 public sealed class Image : View
 {
-    readonly string _systemName;
+    readonly string _kind;   // "system" | "url" | "file" | "bytes"
+    readonly string _value;
+    ImageContentMode _mode = ImageContentMode.Fit;
 
-    Image(string systemName) => _systemName = systemName;
+    Image(string kind, string value) { _kind = kind; _value = value; }
 
-    public static Image System(string systemName) => new(systemName);
+    /// <summary>An SF Symbol by name: <c>Image.System("star.fill")</c>.</summary>
+    public static Image System(string systemName) => new("system", systemName);
+
+    /// <summary>A remote image loaded from a URL.</summary>
+    public static Image FromUrl(string url) => new("url", url);
+
+    /// <summary>A local image loaded from a file path (or a server-relative path on Web).</summary>
+    public static Image FromFile(string path) => new("file", path);
+
+    /// <summary>An in-memory image (e.g. PNG bytes); crosses the bridge as a base64 string.</summary>
+    public static Image FromBytes(byte[] bytes) => new("bytes", Convert.ToBase64String(bytes));
+
+    /// <summary>Sets how the raster image fills its frame (no effect on SF Symbols).</summary>
+    public Image ContentMode(ImageContentMode mode) { _mode = mode; return this; }
 
     internal override Node BuildNode(RenderContext ctx, string path)
     {
         var node = ctx.NewNode("Image", path);
-        node.Props["system"] = _systemName;
+        node.Props[_kind] = _value;
+        if (_kind != "system") node.Props["contentMode"] = _mode == ImageContentMode.Fill ? "fill" : "fit";
         return node;
     }
 }

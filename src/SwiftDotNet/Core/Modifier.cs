@@ -52,10 +52,38 @@ sealed class ForegroundColorModifier : Modifier
 
 sealed class BackgroundModifier : Modifier
 {
-    readonly string _value;
+    readonly string? _value;
+    readonly string? _gradient;
     public BackgroundModifier(string value) => _value = value;
+    public BackgroundModifier(Brush brush) => _gradient = brush.Serialize();
     internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
-        => new() { ["type"] = "background", ["value"] = _value };
+    {
+        // A gradient rides as a compact string prop; a flat color as the token/hex value. A backend
+        // reads `gradient` first (falling back to a tinted flat fill only if it can't paint gradients).
+        var d = new Dictionary<string, object> { ["type"] = "background" };
+        if (_gradient is not null) d["gradient"] = _gradient;
+        else if (_value is not null) d["value"] = _value;
+        return d;
+    }
+}
+
+/// <summary>Shifts a view by a fixed translation without affecting layout (mirrors SwiftUI's <c>.offset(x:y:)</c>).</summary>
+sealed class OffsetModifier : Modifier
+{
+    readonly double _x, _y;
+    public OffsetModifier(double x, double y) { _x = x; _y = y; }
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+        => new() { ["type"] = "offset", ["x"] = _x, ["y"] = _y };
+}
+
+/// <summary>Rotates a view around its center by <c>degrees</c> (mirrors SwiftUI's <c>.rotationEffect(.degrees)</c>).</summary>
+sealed class RotationModifier : Modifier
+{
+    readonly double _degrees;
+    readonly string _anchor;
+    public RotationModifier(double degrees, string anchor) { _degrees = degrees; _anchor = anchor; }
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+        => new() { ["type"] = "rotation", ["degrees"] = _degrees, ["value"] = _anchor };
 }
 
 sealed class FrameModifier : Modifier
@@ -184,6 +212,10 @@ sealed class AnimationModifier : Modifier
         };
         if (_spec.SpringStiffness is { } s) d["stiffness"] = s;
         if (_spec.SpringDamping is { } dm) d["damping"] = dm;
+        // A repeating animation (shimmer/pulse) has no external `trigger` — it plays on its own clock.
+        // repeatCount -1 = forever; autoreverse yo-yos each cycle. Backends without a repeat concept
+        // fall back to the single value-triggered transition (documented degradation).
+        if (_spec.RepeatCount is { } rc) { d["repeatCount"] = (double)rc; d["autoreverse"] = _spec.AutoReverse ? "true" : "false"; }
         return d;
     }
 }
