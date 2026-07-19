@@ -36,6 +36,15 @@ public sealed class ContentView : View
     readonly State<bool> _sheet = State(false);
     readonly State<bool> _alert = State(false);
 
+    // Animation / gestures (transforms + continuous drag/pinch)
+    readonly State<bool> _transformed = State(false);
+    readonly State<bool> _pulsing = State(false);
+    readonly State<double> _dragX = State(0.0);
+    readonly State<double> _dragY = State(0.0);
+    readonly State<double> _dragBaseX = State(0.0);
+    readonly State<double> _dragBaseY = State(0.0);
+    readonly State<double> _zoom = State(1.0);
+
     // Maps (renders as MapLibre on Web / MapKit on Apple; graceful ⚠️ placeholder where no renderer is registered)
     readonly State<MapCamera> _mapCamera = State(new MapCamera(new MapCoordinate(51.5074, -0.1278), 12));
     readonly State<List<MapCoordinate>> _route = State(new List<MapCoordinate>());
@@ -75,9 +84,14 @@ public sealed class ContentView : View
                 new Section("Styling",
                     Row("Global Styles", "paintbrush", StylesPage())),
 
-                new Section("Library",
-                    Row("Shiny Controls", "square.on.square", new ControlsDemo()),
-                    Row("Data Controls", "tablecells", new DataControlsDemo())),
+                new Section("Shiny Controls",
+                    Row("Status & Progress", "gauge", new StatusSample()),
+                    Row("Inputs & Pickers", "slider.horizontal.3", new InputsSample()),
+                    Row("Overlays & Media", "square.stack", new OverlaysSample()),
+                    Row("Collections", "list.bullet", new CollectionsSample()),
+                    Row("Scheduler", "calendar", new SchedulerSample()),
+                    Row("Chat", "bubble.left.and.bubble.right", new ChatSample()),
+                    Row("Camera", "camera", new CameraSample())),
 
                 new Section("Navigation",
                     Row("Sheets & Alerts", "arrow.forward.circle", NavPage()))
@@ -132,8 +146,9 @@ public sealed class ContentView : View
     View GesturesPage() =>
         new ScrollView(
             new Text("Gestures").Font(Font.LargeTitle),
-            new Text("One-shot gestures on the existing event channel.").Font(Font.Caption).ForegroundColor(Color.Secondary),
             new Text(_gesture.Value).Font(Font.Headline),
+
+            new Text("One-shot").Font(Font.Headline),
             new Text("👆 Double-tap me")
                 .Padding(12).Background(Color.Hex("#EEF0FF")).CornerRadius(10)
                 .OnTapGesture(() => _gesture.Value = "Double-tapped 👆", count: 2),
@@ -142,22 +157,74 @@ public sealed class ContentView : View
                 .OnLongPress(() => _gesture.Value = "Long-pressed 👇"),
             new Text("👈 Swipe me left")
                 .Padding(12).Background(Color.Hex("#FDECEC")).CornerRadius(10)
-                .OnSwipe(SwipeDirection.Left, () => _gesture.Value = "Swiped left 👈")
+                .OnSwipe(SwipeDirection.Left, () => _gesture.Value = "Swiped left 👈"),
+
+            new Divider(),
+
+            // Continuous drag (F1) — began/changed/ended with cumulative translation.
+            new Text("Continuous drag & pinch").Font(Font.Headline),
+            new ZStack(
+                new ZStack(new Text("✋").Font(Font.Title))
+                    .Frame(70, 70).Background(Color.Hex("#FFE0B2")).CornerRadius(14)
+                    .Offset(_dragX.Value, _dragY.Value)
+                    .OnDrag(info =>
+                    {
+                        _dragX.Value = _dragBaseX.Value + info.TranslationX;
+                        _dragY.Value = _dragBaseY.Value + info.TranslationY;
+                        if (info.Phase == GesturePhase.Ended) { _dragBaseX.Value = _dragX.Value; _dragBaseY.Value = _dragY.Value; }
+                        _gesture.Value = $"Drag: ({info.TranslationX:0}, {info.TranslationY:0})";
+                    })
+            ).Frame(height: 180).Alignment(Alignment.Center),
+
+            // Continuous pinch (F1) — cumulative scale factor.
+            new ZStack(new Text("🔍 Pinch me").Font(Font.Headline).ForegroundColor(Color.Hex("#FFFFFF")))
+                .Frame(220, 90).Background(Color.Blue).CornerRadius(14)
+                .ScaleEffect(_zoom.Value)
+                .OnMagnify(scale => { _zoom.Value = Math.Clamp(scale, 0.5, 3); _gesture.Value = $"Zoom: {scale:0.0}×"; })
         ).Padding(20).NavigationTitle("Gestures");
 
     View AnimationPage() =>
         new ScrollView(
             new Text("Animation").Font(Font.LargeTitle),
-            new Button(_panel.Value ? "Collapse panel" : "Expand panel", () => _panel.Value = !_panel.Value),
 
-            // Implicit animation: height + opacity interpolate when _panel flips, instead of snapping.
+            // 1) Implicit height + opacity spring.
+            new Text("Height & opacity").Font(Font.Headline),
+            new Button(_panel.Value ? "Collapse panel" : "Expand panel", () => _panel.Value = !_panel.Value),
             new VStack(
-                new Text("Animated with .Animation(Anim.Spring(), on: _panel) — a real native spring on iOS/Compose/WinUI, a cubic-bezier on Web.")
+                new Text(".Animation(Anim.Spring(), on: _panel) — a real native spring on iOS/Compose/WinUI, a cubic-bezier on Web.")
                     .Font(Font.Caption).ForegroundColor(Color.Secondary).Padding(12)
             ).Frame(height: _panel.Value ? 110 : 0)
              .Opacity(_panel.Value ? 1 : 0)
              .Background(Color.Hex("#EEF0FF")).CornerRadius(10)
-             .Animation(Anim.Spring(), on: _panel.Value)
+             .Animation(Anim.Spring(), on: _panel.Value),
+
+            new Divider(),
+
+            // 2) Transform modifiers (F4): offset + rotation + scale, animated together on toggle.
+            new Text("Transforms — offset · rotation · scale").Font(Font.Headline),
+            new Button(_transformed.Value ? "Reset" : "Transform", () => _transformed.Value = !_transformed.Value),
+            new ZStack(
+                new ZStack(new Text("↗︎").Font(Font.LargeTitle).ForegroundColor(Color.Hex("#FFFFFF")))
+                    .Frame(80, 80)
+                    .Background(new LinearGradient(45, new GradientStop(Color.Hex("#7C4DFF"), 0), new GradientStop(Color.Hex("#00BCD4"), 1)))
+                    .CornerRadius(16)
+                    .Offset(_transformed.Value ? 90 : 0, 0)
+                    .Rotation(_transformed.Value ? 25 : 0)
+                    .ScaleEffect(_transformed.Value ? 1.3 : 1.0)
+                    .Animation(Anim.Spring(), on: _transformed.Value)
+            ).Frame(height: 120).Alignment(Alignment.Leading),
+
+            new Divider(),
+
+            // 3) Looping animation (F4): a self-reversing repeat drives a pulsing scale forever.
+            new Text("Looping pulse").Font(Font.Headline),
+            new Button(_pulsing.Value ? "Stop" : "Start pulsing", () => _pulsing.Value = !_pulsing.Value),
+            new ZStack(
+                new Circle().Frame(60, 60).ForegroundColor(Color.Red)
+                    .ScaleEffect(_pulsing.Value ? 1.4 : 1.0)
+                    .Opacity(_pulsing.Value ? 0.6 : 1.0)
+                    .Animation(Anim.EaseInOut(0.7).Repeating(autoreverse: true), on: _pulsing.Value)
+            ).Frame(height: 100)
         ).Padding(20).NavigationTitle("Animation");
 
     // ── Layout ──────────────────────────────────────────────────────────────
@@ -199,18 +266,47 @@ public sealed class ContentView : View
         new ScrollView(
             new Text("Cards & Borders").Font(Font.LargeTitle),
 
-            // A card: per-edge padding + background + corner radius + border + shadow
+            // A solid card: per-edge padding + background + corner radius + border + shadow
             new VStack(
-                new Text("Card").Font(Font.Headline),
+                new Text("Solid card").Font(Font.Headline),
                 new Text("padding · background · corner radius · border · shadow")
                     .Font(Font.Caption).ForegroundColor(Color.Secondary)
             ).Alignment(HorizontalAlignment.Leading)
-             .Spacing(4)
-             .Padding(16)
-             .Background(Color.Hex("#EEF0FF"))
-             .CornerRadius(14)
-             .Border(Color.Blue, 2, cornerRadius: 14)
-             .Shadow(10, Color.Blue, y: 4)
+             .Spacing(4).Padding(16)
+             .Background(Color.Hex("#EEF0FF")).CornerRadius(14)
+             .Border(Color.Blue, 2, cornerRadius: 14).Shadow(10, Color.Blue, y: 4),
+
+            // A linear-gradient card (F5) — a real gradient shader/CSS/SwiftUI LinearGradient.
+            new VStack(
+                new Text("Linear gradient").Font(Font.Headline).ForegroundColor(Color.Hex("#FFFFFF")),
+                new Text(".Background(new LinearGradient(45, …))").Font(Font.Caption).ForegroundColor(Color.Hex("#F0F0FF"))
+            ).Alignment(HorizontalAlignment.Leading).Spacing(4).Padding(16)
+             .Background(new LinearGradient(45,
+                 new GradientStop(Color.Hex("#7C4DFF"), 0), new GradientStop(Color.Hex("#00BCD4"), 1)))
+             .CornerRadius(14).Shadow(8, y: 4),
+
+            // A radial-gradient card (F5).
+            new VStack(
+                new Text("Radial gradient").Font(Font.Headline).ForegroundColor(Color.Hex("#FFFFFF"))
+            ).Alignment(HorizontalAlignment.Leading).Padding(16)
+             .Background(new RadialGradient(Color.Hex("#FF5252"), Color.Hex("#7B1FA2")))
+             .CornerRadius(14),
+
+            // A frosted-glass material card (F6) over a gradient backdrop — real backdrop blur on Web/SwiftUI.
+            new ZStack(
+                new RoundedRectangle(16).Frame(300, 120).ForegroundColor(Color.Hex("#FF9500")),
+                new VStack(
+                    new Text("Material").Font(Font.Headline),
+                    new Text(".Material(MaterialStyle.Thin)").Font(Font.Caption)
+                ).Spacing(4).Padding(16).Material(MaterialStyle.Thin).CornerRadius(12)
+            ),
+
+            // Shadow & corner variations.
+            new HStack(
+                new RoundedRectangle(4).Frame(80, 80).ForegroundColor(Color.Hex("#EEF0FF")).Shadow(2, y: 1),
+                new RoundedRectangle(16).Frame(80, 80).ForegroundColor(Color.Hex("#EEF0FF")).Shadow(8, y: 4),
+                new RoundedRectangle(40).Frame(80, 80).ForegroundColor(Color.Hex("#EEF0FF")).Shadow(16, Color.Blue, y: 8)
+            ).Spacing(12)
         ).Padding(20).NavigationTitle("Cards & Borders");
 
     // ── Media ───────────────────────────────────────────────────────────────

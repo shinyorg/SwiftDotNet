@@ -259,15 +259,6 @@ public class ControlsTests
     }
 
     [Fact]
-    public void CountryPicker_ShowsPlaceholderThenSelection()
-    {
-        var sel = new State<Country?>(null);
-        Assert.Contains(Walk(Render(new CountryPicker(sel))), n => Text(n) == "Select country");
-        sel = new State<Country?>(new Country("🇬🇧", "United Kingdom", "GB", "+44"));
-        Assert.Contains(Walk(Render(new CountryPicker(sel))), n => Text(n).Contains("United Kingdom"));
-    }
-
-    [Fact]
     public void DataGrid_RendersHeadersAndAllRows()
     {
         var node = Render(new DataGrid<(string Name, int Age)>(

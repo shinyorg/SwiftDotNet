@@ -80,7 +80,7 @@ Page("0.0.5.0", "page_styles");     // Styling → Global Styles
 // from *within* a pushed page is a real-SwiftUI feature the headless Skia overlay doesn't composite, so we
 // stop at the page itself — see the Skia.Mac window app to exercise it interactively.)
 Render();
-TapId("0.0.6.0"); Shot("page_nav"); // push Sheets & Alerts
+TapId("0.0.7.0"); Shot("page_nav"); // push Sheets & Alerts
 Back();                             // pop back to the menu before the next push
 
 // Animation page: push it, arm the spring panel, and settle a few frames so the interpolation is visible.
