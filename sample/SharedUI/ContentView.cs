@@ -49,8 +49,44 @@ public sealed class ContentView : View
             new Tab("Carousel", "rectangle.stack", CarouselTab()),
             new Tab("Lists", "list.bullet", ListsTab()),
             new Tab("Maps", "map", MapsTab()),
+            new Tab("Styles", "paintbrush", StylesTab()),
             new Tab("Nav", "arrow.forward.circle", NavTab())
         );
+
+    // Global styles, SwiftUI-style but resolved in C#: values set on a container cascade to descendants
+    // that don't set their own. Everything below is wrapped once in a Theme + a default ButtonStyle; the
+    // inner VStack adds an ambient font/color. None of the leaf Texts or Buttons style themselves.
+    View StylesTab() =>
+        new ScrollView(
+            new VStack(
+                new Text("Global styles").Font(Font.LargeTitle),
+                new Text("Set a font, color, control style, or theme once — descendants inherit it.")
+                    .Font(Font.Caption).ForegroundColor(Color.Secondary),
+
+                // B — cascade: these three Texts declare no font/color; they inherit the ambient environment.
+                new VStack(
+                    new Text("Inherited heading"),
+                    new Text("Inherited line one"),
+                    new Text("Inherited line two")
+                ).Spacing(6).Align(Alignment.Leading)
+                 .Environment(e => e.Font(Font.Headline).ForegroundColor(Color.Accent)),
+
+                // A — reusable bundle: a themed card look, its padding/surface/radius read from the Theme.
+                new VStack(
+                    new Text("Reusable bundle").Font(Font.Headline),
+                    new Text(".CardStyle() pulls padding, surface, radius and shadow from the Theme.")
+                        .Font(Font.Caption)
+                ).Spacing(4).Align(Alignment.Leading).CardStyle(),
+
+                // C — control style: neither button sets a style; both adopt the ambient FilledButtonStyle.
+                new Text("Ambient button style").Font(Font.Headline).Align(Alignment.Leading),
+                new HStack(
+                    new Button("Primary", () => _quantity.Value++),
+                    new Button("Secondary", () => _quantity.Value = 0)
+                ).Spacing(12)
+            ).Spacing(16).Padding(20)
+        ).ButtonStyle(new FilledButtonStyle())
+         .Theme(new Theme { Accent = Color.Hex("#7C4DFF"), Surface = Color.Hex("#F0EEFF"), CornerRadius = 16 });
 
     View MapsTab() =>
         new VStack(
