@@ -13,6 +13,7 @@
 
 import SwiftUI
 import MapKit
+import SwiftDotNetBridge   // companion module: pulls in swiftDotNetRegisterRenderer + SwiftDotNetProps
 
 // MARK: - Wire model (mirror of SwiftDotNet.Maps MapJson)
 
@@ -111,4 +112,11 @@ public func registerSwiftDotNetMapRenderer() {
     if #available(iOS 17.0, macOS 14.0, *) {
         swiftDotNetRegisterRenderer("Map") { props in AnyView(SwiftDotNetMapView(props: props)) }
     }
+}
+
+/// C entry point so managed code can register the MapKit renderer at startup (resolved via dlsym /
+/// "__Internal", like the bridge's own exports).
+@_cdecl("swiftdotnet_register_maps")
+public func swiftdotnet_register_maps() {
+    registerSwiftDotNetMapRenderer()
 }

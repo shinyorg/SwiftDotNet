@@ -35,6 +35,7 @@ public static class SwiftApp
     {
         _root = root;
         _bridge = bridge;
+        _lastTree = null; // fresh run: emit a full replace rather than diffing against a prior root's tree
         _uiContext = SynchronizationContext.Current;
         bridge.SetEventHandler(OnEvent);
         Render();

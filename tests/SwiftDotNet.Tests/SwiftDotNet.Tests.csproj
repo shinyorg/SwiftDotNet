@@ -17,6 +17,9 @@
     <ItemGroup>
         <!-- Reference the plain net10.0 build of the core runtime (no platform head needed). -->
         <ProjectReference Include="..\..\src\SwiftDotNet\SwiftDotNet.csproj"/>
+        <!-- The Skia self-drawing backend is pure C# + SkiaSharp (runs headless on macOS/Linux/Windows),
+             so it can be driven directly in tests to exercise host-side patch application. -->
+        <ProjectReference Include="..\..\src\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj"/>
     </ItemGroup>
 
 </Project>

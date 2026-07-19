@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Apple (MapKit) renderer for the `Map` control. Companion to the pure-C# SwiftDotNet.Maps:
+    it carries the native SwiftDotNetMaps.xcframework (built from native/maps/MapRenderer.swift) and a
+    tiny P/Invoke to register it. Kept SEPARATE from the core SwiftDotNetBridge so MapKit is only linked
+    by apps that opt into maps. Apple-only TFMs, so it builds on macOS.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-ios;net10.0-macos</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.EndsWith('-ios'))">17.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.EndsWith('-macos'))">14.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Maps\SwiftDotNet.Maps.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -70,7 +70,18 @@ sealed partial class SkiaNode
             {
                 var clip = canvas.Save();
                 canvas.ClipRect(Frame);
-                foreach (var c in Children) c.Paint(canvas, dark);
+                // Viewport culling: rows arranged fully above/below the visible window are skipped, so a
+                // long scrolled list only pays paint cost for the handful of rows actually on screen.
+                foreach (var c in Children)
+                {
+                    if (!c.Frame.IntersectsWith(Frame)) continue;
+                    if (c.Props.GetValueOrDefault("selected") as bool? == true)
+                    {
+                        using var hl = new SKPaint { Color = SkiaTheme.Color("accentColor", dark).WithAlpha(40), IsAntialias = true };
+                        canvas.DrawRect(new SKRect(Frame.Left, c.Frame.Top, Frame.Right, c.Frame.Bottom), hl);
+                    }
+                    c.Paint(canvas, dark);
+                }
                 canvas.RestoreToCount(clip);
                 PaintScrollbar(canvas, dark);
                 return;

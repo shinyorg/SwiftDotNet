@@ -15,7 +15,9 @@ namespace SwiftDotNet;
 /// </summary>
 sealed partial class SkiaNode
 {
-    public required string Id { get; init; }
+    // Id is refreshed when a keyed row is reused across a reconcile (its structural position moved), so
+    // events still route to the current render's action table. Type is fixed for a node's lifetime.
+    public string Id { get; private set; } = "";
     public required string Type { get; init; }
     public Dictionary<string, object?> Props { get; private set; } = new();
     public List<Dictionary<string, object?>> Modifiers { get; private set; } = new();
@@ -75,11 +77,95 @@ sealed partial class SkiaNode
 
     public void SetChildren(JsonElement children)
     {
-        Children.Clear();
         if (Type == "NavigationStack") _bridge.NavStack.Push(this);
-        foreach (var childElement in children.EnumerateArray())
-            Children.Add(Build(childElement, _bridge));
+
+        // Keyed containers (a keyed List) reconcile children by their "key" prop so a reused row keeps its
+        // SkiaNode instance — preserving nested scroll offsets, animation clocks and custom-renderer state —
+        // instead of being torn down and rebuilt. Non-keyed containers keep the simple clear-and-rebuild.
+        if (Props.GetValueOrDefault("keyed") as bool? == true)
+            ReconcileKeyedChildren(children);
+        else
+        {
+            Children.Clear();
+            foreach (var childElement in children.EnumerateArray())
+                Children.Add(Build(childElement, _bridge));
+        }
+
         if (Type == "NavigationStack") _bridge.NavStack.Pop();
+    }
+
+    /// <summary>Match incoming children against retained ones by their <c>key</c> prop; reuse (and adopt fresh
+    /// data into) the survivors, build the newcomers, and drop the rest — preserving per-row backend state.</summary>
+    void ReconcileKeyedChildren(JsonElement children)
+    {
+        var byKey = new Dictionary<string, SkiaNode>();
+        foreach (var c in Children)
+            if (c.Props.GetValueOrDefault("key") is string k) byKey[k] = c;
+
+        var next = new List<SkiaNode>();
+        foreach (var el in children.EnumerateArray())
+        {
+            var key = el.GetProperty("props").TryGetProperty("key", out var kp) ? kp.GetString() : null;
+            var type = el.GetProperty("type").GetString();
+            if (key is not null && byKey.Remove(key, out var reuse) && reuse.Type == type)
+            {
+                reuse.Adopt(el);
+                next.Add(reuse);
+            }
+            else
+                next.Add(Build(el, _bridge));
+        }
+
+        Children.Clear();
+        Children.AddRange(next);
+    }
+
+    /// <summary>Refresh this reused node from an incoming wire node: its (moved) structural id, props and
+    /// modifiers, then its subtree. Descendants are reused positionally when their shape is unchanged so their
+    /// ids are re-stamped and local state survives; any shape change rebuilds that subtree fresh.</summary>
+    void Adopt(JsonElement e)
+    {
+        Id = e.GetProperty("id").GetString()!;
+        Props = ReadDict(e.GetProperty("props"));
+        Modifiers = ReadDictArray(e.GetProperty("modifiers"));
+
+        var incoming = e.GetProperty("children");
+        var count = incoming.GetArrayLength();
+
+        // A keyed descendant container reconciles by key; otherwise adopt positionally when the shape matches.
+        if (Props.GetValueOrDefault("keyed") as bool? == true)
+        {
+            if (Type == "NavigationStack") _bridge.NavStack.Push(this);
+            ReconcileKeyedChildren(incoming);
+            if (Type == "NavigationStack") _bridge.NavStack.Pop();
+            return;
+        }
+
+        var sameShape = count == Children.Count;
+        if (sameShape)
+        {
+            var i = 0;
+            foreach (var childEl in incoming.EnumerateArray())
+            {
+                if (Children[i].Type != childEl.GetProperty("type").GetString()) { sameShape = false; break; }
+                i++;
+            }
+        }
+
+        if (sameShape)
+        {
+            var i = 0;
+            foreach (var childEl in incoming.EnumerateArray())
+                Children[i++].Adopt(childEl);
+        }
+        else
+        {
+            Children.Clear();
+            if (Type == "NavigationStack") _bridge.NavStack.Push(this);
+            foreach (var childEl in incoming.EnumerateArray())
+                Children.Add(Build(childEl, _bridge));
+            if (Type == "NavigationStack") _bridge.NavStack.Pop();
+        }
     }
 
     // ========================================================================
@@ -208,6 +294,8 @@ sealed partial class SkiaNode
                 return MeasureStack(inner, horizontal: true);
             case "VStack" or "Group":
                 return MeasureStack(inner, horizontal: false);
+            case "List" when IsGridList:
+                return MeasureScrollableGrid(inner);
             case "ScrollView" or "List" or "Form" or "Section":
                 return MeasureScrollable(inner);
             case "ZStack":
@@ -363,6 +451,9 @@ sealed partial class SkiaNode
             case "VStack" or "Group":
                 ArrangeStack(horizontal: false);
                 break;
+            case "List" when IsGridList:
+                ArrangeScrollableGrid();
+                break;
             case "ScrollView" or "List" or "Form" or "Section":
                 ArrangeScrollable();
                 break;
@@ -430,6 +521,48 @@ sealed partial class SkiaNode
                 child.Arrange(new SKRect(x, cursor, x + m.Width, cursor + ch));
                 cursor += ch;
             }
+        }
+    }
+
+    bool IsGridList => Type == "List" && Str("layout") == "grid";
+
+    // A grid List measures uniform cells (like Grid) but reports only the available height and remembers
+    // the natural height so it can scroll vertically.
+    SKSize MeasureScrollableGrid(SKSize inner)
+    {
+        var cols = Math.Max(1, (int)(Num("columns") ?? 2));
+        var spacing = (float)(Num("spacing") ?? 8);
+        float cellW = 0, cellH = 0;
+        var cellAvail = new SKSize(Math.Max(0, (inner.Width - (cols - 1) * spacing) / cols), inner.Height);
+        foreach (var c in Children)
+        {
+            var s = c.Measure(cellAvail);
+            _childMeasured.Add(s);
+            cellW = Math.Max(cellW, s.Width);
+            cellH = Math.Max(cellH, s.Height);
+        }
+        // Cells fill their column width so the grid is evenly spaced.
+        _gridCellW = Math.Max(cellW, cellAvail.Width);
+        _gridCellH = cellH;
+        var rows = (int)Math.Ceiling(Children.Count / (double)cols);
+        _naturalHeight = rows * cellH + Math.Max(0, rows - 1) * spacing;
+        return new SKSize(inner.Width, Math.Min(_naturalHeight, inner.Height));
+    }
+
+    void ArrangeScrollableGrid()
+    {
+        var cols = Math.Max(1, (int)(Num("columns") ?? 2));
+        var spacing = (float)(Num("spacing") ?? 8);
+        ScrollMax = Math.Max(0, _naturalHeight - _content.Height);
+        ScrollOffset = Math.Clamp(ScrollOffset, 0, ScrollMax);
+        var top = _content.Top - ScrollOffset;
+        for (var i = 0; i < Children.Count; i++)
+        {
+            var col = i % cols;
+            var row = i / cols;
+            var x = _content.Left + col * (_gridCellW + spacing);
+            var y = top + row * (_gridCellH + spacing);
+            Children[i].Arrange(new SKRect(x, y, x + _gridCellW, y + _gridCellH));
         }
     }
 
@@ -576,6 +709,15 @@ sealed partial class SkiaNode
             if (Type == "TabView" && i != _tabIndex) continue;
             if (Children[i].HitTest(p)) return true;
         }
+
+        // Selectable List: a tap that no row control consumed selects that row (emits its key to C#).
+        if (Type == "List" && HasProp("selectionMode"))
+            for (var i = 0; i < Children.Count; i++)
+                if (Children[i].Frame.Contains(p) && Children[i].Props.GetValueOrDefault("key") is string key)
+                {
+                    _bridge.Emit(Id, key);
+                    return true;
+                }
 
         // Tapping a text control focuses it (keyboard input then routes here).
         if (Type is "TextField" or "SecureField" or "TextEditor")

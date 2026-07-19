@@ -94,6 +94,10 @@ final class VNode: Identifiable {
         modifiers = w.modifiers
         children = w.children.map(VNode.init)
     }
+
+    /// The identity SwiftUI's ForEach diffs by: a keyed List row's stable `key` (so it recycles/animates
+    /// across inserts and reorders), falling back to the structural id for everything else.
+    var identity: String { props["key"]?.string ?? id }
 }
 
 @Observable
@@ -339,7 +343,7 @@ struct NodeView: View {
         case "Grid":
             gridView
         case "List":
-            SwiftUI.List { childViews }
+            listContainer
         case "Form":
             SwiftUI.Form { childViews }
         case "Group":
@@ -417,7 +421,39 @@ struct NodeView: View {
 
     @ViewBuilder
     private var childViews: some View {
-        ForEach(node.children) { NodeView(node: $0) }
+        ForEach(node.children, id: \.identity) { NodeView(node: $0) }
+    }
+
+    // List honours .Columns(n) (grid) and .Horizontal() (axis); otherwise a native virtualizing List.
+    @ViewBuilder
+    private var listContainer: some View {
+        if node.props["layout"]?.string == "grid" {
+            let cols = Int(node.props["columns"]?.number ?? 2)
+            SwiftUI.ScrollView {
+                SwiftUI.LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: max(1, cols)), spacing: 8) { childViews }
+                    .padding(.horizontal)
+            }
+        } else if node.props["axis"]?.string == "horizontal" {
+            SwiftUI.ScrollView(.horizontal) {
+                SwiftUI.LazyHStack(spacing: 8) { childViews }.padding(.horizontal)
+            }
+        } else if node.props["selectionMode"]?.string != nil {
+            SwiftUI.List {
+                ForEach(node.children, id: \.identity) { child in
+                    NodeView(node: child)
+                        .listRowBackground(child.props["selected"]?.bool == true ? Color.accentColor.opacity(0.15) : nil)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if let key = child.props["key"]?.string { emitEvent(node.id, key) }
+                        }
+                }
+            }
+        } else if node.props["refreshable"]?.bool == true {
+            SwiftUI.List { childViews }
+                .refreshable { emitEvent(node.id, "refresh") }
+        } else {
+            SwiftUI.List { childViews }
+        }
     }
 
     @ViewBuilder

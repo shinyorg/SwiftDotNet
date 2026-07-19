@@ -186,17 +186,49 @@ sealed class WinNode
         return grid;
     }
 
+    /// <summary>The panel that directly hosts a container's child rows, when the container wraps them in
+    /// chrome (List). SetChildren re-lays children into this instead of the wrapper.</summary>
+    Panel? _childHost;
+
     Border MakeList()
     {
+        // Grid / horizontal lists reuse the standard grid / horizontal-stack layout (keyed live-reorder is
+        // supported for the default vertical list via _childHost; grid/horizontal rebuild on change).
+        if (Str("layout") == "grid")
+            return new Border { CornerRadius = new CornerRadius(8), Child = MakeGrid() };
+        if (Str("axis") == "horizontal")
+        {
+            var h = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            foreach (var c in Children) h.Children.Add(c.Element);
+            return new Border { CornerRadius = new CornerRadius(8), Child = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled, Content = h } };
+        }
+
         var panel = new StackPanel();
+        _childHost = panel;
+        LayoutListRows(panel);
+        return new Border { CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), BorderBrush = WinStyle.Brush("secondary"), Child = panel };
+    }
+
+    void LayoutListRows(Panel panel)
+    {
+        var selectable = Str("selectionMode").Length > 0;
+        panel.Children.Clear();
         for (var i = 0; i < Children.Count; i++)
         {
-            var row = new Border { Padding = new Thickness(16, 12, 16, 12), Child = Children[i].Element };
+            var child = Children[i];
+            var row = new Border { Padding = new Thickness(16, 12, 16, 12), Child = child.Element };
+            // Selection: a tap emits the row's key to C#; selected rows get a highlight. Rows are rebuilt
+            // on every layout pass, so handlers attach cleanly without stacking.
+            if (selectable && child.Props.GetValueOrDefault("key") is string key)
+            {
+                if (child.Props.GetValueOrDefault("selected") as bool? == true)
+                    row.Background = new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue) { Opacity = 0.2 };
+                row.Tapped += (_, _) => _bridge.Emit(Id, key);
+            }
             panel.Children.Add(row);
             if (i < Children.Count - 1)
                 panel.Children.Add(new Border { Height = 1, Background = WinStyle.Brush("secondary") });
         }
-        return new Border { CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), BorderBrush = WinStyle.Brush("secondary"), Child = panel };
     }
 
     ScrollViewer MakeForm()
@@ -565,15 +597,43 @@ sealed class WinNode
 
     public void SetChildren(JsonElement children)
     {
-        if (Inner is not Panel panel) return;
-        panel.Children.Clear();
-        Children.Clear();
-        foreach (var childElement in children.EnumerateArray())
+        // Reconcile the child WinNode list, reusing elements by key. setChildren only fires on a keyed
+        // key-sequence change (insert/remove/move), where surviving rows keep identical content — so
+        // reusing a matched row's already-built element both preserves its control state and IS the
+        // recycling. Non-keyed containers rebuild.
+        ReconcileChildren(children);
+
+        if (_childHost is { } host)      // chrome-wrapped container (List): re-lay rows into its panel
         {
-            var child = Build(childElement, _bridge);
-            Children.Add(child);
-            panel.Children.Add(child.Element);
+            LayoutListRows(host);
+            return;
         }
+        if (Inner is Panel panel)        // direct panel container (Stack/Form/Section/Group)
+        {
+            panel.Children.Clear();
+            foreach (var child in Children) panel.Children.Add(child.Element);
+        }
+    }
+
+    void ReconcileChildren(JsonElement children)
+    {
+        var keyed = Props.GetValueOrDefault("keyed") as bool? == true;
+        var byKey = new Dictionary<string, WinNode>();
+        if (keyed)
+            foreach (var c in Children)
+                if (c.Props.GetValueOrDefault("key") is string k) byKey[k] = c;
+
+        var next = new List<WinNode>();
+        foreach (var el in children.EnumerateArray())
+        {
+            var key = keyed && el.TryGetProperty("props", out var p) && p.TryGetProperty("key", out var kp)
+                ? kp.GetString() : null;
+            next.Add(key is not null && byKey.TryGetValue(key, out var reuse) && reuse.Type == el.GetProperty("type").GetString()
+                ? reuse
+                : Build(el, _bridge));
+        }
+        Children.Clear();
+        Children.AddRange(next);
     }
 
     // ---- helpers -------------------------------------------------------------

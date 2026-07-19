@@ -55,15 +55,15 @@
     </ItemGroup>
     <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios'">
         <Compile Include="Platforms/iOS/**/*.cs"/>
-        <None Include="Platforms/iOS/Info.plist"/>
+        <None Include="Platforms/iOS/Info.plist" Link="Info.plist"/>
     </ItemGroup>
     <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'tvos'">
         <Compile Include="Platforms/tvOS/**/*.cs"/>
-        <None Include="Platforms/tvOS/Info.plist"/>
+        <None Include="Platforms/tvOS/Info.plist" Link="Info.plist"/>
     </ItemGroup>
     <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'macos'">
         <Compile Include="Platforms/macOS/**/*.cs"/>
-        <None Include="Platforms/macOS/Info.plist"/>
+        <None Include="Platforms/macOS/Info.plist" Link="Info.plist"/>
     </ItemGroup>
     <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'android'">
         <Compile Include="Platforms/Android/**/*.cs"/>
@@ -74,6 +74,13 @@
 
     <!-- Apple (iOS/macOS/tvOS): link the Swift bridge (NativeReference doesn't flow transitively). -->
     <Import Project="..\..\src\SwiftDotNet\SwiftDotNetBridge.targets"/>
+
+    <!-- Apple (iOS/macOS): opt into the native MapKit renderer for the Map control (keeps MapKit out of
+         the core bridge). Reference the companion + import its NativeReference; call AppleMaps.Register(). -->
+    <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios' or '$(TargetPlatformIdentifier)' == 'macos'">
+      <ProjectReference Include="..\..\src\SwiftDotNet.Maps.Apple\SwiftDotNet.Maps.Apple.csproj"/>
+    </ItemGroup>
+    <Import Project="..\..\src\SwiftDotNet.Maps.Apple\SwiftDotNetMaps.targets"/>
 
     <!-- Windows: reference the SDK directly so the bootstrap + self-contained runtime apply at the exe. -->
     <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'windows'">

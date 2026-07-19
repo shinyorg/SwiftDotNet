@@ -172,13 +172,45 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
 
     void ListBox(RenderTreeBuilder b, WebNode n)
     {
+        // Grid / horizontal layout: lay rows out with CSS grid or a horizontal flex row.
+        var layout = n.S("layout");
+        var horizontal = n.S("axis") == "horizontal";
+        if (layout == "grid" || horizontal)
+        {
+            var cols = (int)(n.N("columns") ?? 2);
+            var container = layout == "grid"
+                ? $"display:grid;grid-template-columns:repeat({cols},1fr);gap:8px;"
+                : "display:flex;flex-direction:row;gap:8px;overflow-x:auto;";
+            b.OpenElement(_seq++, "div");
+            Style(b, n, container);
+            foreach (var child in n.Children)
+            {
+                b.OpenElement(_seq++, "div");
+                if (child.Props.GetValueOrDefault("key") is string gk) b.SetKey(gk);
+                RenderNode(b, child);
+                b.CloseElement();
+            }
+            b.CloseElement();
+            return;
+        }
+
+        var selectable = n.S("selectionMode").Length > 0;
         b.OpenElement(_seq++, "div");
         Style(b, n, "border:1px solid #ddd;border-radius:10px;overflow:hidden;");
         for (var i = 0; i < n.Children.Count; i++)
         {
+            var child = n.Children[i];
+            var key = child.Props.GetValueOrDefault("key") as string;
             b.OpenElement(_seq++, "div");
-            b.AddAttribute(_seq++, "style", "padding:12px 16px;" + (i < n.Children.Count - 1 ? "border-bottom:1px solid #eee;" : ""));
-            RenderNode(b, n.Children[i]);
+            // Keyed rows carry a stable "key"; hand it to Blazor's diff so the row's DOM node (and its
+            // input focus / scroll state) is preserved and merely moved across inserts and reorders.
+            if (key is not null) b.SetKey(key);
+            var bg = child.B("selected") ? "background:rgba(0,122,255,0.15);" : "";
+            var cursor = selectable && key is not null ? "cursor:pointer;" : "";
+            b.AddAttribute(_seq++, "style", "padding:12px 16px;" + cursor + bg + (i < n.Children.Count - 1 ? "border-bottom:1px solid #eee;" : ""));
+            if (selectable && key is not null)
+                b.AddAttribute(_seq++, "onclick", EventCallback.Factory.Create(this, () => _bridge.Emit(n.Id, key)));
+            RenderNode(b, child);
             b.CloseElement();
         }
         b.CloseElement();

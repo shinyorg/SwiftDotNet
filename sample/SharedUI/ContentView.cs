@@ -26,6 +26,7 @@ public sealed class ContentView : View
 
     // Lists
     readonly State<bool> _expanded = State(false);
+    readonly State<string?> _selectedFruit = new(null);
 
     // Nav
     readonly State<bool> _sheet = State(false);
@@ -186,8 +187,8 @@ public sealed class ContentView : View
 
     View ListsTab() =>
         new Form(
-            new Section("Fruits",
-                List.ForEach(Fruits, f => new Text(f))),
+            new Section($"Fruits — selected: {_selectedFruit.Value ?? "none"}",
+                List.ForEach(Fruits, f => f, f => new Text(f)).Selection(_selectedFruit)),
             new Section("Disclosure",
                 new DisclosureGroup("Show details", _expanded,
                     new Text("Hidden row 1"),

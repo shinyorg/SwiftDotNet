@@ -1,0 +1,19 @@
+<Project>
+
+  <!--
+    Declares the native MapKit renderer framework as a NativeReference. Like SwiftDotNetBridge.targets,
+    NativeReference items don't flow transitively from a referenced library, so the app that produces the
+    final binary must import this:
+
+      <Import Project="..\..\src\SwiftDotNet.Maps.Apple\SwiftDotNetMaps.targets" />
+
+    The framework depends on SwiftDotNetBridge (linked @rpath), which the app already embeds via
+    SwiftDotNetBridge.targets. Call AppleMaps.Register() once at startup to activate it.
+  -->
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios' or '$(TargetPlatformIdentifier)' == 'macos'">
+    <NativeReference Include="$(MSBuildThisFileDirectory)..\..\build\SwiftDotNetMaps.xcframework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
+
+</Project>

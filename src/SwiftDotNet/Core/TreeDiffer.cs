@@ -32,6 +32,18 @@ public static class TreeDiffer
         if (!DictEqual(previous.Props, next.Props) || !ModifiersEqual(previous.Modifiers, next.Modifiers))
             ops.Add(new UpdatePropsOp(next));
 
+        // Keyed containers (a keyed List) reconcile children by identity, not position. Row ids stay
+        // positional so every host's integer-indexed Find keeps working, which means a reorder of
+        // same-typed rows would otherwise look like N in-place prop updates and the move would be
+        // invisible. So when the child *key sequence* changes (insert / remove / move), hand the whole
+        // child list to the host as a setChildren and let it match by key and recycle. When the key
+        // sequence is unchanged, fall through: identity is stable and per-row prop updates are correct.
+        if (IsKeyed(next) && !KeySequenceEqual(previous.Children, next.Children))
+        {
+            ops.Add(new SetChildrenOp(next));
+            return;
+        }
+
         var structural = previous.Children.Count != next.Children.Count;
         if (!structural)
         {
@@ -55,6 +67,31 @@ public static class TreeDiffer
             for (var i = 0; i < previous.Children.Count; i++)
                 DiffNode(previous.Children[i], next.Children[i], ops);
         }
+    }
+
+    static bool IsKeyed(Node node) => node.Props.TryGetValue("keyed", out var v) && v is true;
+
+    /// <summary>True when both child lists carry the same <c>key</c> props in the same order — i.e. no
+    /// row was inserted, removed, or moved. A null (missing) key never matches, forcing a rebuild.
+    /// Slot children (header/footer/empty, marked with a <c>role</c> prop) are ignored — they are static
+    /// and shouldn't drop the keyed fast-path.</summary>
+    static bool KeySequenceEqual(List<Node> a, List<Node> b)
+    {
+        var ra = RowKeys(a);
+        var rb = RowKeys(b);
+        if (ra.Count != rb.Count) return false;
+        for (var i = 0; i < ra.Count; i++)
+            if (ra[i] is null || rb[i] is null || ra[i] != rb[i]) return false;
+        return true;
+    }
+
+    static List<string?> RowKeys(List<Node> children)
+    {
+        var keys = new List<string?>(children.Count);
+        foreach (var c in children)
+            if (!c.Props.ContainsKey("role"))   // skip header/footer/empty slots
+                keys.Add(c.Props.GetValueOrDefault("key") as string);
+        return keys;
     }
 
     static bool DictEqual(Dictionary<string, object> a, Dictionary<string, object> b)

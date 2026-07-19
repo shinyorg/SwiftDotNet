@@ -99,7 +99,18 @@ public sealed class SkiaBridge : IBridge
     public bool Scroll(SKPoint point, float dy)
     {
         if (_root?.ScrollableAt(point) is not { } node) return false;
+
+        // Pull-to-refresh: dragging down while already at the top of a refreshable list.
+        if (node.ScrollOffset <= 0 && dy < 0 && node.Props.GetValueOrDefault("refreshable") as bool? == true)
+            Emit(node.Id, List.RefreshValue);
+
         node.ScrollOffset = Math.Max(0, node.ScrollOffset + dy); // clamped to content on next layout
+
+        // Incremental load: scrolled within the threshold of the end of a list that asked for it.
+        if (node.Props.GetValueOrDefault("reachEndThreshold") is double threshold
+            && node.ScrollMax > 0 && node.ScrollOffset >= node.ScrollMax - threshold)
+            Emit(node.Id, List.LoadMoreValue);
+
         Invalidate?.Invoke();
         return true;
     }

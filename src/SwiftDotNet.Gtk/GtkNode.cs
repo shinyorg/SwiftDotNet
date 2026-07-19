@@ -185,11 +185,50 @@ sealed class GtkNode
         return grid;
     }
 
+    /// <summary>The widget that directly holds child rows when it isn't a plain <c>Gtk.Box</c> (List's
+    /// ListBox). SetChildren re-appends children here rather than to <see cref="Widget"/>.</summary>
+    Gtk.Widget? _childHost;
+
     Gtk.Widget MakeList()
     {
+        // Grid / horizontal lists use a Grid / horizontal Box (keyed live-reorder is supported for the
+        // default vertical ListBox via _childHost; grid/horizontal rebuild on change).
+        if (Str("layout") == "grid")
+        {
+            var cols = Math.Max(1, (int)(Num("columns") ?? 2));
+            var grid = Gtk.Grid.New();
+            grid.ColumnSpacing = 8;
+            grid.RowSpacing = 8;
+            for (var i = 0; i < Children.Count; i++)
+                grid.Attach(Children[i].Widget, i % cols, i / cols, 1, 1);
+            return grid;
+        }
+        if (Str("axis") == "horizontal")
+        {
+            var box = Gtk.Box.New(Gtk.Orientation.Horizontal, 8);
+            foreach (var c in Children) box.Append(c.Widget);
+            var scroll = Gtk.ScrolledWindow.New();
+            scroll.SetChild(box);
+            return scroll;
+        }
+
         var listBox = Gtk.ListBox.New();
         listBox.AddCssClass("boxed-list");
+        _childHost = listBox;
         foreach (var c in Children) listBox.Append(c.Widget);
+
+        // Selection: use the ListBox's native single/multiple selection. Row activation (a tap) emits the
+        // row's key to C#; the activated row's live index maps into the reconciled Children list.
+        if (Str("selectionMode").Length > 0)
+        {
+            listBox.SetSelectionMode(Str("selectionMode") == "multiple" ? Gtk.SelectionMode.Multiple : Gtk.SelectionMode.Single);
+            listBox.OnRowActivated += (_, args) =>
+            {
+                var idx = args.Row.GetIndex();
+                if (idx >= 0 && idx < Children.Count && Children[idx].Props.GetValueOrDefault("key") is string key)
+                    _bridge.Emit(Id, key);
+            };
+        }
         return listBox;
     }
 
@@ -661,15 +700,48 @@ sealed class GtkNode
 
     public void SetChildren(JsonElement children)
     {
-        if (Widget is not Gtk.Box box) return;
-        foreach (var child in Children) box.Remove(child.Widget);
-        Children.Clear();
-        foreach (var childElement in children.EnumerateArray())
+        // The child-hosting widget: a List's ListBox, else the container's own Box.
+        var host = _childHost ?? Widget as Gtk.Widget;
+        if (host is not (Gtk.Box or Gtk.ListBox)) return;
+
+        // Detach current rows, reconcile by key (reused rows keep their widget — recycling), re-append in
+        // order. setChildren only fires on a key-sequence change, so surviving rows' content is unchanged.
+        foreach (var child in Children) Detach(host, child.Widget);
+        ReconcileChildren(children);
+        foreach (var child in Children) Append(host, child.Widget);
+    }
+
+    void ReconcileChildren(JsonElement children)
+    {
+        var keyed = Props.GetValueOrDefault("keyed") as bool? == true;
+        var byKey = new Dictionary<string, GtkNode>();
+        if (keyed)
+            foreach (var c in Children)
+                if (c.Props.GetValueOrDefault("key") is string k) byKey[k] = c;
+
+        var next = new List<GtkNode>();
+        foreach (var el in children.EnumerateArray())
         {
-            var child = Build(childElement, _bridge);
-            Children.Add(child);
-            box.Append(child.Widget);
+            var key = keyed && el.TryGetProperty("props", out var p) && p.TryGetProperty("key", out var kp)
+                ? kp.GetString() : null;
+            next.Add(key is not null && byKey.TryGetValue(key, out var reuse) && reuse.Type == el.GetProperty("type").GetString()
+                ? reuse
+                : Build(el, _bridge));
         }
+        Children.Clear();
+        Children.AddRange(next);
+    }
+
+    static void Detach(Gtk.Widget host, Gtk.Widget child)
+    {
+        if (host is Gtk.Box b) b.Remove(child);
+        else if (host is Gtk.ListBox lb) lb.Remove(child);
+    }
+
+    static void Append(Gtk.Widget host, Gtk.Widget child)
+    {
+        if (host is Gtk.Box b) b.Append(child);
+        else if (host is Gtk.ListBox lb) lb.Append(child);
     }
 
     // ---- helpers -------------------------------------------------------------
