@@ -373,6 +373,8 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
                 if let event { emitEvent(event) }
             })
         case "onSwipe":
+            // Pointer drag/pinch gestures don't exist on tvOS (no touch surface) — skip there.
+            #if !os(tvOS)
             let event = m.event
             let direction = m.value
             out = AnyView(out.gesture(DragGesture(minimumDistance: 20).onEnded { g in
@@ -386,19 +388,24 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
                 }
                 if matched { emitEvent(event) }
             }))
+            #endif
         case "onDrag":
             // F1 continuous drag → "<phase>;tx,ty;lx,ly;vx,vy". SwiftUI's DragGesture has no began phase,
-            // so the first onChanged is reported as begin via a per-gesture flag.
+            // so the first onChanged is reported as begin via a per-gesture flag. (tvOS has no drag.)
+            #if !os(tvOS)
             let event = m.event
             let minDist = m.amount ?? 0
             out = AnyView(out.modifier(DragEmitter(event: event, minimumDistance: minDist)))
+            #endif
         case "onMagnify":
+            #if !os(tvOS)
             let event = m.event
             out = AnyView(out.gesture(MagnificationGesture().onChanged { scale in
                 if let event { emitEvent(event, String(format: "%f", scale)) }
             }.onEnded { scale in
                 if let event { emitEvent(event, String(format: "%f", scale)) }
             }))
+            #endif
         default:
             break
         }
@@ -407,6 +414,8 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
 }
 
 // F1: bridges SwiftUI's phaseless DragGesture to the began/changed/ended grammar the C# side parses.
+// tvOS has no DragGesture, so the whole helper is compiled out there (the onDrag case is guarded too).
+#if !os(tvOS)
 private struct DragEmitter: ViewModifier {
     let event: String?
     let minimumDistance: Double
@@ -431,6 +440,7 @@ private struct DragEmitter: ViewModifier {
         String(format: "%@;%f,%f;%f,%f;%f,%f", phase, t.width, t.height, l.x, l.y, v.width, v.height)
     }
 }
+#endif
 
 // MARK: - Interpreter: VNode tree → real SwiftUI
 

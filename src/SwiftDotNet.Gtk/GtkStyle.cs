@@ -93,6 +93,14 @@ static class GtkStyle
                     var sc = Hex(m.GetValueOrDefault("color") as string) ?? "rgba(0,0,0,0.35)";
                     sb.Append($"box-shadow:{Num(N(m, "x"))}px {Num(N(m, "y"))}px {Num(N(m, "radius", 4))}px {sc};");
                     break;
+                case "offset":
+                    // F4 translate: GTK4 has no widget transform, but CSS margins (incl. negative) shift a
+                    // widget's allocation — translating start/top-aligned widgets (slider/picker thumbs,
+                    // badges, dragged rows). A fill-aligned widget shifts approximately. Rotation/scale stay no-ops.
+                    var ox = N(m, "x"); var oy = N(m, "y");
+                    if (ox != 0) sb.Append($"margin-left:{Num(ox)}px;margin-right:{Num(-ox)}px;");
+                    if (oy != 0) sb.Append($"margin-top:{Num(oy)}px;margin-bottom:{Num(-oy)}px;");
+                    break;
                 case "foregroundColor":
                     if (Hex(m.GetValueOrDefault("value") as string) is { } fc)
                         sb.Append(shapeFill ? $"background-color:{fc};" : $"color:{fc};");

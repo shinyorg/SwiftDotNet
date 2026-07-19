@@ -583,10 +583,9 @@ sealed class GtkNode
                     w.Sensitive = (m.GetValueOrDefault("value") as string) != "true";
                     break;
                 case "scaleEffect":
-                case "offset":
                 case "rotation":
-                    // GTK4 has no generic per-widget affine transform (scale/translate/rotate) — documented
-                    // no-op (see plans/controls-missing-features-plan.md F4); revisit via a snapshot container.
+                    // GTK4 has no generic per-widget scale/rotate transform — documented no-op (F4).
+                    // (`offset` IS supported, via a CSS margin translation applied in GtkStyle.BuildCss.)
                     break;
                 case "onTapGesture":
                     if (m.GetValueOrDefault("event") is string ev)

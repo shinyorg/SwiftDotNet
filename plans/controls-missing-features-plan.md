@@ -20,8 +20,9 @@ framework primitives **first**; Plan 2 builds the controls on top.
 
 ¹ Swift shim `typecheck`-verified against the macOS + iOS SDKs (xcframework not rebuilt here).
 ² Compose/WinUI written to match; not compilable on this Mac (no Android SDK / Windows) — the repo's
-standing constraint. ³ GTK4 has no per-widget affine transform → documented no-op (mirrors `scaleEffect`);
-gradients work. ⁴ Web drag lands; multi-pointer pinch is a follow-up. ⁵ Skia exposes
+standing constraint. ³ GTK4: **`.Offset` now works** (translated via CSS margins — `margin-left:x;margin-right:-x` etc., which
+shifts a widget's allocation while keeping the layout footprint neutral; verified the exact CSS + headless
+widget build). `.Rotation`/`.ScaleEffect` remain no-ops (GTK4 has no widget rotate/scale). Gradients work. ⁴ Web drag lands; multi-pointer pinch is a follow-up. ⁵ Skia exposes
 `SkiaHost.Drag/Magnify`; each Skia host still wires its raw pointer stream to them. ⁶ **F2 is pure
 composition** (`OverlayHost` lowers to `ZStack`+`Rectangle`+gesture) so it needs **zero backend code** —
 `Overlay.Present/Dismiss/DismissAll` + `new OverlayHost(new ContentView())`.
