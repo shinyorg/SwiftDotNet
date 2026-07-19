@@ -62,6 +62,14 @@ static class WebStyle
                     if (m.GetValueOrDefault("gradient") is string grad && Gradient(grad) is { } g) sb.Append($"background:{g};");
                     else if (Color(m.GetValueOrDefault("value") as string) is { } bg) sb.Append($"background:{bg};");
                     break;
+                case "material":
+                    // Real backdrop blur on the Web (blurs whatever is behind the element) + a translucent tint.
+                    var (mblur, mtint) = MaterialParams(m.GetValueOrDefault("value") as string);
+                    var mdark = (m.GetValueOrDefault("dark") as string) == "true";
+                    var tintRgb = mdark ? "20,20,22" : "255,255,255";
+                    sb.Append($"backdrop-filter:blur({Px(mblur)});-webkit-backdrop-filter:blur({Px(mblur)});");
+                    sb.Append($"background:rgba({tintRgb},{mtint.ToString(CultureInfo.InvariantCulture)});");
+                    break;
                 case "cornerRadius":
                     sb.Append($"border-radius:{Px(N(m, "radius"))};");
                     break;
@@ -200,6 +208,15 @@ static class WebStyle
         "easeOut" => "ease-out",
         "spring" => "cubic-bezier(0.34, 1.56, 0.64, 1)",
         _ => "ease-in-out",
+    };
+
+    // Backdrop blur radius + tint opacity per material thickness (matches Core's MaterialTokens).
+    static (double Blur, double Tint) MaterialParams(string? token) => token switch
+    {
+        "ultraThin" => (8, 0.55),
+        "thin" => (14, 0.65),
+        "thick" => (30, 0.85),
+        _ => (20, 0.75),
     };
 
     static double? Num(Dictionary<string, object?> m, string key) => m.TryGetValue(key, out var v) && v is double d ? d : null;

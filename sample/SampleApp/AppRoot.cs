@@ -9,5 +9,5 @@ namespace SampleApp;
 /// </summary>
 public static class AppRoot
 {
-    public static View Create() => new ContentView();
+    public static View Create() => new OverlayHost(new ContentView());
 }

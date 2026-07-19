@@ -36,7 +36,7 @@ if (args.Length > 1 && args[1] == "anim")
 // registry seam: an unregistered type shows ⚠️, a registered one draws itself onto the canvas.
 SkiaRenderers.Register("Map", new MapRenderer());
 
-var view = new ContentView();
+var view = new OverlayHost(new ContentView());
 var bridge = new SkiaBridge();
 var host = new SkiaImageHost(bridge);
 SwiftApp.Run(view, bridge);

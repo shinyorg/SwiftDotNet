@@ -310,12 +310,27 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
     {
         b.OpenElement(_seq++, "input");
         Style(b, n, "padding:8px 12px;border:1px solid #c7c7cc;border-radius:8px;width:100%;box-sizing:border-box;");
-        b.AddAttribute(_seq++, "type", type);
+        // F9: keyboard type → HTML input type / inputmode; maxLength → the native attribute.
+        var (htmlType, inputMode) = KeyboardFor(n.S("keyboard"), type);
+        b.AddAttribute(_seq++, "type", htmlType);
+        if (inputMode is not null) b.AddAttribute(_seq++, "inputmode", inputMode);
+        if (n.N("maxLength") is { } max) b.AddAttribute(_seq++, "maxlength", ((int)max).ToString(CultureInfo.InvariantCulture));
+        if (n.S("returnKey") is { Length: > 0 } rk) b.AddAttribute(_seq++, "enterkeyhint", rk);
         b.AddAttribute(_seq++, "value", value);
         b.AddAttribute(_seq++, "placeholder", placeholder);
         b.AddAttribute(_seq++, "oninput", EventCallback.Factory.Create<ChangeEventArgs>(this, e => _bridge.Emit(n.Id, e.Value?.ToString())));
         b.CloseElement();
     }
+
+    static (string type, string? inputMode) KeyboardFor(string keyboard, string fallbackType) => keyboard switch
+    {
+        "number" => ("text", "numeric"),
+        "decimal" => ("text", "decimal"),
+        "email" => ("email", null),
+        "phone" => ("tel", null),
+        "url" => ("url", null),
+        _ => (fallbackType, null),
+    };
 
     void TextArea(RenderTreeBuilder b, WebNode n)
     {

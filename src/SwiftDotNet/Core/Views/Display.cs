@@ -28,6 +28,9 @@ public sealed class Image : View
     /// <summary>An in-memory image (e.g. PNG bytes); crosses the bridge as a base64 string.</summary>
     public static Image FromBytes(byte[] bytes) => new("bytes", Convert.ToBase64String(bytes));
 
+    /// <summary>An in-memory image from an already-base64-encoded payload (avoids a re-encode round-trip).</summary>
+    public static Image FromBytesBase64(string base64) => new("bytes", base64);
+
     /// <summary>Sets how the raster image fills its frame (no effect on SF Symbols).</summary>
     public Image ContentMode(ImageContentMode mode) { _mode = mode; return this; }
 

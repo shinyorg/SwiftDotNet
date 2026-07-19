@@ -74,6 +74,13 @@ static class GtkStyle
                     if (m.GetValueOrDefault("gradient") is string grad && Gradient(grad) is { } g) sb.Append($"background-image:{g};");
                     else if (Hex(m.GetValueOrDefault("value") as string) is { } bg) sb.Append($"background-color:{bg};");
                     break;
+                case "material":
+                    // GTK4 has no widget backdrop-blur → translucent tint fallback (documented degradation).
+                    var mtint = (m.GetValueOrDefault("value") as string) switch
+                    { "ultraThin" => 0.55, "thin" => 0.65, "thick" => 0.85, _ => 0.75 };
+                    var mrgb = (m.GetValueOrDefault("dark") as string) == "true" ? "20,20,22" : "255,255,255";
+                    sb.Append($"background-color:rgba({mrgb},{Num(mtint)});");
+                    break;
                 case "cornerRadius":
                     sb.Append($"border-radius:{Num(N(m, "radius"))}px;");
                     break;

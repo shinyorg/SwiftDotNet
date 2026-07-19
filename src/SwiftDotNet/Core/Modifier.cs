@@ -24,6 +24,9 @@ sealed class PaddingModifier : Modifier
         _trailing = edges.HasFlag(Edge.Trailing) ? amount : 0;
     }
 
+    public PaddingModifier(double horizontal, double vertical)
+        => (_top, _leading, _bottom, _trailing) = (vertical, horizontal, vertical, horizontal);
+
     internal override Dictionary<string, object> Serialize(RenderContext ctx, string path) => new()
     {
         ["type"] = "padding",
@@ -65,6 +68,16 @@ sealed class BackgroundModifier : Modifier
         else if (_value is not null) d["value"] = _value;
         return d;
     }
+}
+
+/// <summary>A frosted-glass material background (F6): backdrop blur + tint where supported, tint fallback elsewhere.</summary>
+sealed class MaterialModifier : Modifier
+{
+    readonly string _style;
+    readonly bool _dark;
+    public MaterialModifier(string style, bool dark) { _style = style; _dark = dark; }
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+        => new() { ["type"] = "material", ["value"] = _style, ["dark"] = _dark ? "true" : "false" };
 }
 
 /// <summary>Shifts a view by a fixed translation without affecting layout (mirrors SwiftUI's <c>.offset(x:y:)</c>).</summary>

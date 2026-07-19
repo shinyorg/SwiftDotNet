@@ -8,7 +8,7 @@ using SwiftDotNet.Sample;
 if (Environment.GetEnvironmentVariable("SDN_TEST") == "1")
     return CustomControlTest.Run();
 
-return SwiftDotNetHost.Run(new ContentView());
+return SwiftDotNetHost.Run(new OverlayHost(new ContentView()));
 
 /// <summary>
 /// A CUSTOM NATIVE PRIMITIVE (not a composition) — emits type "NativeRating"; a GTK renderer registered

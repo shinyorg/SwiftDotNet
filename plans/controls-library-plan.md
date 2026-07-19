@@ -7,13 +7,26 @@ names the Plan-1 features (F1–F11) it needs; a wave cannot start before its fe
 
 ## Context
 
-Port the controls from `~/Desktop/dev/controls` (`Shiny.Maui.Controls` — pills, badges, toasts, floating
-panels, trees, tables, sliders, color picker, image viewer, scheduler, chat, …) into SwiftDotNet as a
-**separate control library**, mirroring the existing `SwiftDotNet.Maps` split exactly.
+Port the controls from `~/Desktop/dev/controls` into SwiftDotNet as a **separate control library**,
+mirroring the existing `SwiftDotNet.Maps` split exactly.
+
+**Scope of this effort — two package families only:**
+
+1. **`Shiny.Maui.Controls`** (the main package) — pills, badges, toasts, floating panels, trees, tables,
+   sliders, color picker, image viewer, scheduler, chat, … (Waves 0–5 below).
+2. **`Shiny.Maui.Camera.*`** — the camera family: `Camera` (core `CameraView` + native handler),
+   `Camera.Barcode`, `Camera.Face`, `Camera.Ocr`, `Camera.Motion`, `Camera.Documents`, `Camera.Ai`,
+   plus `Shiny.Controls.Camera.Shared` (Wave 6).
+
+**Explicitly out of this effort** (not "first wave" — not in scope at all here; each needs its own later
+analysis): `Shiny.Maui.Controls.SpeechAddins`, `.Markdown`, `.MermaidDiagrams`, `.Desktop`, the standalone
+`.Barcodes` (ZXing generation — distinct from camera barcode *scanning*, which is in via `Camera.Barcode`),
+`.Themes.Material/Ocean`, `.Kiosk`, and the entire parallel `Shiny.Blazor.Controls` family.
 
 **Why a separate library.** Same reasons as Maps: the core stays dependency-free `net10.0` and
 referenceable from every head; the few controls that need native/heavy renderers live in companion
-packages so a neutral consumer isn't forced to pull them.
+packages so a neutral consumer isn't forced to pull them. The camera family in particular is native +
+platform-ML heavy, so it lives in its own companion packages (§Wave 6).
 
 **The porting model — two shapes, matching Core's two extension points:**
 
@@ -38,12 +51,23 @@ src/SwiftDotNet.Controls.Apple/         native renderers for the CustomViews tha
 src/SwiftDotNet.Controls.Web/           Blazor renderers (mirror SwiftDotNet.Maps.Web)
     (+ Gtk/Windows/Skia renderers where a CustomView needs them)
 native/controls/*.swift / *.kt          native renderers for SwiftUI/Compose CustomViews (blur, grids)
+
+# Camera family (Wave 6) — its own packages so a controls consumer isn't forced to pull camera/ML deps
+src/SwiftDotNet.Controls.Camera/        net10.0 — CameraView (a CustomView) + CameraPhoto/CameraInfo +
+    the IFrameAnalyzer pipeline abstractions (from Shiny.Controls.Camera.Shared). No native code.
+src/SwiftDotNet.Controls.Camera.Apple/  native AVFoundation preview + Vision analyzers (renderer + services)
+native/camera/*.swift / *.kt            native camera-preview renderers for the SwiftUI/Compose backends
+    (AVCaptureVideoPreviewLayer / CameraX PreviewView) + MLKit/Vision frame analyzers
+src/SwiftDotNet.Controls.Camera.{Ai,Barcode,Documents,Face,Motion,Ocr}/
+    net10.0 analyzer add-ons that plug into the frame pipeline (map to Vision / ML Kit per platform)
+
 sample/SharedUI/                        add a "Controls" tour tab exercising each wave
 SwiftDotNet.slnx                        add the new projects
 ```
 
 Composite controls need **no** companion package — they live entirely in `SwiftDotNet.Controls`
-(`net10.0`) and render everywhere. Companions exist only for the native CustomViews (Wave 4–5).
+(`net10.0`) and render everywhere. Companions exist only for the native CustomViews (Waves 4–6). The
+camera family is **all native/ML** and therefore ships entirely as its own packages.
 
 ## Control → approach → dependency map
 
@@ -76,10 +100,14 @@ Tiers and machinery are from the source-repo inventory. "Approach" = SwiftDotNet
 | ChatView | 3 | Composite (large) | F7, F3, F9, F10 attach |
 | MediaPickerButton | 3 | Composite + service | **F10** media picker |
 | AddressEntry | 3 | Composite + service | F10 (HTTP geocode) |
+| **CameraView** (Camera core) | 3 | **CustomView (native preview)** | **F10** camera+permissions, F1 tap-focus, F3 |
+| Camera.Barcode / .Face / .Ocr / .Motion | 3 | Frame-analyzer add-on → platform ML | **F10** (Vision / ML Kit) |
+| Camera.Documents / .Ai | 3 | Analyzer + pure-C# parsers over the ML text/detections | **F10** |
 
-**Out of scope for this plan** (separate analysis later): the `*.Camera*` (+ Ai/Barcode/Documents/Face/
-Motion/Ocr), `*.Barcodes`, `*.Markdown`, `*.MermaidDiagrams`, `*.Desktop`, `*.Kiosk`, `*.SpeechAddins`,
-`*.Themes.*` sub-packages, and the whole parallel `Shiny.Blazor.Controls` family.
+**Out of scope for this plan** (each needs its own later analysis): `Shiny.Maui.Controls.SpeechAddins`,
+`.Markdown`, `.MermaidDiagrams`, `.Desktop`, the standalone `.Barcodes` (ZXing generation — camera barcode
+*scanning* is in, via `Camera.Barcode`), `.Themes.Material/Ocean`, `.Kiosk`, and the whole parallel
+`Shiny.Blazor.Controls` family.
 
 ## Delivery waves (each ends with a renderable, verified sample tab)
 
@@ -144,6 +172,34 @@ The Tier-2/3 controls that require native recycling, freeform drawing, or platfo
 - Ends: a "Drawing & Chat" sample section, with clear per-backend capability notes (some are
   Skia/native-only).
 
+### Wave 6 — Camera family  ·  needs F10 + a new **camera-preview CustomView** capability
+The `Shiny.Maui.Camera.*` family. This is **all native + platform ML** — it ships as its own packages
+(§Project structure) and does not affect the pure-composition controls above.
+
+- **New capability first (a Plan-1 addition):** a live **camera-preview `CustomView`** — the `Map` model
+  applied to a camera. `CameraView` emits a `"CameraView"` node; each backend registers a renderer that
+  hosts the native preview (SwiftUI `AVCaptureVideoPreviewLayer`, Compose CameraX `PreviewView`, WinUI
+  `MediaPlayerElement`/`CaptureElement`, Web `getUserMedia`+`<video>`; GTK/Skia → placeholder). Capture,
+  torch, lens-switch, and tap-to-focus ride the event channel (F1) with a `kind:body` grammar like Map's.
+  Track this as an addendum to Plan 1 (call it **F12 — camera preview**); it is camera-specific, so it
+  lives with this wave rather than the general feature set.
+- **Camera core** (`SwiftDotNet.Controls.Camera`): `CameraView` (CustomView) + `CameraPhoto`/`CameraInfo`
+  + the `IFrameAnalyzer` pipeline abstractions (port `Shiny.Controls.Camera.Shared` — frame model,
+  coordinate transforms, overlay boxes). A captured photo is shown via **F3** raster images.
+- **ML analyzer add-ons** (each its own package, plugging into the frame pipeline, mapped to the platform
+  vision stack — **Apple Vision / Android ML Kit**):
+  - **Camera.Barcode** — barcode/QR scanning.
+  - **Camera.Face** — face detection.
+  - **Camera.Ocr** — text recognition.
+  - **Camera.Motion** — frame-difference motion detection (mostly pure C# over frames).
+  - **Camera.Documents** — business-card / credit-card / drivers-license parsing (pure-C# parsers over
+    OCR text — the analyzers are native, the parsers port straight across).
+  - **Camera.Ai** — document analysis over the detections.
+- **Reality check:** the preview + analyzers are **native-only** and land first on the backends that have
+  a camera (iOS/Android via the shims; macOS/Windows where a capture API exists). GTK/Skia/Web-without-
+  camera show the `⚠️` placeholder. Permissions/capture are **F10** platform services.
+- Ends: a "Camera" sample section (live preview + a barcode/OCR scan), gated to camera-capable backends.
+
 ## Patterns to reuse (don't reinvent)
 
 - **Multiplexed events:** controls with several callbacks use one event channel + a `kind:body` value
@@ -157,13 +213,17 @@ The Tier-2/3 controls that require native recycling, freeform drawing, or platfo
 
 ## Critical files
 
-- **New:** `src/SwiftDotNet.Controls/**`, `src/SwiftDotNet.Controls.Apple/**`,
+- **New (Waves 0–5):** `src/SwiftDotNet.Controls/**`, `src/SwiftDotNet.Controls.Apple/**`,
   `src/SwiftDotNet.Controls.Web/**`, `native/controls/**`, additions to
   `sample/SharedUI/ContentView.cs`, `SwiftDotNet.slnx`, a README backend/library row.
+- **New (Wave 6 — camera):** `src/SwiftDotNet.Controls.Camera/**`,
+  `src/SwiftDotNet.Controls.Camera.Apple/**`, `src/SwiftDotNet.Controls.Camera.{Ai,Barcode,Documents,Face,Motion,Ocr}/**`,
+  `native/camera/**`.
 - **Read/copy patterns from:** `src/SwiftDotNet.Maps/{Map,MapJson,MapTypes}.cs`,
   `src/SwiftDotNet.Maps.Web/MapLibreMap.cs`, `sample/SharedUI/Rating.cs`,
   `src/SwiftDotNet/Core/{CustomView,View,State,Theme}.cs`.
-- **Source controls to port:** `~/Desktop/dev/controls/src/Shiny.Maui.Controls/**` (per the map above).
+- **Source to port:** `~/Desktop/dev/controls/src/Shiny.Maui.Controls/**` (Waves 0–5) and
+  `~/Desktop/dev/controls/src/Shiny.Maui.Controls.Camera*/**` + `Shiny.Controls.Camera.Shared/**` (Wave 6).
 
 ## Verification
 
@@ -173,7 +233,8 @@ The Tier-2/3 controls that require native recycling, freeform drawing, or platfo
   structure/behavior (not pixels — SwiftDotNet is native-look per backend, except Skia which is uniform).
 - **Interaction:** pill/badge render (W1); toast shows+auto-dismisses, dialog confirms, floating panel
   drags to detents (W2); slider pans, table swipes+reorders, tree expands (W3); image viewer pinch-zooms,
-  color picker updates hex (W4); signature captures a stroke on Skia, chat scrolls+loads-more (W5).
+  color picker updates hex (W4); signature captures a stroke on Skia, chat scrolls+loads-more (W5);
+  live camera preview shows + a barcode/OCR scan fires its callback on a camera-capable backend (W6).
 - **Composite = zero native:** confirm every Tier-1 control renders on all four backends **without** a
   registered renderer (proves it decomposed to primitives).
 - **Graceful degradation:** a native-only control (FrostedGlass on GTK, SignaturePad off-Skia before its

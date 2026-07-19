@@ -75,6 +75,10 @@ public sealed class ContentView : View
                 new Section("Styling",
                     Row("Global Styles", "paintbrush", StylesPage())),
 
+                new Section("Library",
+                    Row("Shiny Controls", "square.on.square", new ControlsDemo()),
+                    Row("Data Controls", "tablecells", new DataControlsDemo())),
+
                 new Section("Navigation",
                     Row("Sheets & Alerts", "arrow.forward.circle", NavPage()))
             ).NavigationTitle("SwiftDotNet")

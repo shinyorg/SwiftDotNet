@@ -341,6 +341,15 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                 if (grad != null) m = m.background(grad)
                 else colorFor(mod["value"] as? String)?.let { m = m.background(it) }
             }
+            "material" -> {
+                // F6: RenderEffect backdrop blur is API-31+ and awkward to wire generically → translucent
+                // tint fallback (documented degradation).
+                val tint = when (mod["value"] as? String) {
+                    "ultraThin" -> 0.55f; "thin" -> 0.65f; "thick" -> 0.85f; else -> 0.75f
+                }
+                val base = if ((mod["dark"] as? String) == "true") Color(0xFF141416) else Color.White
+                m = m.background(base.copy(alpha = tint))
+            }
             "cornerRadius" -> m = m.clip(RoundedCornerShape((numOf(mod["radius"]) ?: 0.0).dp))
             "border" -> m = m.border(
                 (numOf(mod["width"]) ?: 1.0).dp,
@@ -732,11 +741,30 @@ private fun MenuNode(node: VNode) {
 
 @Composable
 private fun FieldNode(node: VNode, secure: Boolean) {
+    // F9: map keyboard type + return key + max length from props.
+    val keyboardType = when (node.s("keyboard")) {
+        "number" -> androidx.compose.ui.text.input.KeyboardType.Number
+        "decimal" -> androidx.compose.ui.text.input.KeyboardType.Decimal
+        "email" -> androidx.compose.ui.text.input.KeyboardType.Email
+        "phone" -> androidx.compose.ui.text.input.KeyboardType.Phone
+        "url" -> androidx.compose.ui.text.input.KeyboardType.Uri
+        else -> androidx.compose.ui.text.input.KeyboardType.Text
+    }
+    val imeAction = when (node.s("returnKey")) {
+        "done" -> androidx.compose.ui.text.input.ImeAction.Done
+        "go" -> androidx.compose.ui.text.input.ImeAction.Go
+        "next" -> androidx.compose.ui.text.input.ImeAction.Next
+        "search" -> androidx.compose.ui.text.input.ImeAction.Search
+        "send" -> androidx.compose.ui.text.input.ImeAction.Send
+        else -> androidx.compose.ui.text.input.ImeAction.Default
+    }
+    val maxLen = node.n("maxLength")?.toInt()
     OutlinedTextField(
         value = node.s("text"),
-        onValueChange = { SwiftDotNetBridge.emit(node.id, it) },
+        onValueChange = { v -> SwiftDotNetBridge.emit(node.id, if (maxLen != null && v.length > maxLen) v.substring(0, maxLen) else v) },
         placeholder = { Text(node.s("placeholder")) },
         singleLine = true,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
         visualTransformation = if (secure) PasswordVisualTransformation() else VisualTransformation.None,
         modifier = Modifier.fillMaxWidth(),
     )

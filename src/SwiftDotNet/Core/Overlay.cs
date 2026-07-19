@@ -84,7 +84,8 @@ public sealed class OverlayHost : View
             {
                 if (e.Options.DimBackground)
                 {
-                    var scrim = new Rectangle().Background(Color.Hex("#000000")).Opacity(0.4);
+                    // Shapes fill via ForegroundColor (Background on a shape gets painted over by the fill).
+                    var scrim = new Rectangle().ForegroundColor(Color.Hex("#000000")).Opacity(0.4);
                     if (e.Options.TapOutsideToDismiss)
                     {
                         var id = e.Id;             // capture

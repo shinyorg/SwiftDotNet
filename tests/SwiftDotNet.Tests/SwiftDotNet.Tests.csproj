@@ -20,6 +20,8 @@
         <!-- The Skia self-drawing backend is pure C# + SkiaSharp (runs headless on macOS/Linux/Windows),
              so it can be driven directly in tests to exercise host-side patch application. -->
         <ProjectReference Include="..\..\src\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj"/>
+        <!-- The ported controls library — pure composition over the core, driven headless in tests. -->
+        <ProjectReference Include="..\..\src\SwiftDotNet.Controls\SwiftDotNet.Controls.csproj"/>
     </ItemGroup>
 
 </Project>

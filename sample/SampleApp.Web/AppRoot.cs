@@ -11,7 +11,7 @@ public sealed class AppRoot : ComponentBase
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {
         builder.OpenComponent<SwiftDotNetView>(0);
-        builder.AddComponentParameter(1, nameof(SwiftDotNetView.Root), new ContentView());
+        builder.AddComponentParameter(1, nameof(SwiftDotNetView.Root), new OverlayHost(new ContentView()));
         builder.CloseComponent();
     }
 }

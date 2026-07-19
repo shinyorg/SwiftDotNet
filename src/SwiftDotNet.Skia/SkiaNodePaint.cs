@@ -147,6 +147,18 @@ sealed partial class SkiaNode
             canvas.DrawRoundRect(Frame, radius, radius, paint);
         }
 
+        // F6 material: real backdrop blur needs a surface snapshot the engine doesn't keep, so paint a
+        // translucent tint (documented fallback). Sits above the background, below content.
+        if (Mod("material") is { } mat)
+        {
+            var tint = (mat.GetValueOrDefault("value") as string) switch
+            { "ultraThin" => 0.55, "thin" => 0.65, "thick" => 0.85, _ => 0.75 };
+            var matDark = (mat.GetValueOrDefault("dark") as string) == "true";
+            var baseColor = matDark ? new SKColor(20, 20, 22) : new SKColor(255, 255, 255);
+            using var mp = new SKPaint { Color = baseColor.WithAlpha((byte)(tint * 255)), IsAntialias = true, Style = SKPaintStyle.Fill };
+            canvas.DrawRoundRect(Frame, radius, radius, mp);
+        }
+
         // Form/List/Section rows sit on a grouped surface.
         if (Type is "Section" && HasProp("header"))
         {

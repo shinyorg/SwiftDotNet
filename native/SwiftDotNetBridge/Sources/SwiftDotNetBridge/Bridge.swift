@@ -311,6 +311,16 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
             } else {
                 out = AnyView(out.background(colorFor(m.value) ?? .clear))
             }
+        case "material":
+            // F6: real SwiftUI frosted-glass material (adapts to light/dark automatically).
+            let material: Material
+            switch m.value {
+            case "ultraThin": material = .ultraThinMaterial
+            case "thin":      material = .thinMaterial
+            case "thick":     material = .thickMaterial
+            default:          material = .regularMaterial
+            }
+            out = AnyView(out.background(material))
         case "frame":
             out = AnyView(out.frame(width: m.width.map { CGFloat($0) },
                                     height: m.height.map { CGFloat($0) },
@@ -682,6 +692,41 @@ struct NodeView: View {
 
 // MARK: - Controlled components (two-way binding bridged to C# state)
 
+// F9: apply keyboard type (iOS) + return/submit label from the node props to a text field.
+private struct TextInputTraits: ViewModifier {
+    let node: VNode
+    func body(content: Content) -> some View {
+        var v = AnyView(content)
+        #if os(iOS)
+        if let kb = node.props["keyboard"]?.string {
+            let type: UIKeyboardType
+            switch kb {
+            case "number":  type = .numberPad
+            case "decimal": type = .decimalPad
+            case "email":   type = .emailAddress
+            case "phone":   type = .phonePad
+            case "url":     type = .URL
+            default:        type = .default
+            }
+            v = AnyView(v.keyboardType(type))
+        }
+        #endif
+        if let rk = node.props["returnKey"]?.string {
+            let label: SubmitLabel
+            switch rk {
+            case "done":   label = .done
+            case "go":     label = .go
+            case "next":   label = .next
+            case "search": label = .search
+            case "send":   label = .send
+            default:       label = .return
+            }
+            v = AnyView(v.submitLabel(label))
+        }
+        return v
+    }
+}
+
 struct TextFieldNode: View {
     let node: VNode
     @State private var text = ""
@@ -690,6 +735,7 @@ struct TextFieldNode: View {
             #if !os(tvOS)
             .textFieldStyle(.roundedBorder)
             #endif
+            .modifier(TextInputTraits(node: node))
             .onAppear { text = node.props["text"]?.string ?? "" }
             .onChange(of: text) { _, v in emitEvent(node.id, v) }
             .onChange(of: node.props["text"]?.string ?? "") { _, incoming in

@@ -26,8 +26,14 @@ gradients work. ⁴ Web drag lands; multi-pointer pinch is a follow-up. ⁵ Skia
 composition** (`OverlayHost` lowers to `ZStack`+`Rectangle`+gesture) so it needs **zero backend code** —
 `Overlay.Present/Dismiss/DismissAll` + `new OverlayHost(new ContentView())`.
 
-Deferred to later waves (unchanged from below): **F6** blur, **F7** collection upgrades, **F8** drawing
-canvas, **F9** focus/keyboard, **F10** services, **F11** geometry.
+**Wave B (partial) also landed:** **F6** material/blur (real backdrop blur on Web/SwiftUI, translucent
+tint fallback on GTK/Skia/Compose/WinUI) and **F9** text-input config (`KeyboardType`/`ReturnKey`/
+`MaxLength` on `TextField`, enforced in-binding + native keyboard on Web/SwiftUI/Compose). Tests in
+`WaveAFeatureTests.cs`/`ControlsTests.cs`; 66 total green.
+
+Still deferred: **F7** collection upgrades, **F8** drawing canvas, **F10** services, **F11** geometry
+(GeometryReader — needs per-backend layout-event plumbing; the fixed-frame + drag-location trick covers
+Slider/RangeSlider without it), **F12** camera preview (camera family).
 
 ## Context
 
@@ -210,6 +216,20 @@ each native toolkit** and exposes no size callback (only Skia measures internall
   a measured pixel width. Prefer the proportional route where possible — many MAUI controls only used
   `AbsoluteLayout` because MAUI lacked good proportional sizing.
 
+### F12 — Live camera-preview CustomView  ·  effort L (native)  ·  camera-family only
+Unlocks: the entire `Shiny.Maui.Camera.*` family ([Plan 2 Wave 6](controls-library-plan.md)) — CameraView
+plus the barcode/face/OCR/motion/documents/AI analyzers.
+
+- **The `Map` model applied to a camera:** a `CameraView` `CustomView` emits a `"CameraView"` node; each
+  backend registers a renderer hosting the **native preview** (SwiftUI `AVCaptureVideoPreviewLayer`,
+  Compose CameraX `PreviewView`, WinUI `CaptureElement`, Web `getUserMedia`+`<video>`; GTK/Skia →
+  placeholder). Capture / torch / lens-switch / tap-to-focus ride the event channel with a `kind:body`
+  grammar (copy `Map.Dispatch`). Frames feed an `IFrameAnalyzer` pipeline whose ML analyzers map to the
+  platform vision stack (Apple **Vision** / Android **ML Kit**).
+- **Scope:** camera-specific, so it is *not* part of the general feature set — it lands **with** Plan 2
+  Wave 6 and its own companion packages. Depends on **F10** for camera permissions/capture. This is the
+  single largest native effort in the whole port and is deliberately last.
+
 ## Recommended sequencing
 
 ```
@@ -222,6 +242,9 @@ Wave B (richer controls):
 
 Wave C (heavy):
     F7(d–e) virtualization/staggered/paged · F8 drawing canvas · F10 services
+
+Wave D (camera family — Plan 2 Wave 6, last):
+    F10 services · F12 camera-preview CustomView + native Vision/ML Kit analyzers
 ```
 
 **Minimal unlock:** F1 + F2 + F3 + F4 + F5 make the entire Tier-1 set of Plan 2 buildable as composites

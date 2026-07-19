@@ -17,6 +17,7 @@
     <Project Path="src/SwiftDotNet.Skia/SwiftDotNet.Skia.csproj"/>
     <Project Path="src/SwiftDotNet.Skia.Maui/SwiftDotNet.Skia.Maui.csproj"/>
     <Project Path="src/SwiftDotNet.Maps/SwiftDotNet.Maps.csproj"/>
+    <Project Path="src/SwiftDotNet.Controls/SwiftDotNet.Controls.csproj"/>
     <Project Path="src/SwiftDotNet.Maps.Web/SwiftDotNet.Maps.Web.csproj"/>
     <Project Path="src/SwiftDotNet.Web/SwiftDotNet.Web.csproj"/>
     <Project Path="src/SwiftDotNet/SwiftDotNet.csproj"/>

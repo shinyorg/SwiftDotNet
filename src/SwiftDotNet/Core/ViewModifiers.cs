@@ -31,6 +31,17 @@ public static class ViewModifiers
         return view;
     }
 
+    /// <summary>
+    /// F6 — a frosted-glass <see cref="MaterialStyle"/> background: a translucent blurred backdrop where the
+    /// backend supports it (Web/SwiftUI), a translucent tint elsewhere. Pass <paramref name="dark"/> true for
+    /// a dark-on-light glass. Mirrors SwiftUI's <c>.background(.thinMaterial)</c>.
+    /// </summary>
+    public static T Material<T>(this T view, MaterialStyle style = MaterialStyle.Regular, bool dark = false) where T : View
+    {
+        view.Modifiers.Add(new MaterialModifier(style.Token(), dark));
+        return view;
+    }
+
     public static T Padding<T>(this T view, double all = 16) where T : View
     {
         view.Modifiers.Add(new PaddingModifier(all));
@@ -41,6 +52,13 @@ public static class ViewModifiers
     public static T Padding<T>(this T view, Edge edges, double amount) where T : View
     {
         view.Modifiers.Add(new PaddingModifier(edges, amount));
+        return view;
+    }
+
+    /// <summary>Asymmetric padding in one modifier: <c>.Padding(horizontal: 12, vertical: 4)</c>.</summary>
+    public static T Padding<T>(this T view, double horizontal, double vertical) where T : View
+    {
+        view.Modifiers.Add(new PaddingModifier(horizontal, vertical));
         return view;
     }
 

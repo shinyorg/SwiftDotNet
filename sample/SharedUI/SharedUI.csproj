@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\SwiftDotNet\SwiftDotNet.csproj" />
     <ProjectReference Include="..\..\src\SwiftDotNet.Maps\SwiftDotNet.Maps.csproj" />
+    <ProjectReference Include="..\..\src\SwiftDotNet.Controls\SwiftDotNet.Controls.csproj" />
   </ItemGroup>
 
 </Project>

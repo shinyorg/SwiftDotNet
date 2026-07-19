@@ -496,6 +496,15 @@ sealed class WinNode
                     if (m.GetValueOrDefault("gradient") is string grad) backgroundBrush = WinStyle.Gradient(grad);
                     else background = WinStyle.Color(m.GetValueOrDefault("value") as string);
                     break;
+                case "material":
+                    // F6: a translucent tint fallback (a full Acrylic brush is a follow-up).
+                    var mtint = (m.GetValueOrDefault("value") as string) switch
+                    { "ultraThin" => 0.55, "thin" => 0.65, "thick" => 0.85, _ => 0.75 };
+                    var mdark = (m.GetValueOrDefault("dark") as string) == "true";
+                    var mbase = mdark ? Windows.UI.Color.FromArgb(255, 20, 20, 22) : Windows.UI.Color.FromArgb(255, 255, 255, 255);
+                    mbase.A = (byte)(mtint * 255);
+                    backgroundBrush = new SolidColorBrush(mbase);
+                    break;
                 case "cornerRadius":
                     corner = N(m, "radius");
                     break;
