@@ -106,6 +106,43 @@ Two ways to add your own control:
   in [`native/maps`](native/maps) for Apple/Android. A platform with no map renderer shows the standard
   `⚠️` placeholder. Phase 1 (static pins/polylines + tap-to-draw) — see [the maps plan](plans/maps-plan.md).
 
+## Global styles
+
+SwiftUI has no stylesheet — "global styling" is the **environment cascade** (a value set on a container is
+inherited by every descendant that doesn't set its own), **style protocols** (`ButtonStyle` & friends,
+defined once and applied to every control below), and **reusable `ViewModifier`s**. SwiftDotNet offers the
+same three, but resolves the cascade **in C# during the render pass**: each node inherits any ambient
+`font`/`foregroundColor`/control-style it didn't set and ships to the backend *fully resolved*, using only
+modifier types the backends already understand. So global styles work identically on **every** backend —
+SwiftUI, Compose, GTK, WinUI, Web, and Skia — with **no per-backend code**, including the ones (Skia/GTK/WinUI)
+that have no inheritance of their own. An explicit local modifier always wins over an inherited one; nothing
+is injected unless you set an environment, so there's zero cost otherwise.
+
+```csharp
+new ContentView()
+    // B — environment cascade: descendants inherit these unless they set their own (SwiftUI's `.environment`)
+    .Environment(e => e.Font(Font.Body).ForegroundColor(Color.Primary))
+    // C — control style: every Button below adopts it, no call-site changes (SwiftUI's `.buttonStyle`)
+    .ButtonStyle(new FilledButtonStyle())
+    // C — a design-token bag read by styles & bodies via EnvironmentValues.Current.Theme
+    .Theme(new Theme { Accent = Color.Hex("#7C4DFF"), CornerRadius = 16 });
+
+// A — reusable bundles (SwiftUI's ViewModifier / View extension), applied explicitly per view:
+new VStack(new Text("Hi")).CardStyle();                 // built-in, reads the ambient Theme
+new VStack(new Text("Hi")).Style(b => b.Padding().Background(Color.Secondary).CornerRadius(12));
+```
+
+- **`.Environment(e => …)`** sets ambient `Font`/`ForegroundColor`; **`.Theme(theme)`** injects design tokens;
+  **`.ButtonStyle(style)`** sets the ambient `IButtonStyle`. Each wraps the view in a **transparent
+  `EnvironmentScope`** (no node in the tree, no diff impact); nested scopes compose (inner overrides only what
+  it sets). Read the active environment anywhere a view is built via `EnvironmentValues.Current`.
+- **`.Style(style)` / `.CardStyle()`** attach a reusable **`IViewStyle`** bundle. Bundles (and control styles)
+  are authored with the *same* fluent modifiers you'd otherwise chain, and resolve at render time so they can
+  read the ambient `Theme`. Built-ins: `FilledButtonStyle`, `BorderedButtonStyle` (`IButtonStyle`), `CardStyle`.
+
+The **Styles** tab in the sample `ContentView` exercises all three; the cascade is covered by
+[`GlobalStyleTests`](tests/SwiftDotNet.Tests/GlobalStyleTests.cs).
+
 ## Architecture
 
 C# owns the view tree (React-Native style); each backend reconstructs native UI from it. A **diff engine**
