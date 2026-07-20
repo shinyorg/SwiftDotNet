@@ -16,6 +16,8 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
   backend routes (native shim vs. pure-C# interpreter).
 
 ### Authoring UI
+- **[Hosting & Dependency Injection](hosting-and-di.md)** — `SwiftProgram.CreateSwiftApp()`, the builder,
+  `[Inject]` services, view lifecycle, and the `UseX()` seam.
 - **[Views & Controls](views-and-controls.md)** — the full vocabulary: layout, navigation & presentation,
   inputs, and display views.
 - **[Modifiers, Gestures & Animation](modifiers-gestures-animation.md)** — the universal modifier pass,

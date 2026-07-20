@@ -10,18 +10,22 @@ namespace SwiftDotNet;
 /// [Activity(Label = "SwiftDotNet", MainLauncher = true)]
 /// public sealed class MainActivity : SwiftDotNetActivity
 /// {
-///     protected override View CreateRoot() => new ContentView();
+///     protected override SwiftDotNetApp CreateSwiftApp() => SwiftProgram.CreateSwiftApp();
 /// }
 /// </code>
 /// </summary>
 public abstract class SwiftDotNetActivity : ComponentActivity
 {
-    /// <summary>Return the root view for the app. Called once during <see cref="OnCreate"/>.</summary>
-    protected abstract View CreateRoot();
+    /// <summary>
+    /// Build the app — services, logging and the root view. Called once during <see cref="OnCreate"/>.
+    /// The MAUI analog of <c>CreateMauiApp()</c>; put the body in a shared <c>SwiftProgram</c>.
+    /// </summary>
+    protected abstract Hosting.SwiftDotNetApp CreateSwiftApp();
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        SetContentView(SwiftDotNetHost.CreateRootView(this, CreateRoot()));
+        var app = CreateSwiftApp();
+        SetContentView(SwiftDotNetHost.CreateRootView(this, app.CreateRoot(), app.Services));
     }
 }

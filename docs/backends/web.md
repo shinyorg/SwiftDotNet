@@ -44,7 +44,14 @@ dotnet run --project sample/SampleApp.Web          # → http://localhost:5000
 ```
 
 Needs the `wasm-tools` workload. [`sample/SampleApp.Web`](../../sample/SampleApp.Web)
-(Sdk.BlazorWebAssembly) hosts `<SwiftDotNetView Root="new ContentView()">` via `AppRoot`, mounted at `#app`.
+(Sdk.BlazorWebAssembly) hosts `<SwiftDotNetView Root=...>` via the `AppRoot` component, mounted at `#app`.
+Web **reuses Blazor's own service container** rather than building a second one: `Program.cs` calls
+`SwiftProgram.AddSharedServices(builder.Services)` and then assigns `SwiftHost.Services = host.Services`, so a
+single registration list serves both Blazor and SwiftDotNet — see
+[Hosting & Dependency Injection](../hosting-and-di.md).
+
+> **Gotcha:** Blazor also defines an `[Inject]` attribute, so a file importing both `SwiftDotNet` and
+> `Microsoft.AspNetCore.Components` must qualify which one it means.
 
 ## Deferred
 

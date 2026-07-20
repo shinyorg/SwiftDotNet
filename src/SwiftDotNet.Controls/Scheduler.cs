@@ -35,15 +35,17 @@ public sealed class SchedulerCalendarView : View
             var daysInMonth = DateTime.DaysInMonth(first.Year, first.Month);
 
             var header = new HStack(
-                new Text("‹").Font(Font.Title).OnTapGesture(() => _month.Value = first.AddMonths(-1)),
+                NavButton("‹", () => _month.Value = first.AddMonths(-1)),
                 new Spacer(),
-                new Text(first.ToString("MMMM yyyy", CultureInfo.InvariantCulture)).Font(Font.Headline),
+                new Text(first.ToString("MMMM yyyy", CultureInfo.InvariantCulture))
+                    .Font(Font.Headline).ForegroundColor(ControlPalette.OnSurface),
                 new Spacer(),
-                new Text("›").Font(Font.Title).OnTapGesture(() => _month.Value = first.AddMonths(1))
+                NavButton("›", () => _month.Value = first.AddMonths(1))
             ).Alignment(VerticalAlignment.Center);
 
             var weekdayRow = new Grid(7, Weekdays.Select(d =>
-                (View)new Text(d).Font(Font.Caption).ForegroundColor(ControlPalette.OnSurfaceVariant)).ToArray());
+                (View)new Text(d).Font(Font.Caption).ForegroundColor(ControlPalette.OnSurfaceVariant)
+                    .Frame(width: 40)).ToArray());
 
             // 42 cells (6 weeks): leading blanks, then the days.
             var cells = new View[42];
@@ -68,24 +70,35 @@ public sealed class SchedulerCalendarView : View
         }
     }
 
+    static View NavButton(string glyph, Action action) =>
+        new ZStack(new Text(glyph).Font(Font.Title).ForegroundColor(ControlPalette.Accent(PillType.Info)))
+            .Frame(36, 36)
+            .Background(ControlPalette.SurfaceVariant)
+            .CornerRadius(18)
+            .OnTapGesture(action);
+
     View DayCell(DateTime date)
     {
         var isSelected = _selected.Value.Date == date.Date;
-        var hasEvent = _events.Any(e => e.Date.Date == date.Date);
-        var dot = hasEvent
-            ? (View)new Circle().Frame(5, 5).ForegroundColor(_events.First(e => e.Date.Date == date.Date).Color)
-            : new Text("").Frame(5, 5);
+        var dayEvents = _events.Where(e => e.Date.Date == date.Date).Take(3).ToList();
 
-        return new VStack(
-                new Text(date.Day.ToString(CultureInfo.InvariantCulture))
-                    .Font(Font.Body)
-                    .ForegroundColor(isSelected ? SwiftColor.Hex("#FFFFFF") : ControlPalette.OnSurface),
-                dot)
-            .Spacing(2)
+        // Up to three colored dots under the number, so a busy day reads at a glance.
+        var dots = dayEvents.Count == 0
+            ? (View)new ZStack().Frame(6, 6)
+            : new HStack(dayEvents.Select(e => (View)new Circle().Frame(5, 5)
+                    .ForegroundColor(isSelected ? SwiftColor.Hex("#FFFFFF") : e.Color)).ToArray())
+                .Spacing(3);
+
+        var number = new Text(date.Day.ToString(CultureInfo.InvariantCulture))
+            .Font(Font.Body)
+            .ForegroundColor(isSelected ? SwiftColor.Hex("#FFFFFF") : ControlPalette.OnSurface);
+
+        return new VStack(number, dots)
+            .Spacing(4)
             .Alignment(HorizontalAlignment.Center)
-            .Frame(36, 40)
+            .Frame(40, 48)
             .Background(isSelected ? ControlPalette.Accent(PillType.Info) : ControlPalette.Surface)
-            .CornerRadius(8)
+            .CornerRadius(10)
             .OnTapGesture(() => _selected.Value = date);
     }
 }
@@ -109,15 +122,29 @@ public sealed class SchedulerAgendaView : View
             var day = _events.Where(e => e.Date.Date == _selected.Value.Date)
                 .OrderBy(e => e.Date).ToList();
 
-            var rows = day.Count == 0
-                ? new View[] { new Text("No events").ForegroundColor(ControlPalette.OnSurfaceVariant).Padding(8) }
-                : day.Select(e => (View)new HStack(
-                        new Circle().Frame(10, 10).ForegroundColor(e.Color),
-                        new Text(e.Date.ToString("HH:mm", CultureInfo.InvariantCulture)).Font(Font.Caption).ForegroundColor(ControlPalette.OnSurfaceVariant),
-                        new Text(e.Title))
-                    .Spacing(10).Alignment(VerticalAlignment.Center).Padding(Edge.Vertical, 6)).ToArray();
+            if (day.Count == 0)
+                return new Text("No events")
+                    .Font(Font.Caption).ForegroundColor(ControlPalette.OnSurfaceVariant)
+                    .Padding(14).Align(Alignment.Center);
 
-            return new VStack(rows).Spacing(2).Alignment(HorizontalAlignment.Leading);
+            // Each event is a card with a colored leading bar, the time, and the title.
+            var rows = day.Select(e => (View)new HStack(
+                    new RoundedRectangle(2).Frame(4, 34).ForegroundColor(e.Color),
+                    new VStack(
+                        new Text(e.Title).Font(Font.Body).ForegroundColor(ControlPalette.OnSurface),
+                        new Text(e.Date.ToString("HH:mm", CultureInfo.InvariantCulture))
+                            .Font(Font.Caption).ForegroundColor(ControlPalette.OnSurfaceVariant))
+                    .Spacing(2).Alignment(HorizontalAlignment.Leading),
+                    new Spacer())
+                .Spacing(10)
+                .Alignment(VerticalAlignment.Center)
+                .Padding(horizontal: 12, vertical: 8)
+                .Background(ControlPalette.Surface)
+                .CornerRadius(10)
+                .Border(ControlPalette.Outline, 1, cornerRadius: 10)
+                .Align(Alignment.Leading)).ToArray();   // claim full width (Spacer alone can't widen the row)
+
+            return new VStack(rows).Spacing(8);
         }
     }
 }

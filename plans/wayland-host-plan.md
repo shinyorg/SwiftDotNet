@@ -13,8 +13,8 @@
 Wayland is a **display-server protocol, not a widget toolkit**. A Wayland client gets exactly three
 things from the compositor: (1) a pixel **buffer** to draw into, (2) **window management**
 (`xdg-shell`), and (3) **input events** (`wl_seat` → pointer/keyboard/touch). That is precisely the
-contract the **Skia self-drawing engine** (`SwiftDotNet.Skia`, see `plans/skia-backend-plan.md` /
-[[swiftdotnet-skia]]) already expects from a host. So a Wayland provider is **not a new rendering
+contract the **Skia self-drawing engine** (`SwiftDotNet.Skia`, see the
+[Skia backend docs](../docs/backends/skia.md)) already expects from a host. So a Wayland provider is **not a new rendering
 backend** — it is a new **host** for the existing engine, parallel to `sample/SampleApp.Skia.Mac`'s
 AppKit host.
 
@@ -32,7 +32,7 @@ methods.** This is the most interop-dense piece of the whole project.
 
 ### Why direct-libwayland at all (given GTK already runs on Wayland)
 
-- The **GTK4 backend** ([[swiftdotnet-gtk]]) is already a native Wayland client today — so this is **not**
+- The **GTK4 backend** ([Linux/GTK backend](../docs/backends/linux-gtk.md)) is already a native Wayland client today — so this is **not**
   about filling a native-control gap on Linux.
 - The value is a **dependency-light, self-drawing native Linux window** — no GTK, no SDL — that is
   pixel-identical to every other platform and a stepping stone to **framebuffer/embedded (KMS/DRM)**,

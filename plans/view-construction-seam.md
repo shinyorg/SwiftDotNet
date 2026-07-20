@@ -1,12 +1,18 @@
 # Proposal: View construction seam — function-form authoring + a source generator
 
-**Status:** Draft for review
-**Date:** 2026-07-18
+**Status:** Draft for review — decision 1 (adopt the function form?) still open
+**Date:** 2026-07-18 (revised 2026-07-19)
 **Companion to:** [`dependency-injection-proposal.md`](./dependency-injection-proposal.md) (esp. §4 DI, §8 reconciliation, §10 AOT)
+
 **Scope:** Replace `new TextEntry()` authoring with a function form — `TextEntry()` — where the call
 routes through a single **construction chokepoint**. Explores what that chokepoint unlocks
 (DI, positional state retention), and what a **source generator** would emit so the form is uniform
 for built-in *and* user-authored views without hand-writing a forwarder per type.
+
+> **Scope change 2026-07-19.** The `[Inject]` source generator moved *out* of this doc and into DI
+> proposal Phase 1, where it ships without needing the construction seam. What remains here is the
+> function form itself and the **reconciliation** it unlocks — which is the actual architectural value
+> (§2), and which no longer blocks DI.
 
 ---
 
@@ -70,7 +76,7 @@ Blazor couples the two because its `Renderer` owns a retained component tree. Sw
 through a `ServiceProvider` factory buys zero DI value, and the function form doesn't dissolve the
 construct-vs-parameterize tension (`Text("hi")` still passes data positionally). So the function form
 is **not** "the DI view factory." DI only ever mattered for composite screens, best served by the
-container at reconciliation seams (nav pages, list rows — DI proposal §13.4).
+container at reconciliation seams (nav pages, list rows — [`navigation-service-plan.md`](./navigation-service-plan.md)).
 
 ### 4.2 The real payoff — transparent state retention (the Compose model)
 A construction chokepoint is exactly the primitive needed to fix root-only retention **without**
@@ -106,8 +112,15 @@ a partial static class `Views` (consumed via `global using static SwiftDotNet.Vi
   mechanical and safe, and establishes the seam at every call site.
 - **Tier 1 — the chokepoint.** The forwarder routes through `ViewFactory.Create(...)`, which consults
   the ambient render scope for positional retention + DI, then fills `[Inject]` members **with
-  statically-emitted assignments (no reflection)** — which makes `[Inject]` trim/AOT-clean, resolving
-  the reflection concern the DI proposal flags in §10.
+  statically-emitted assignments (no reflection)**.
+
+> **Update (2026-07-19): the `[Inject]` generator is no longer part of this doc's scope.** It ships
+> standalone in **DI proposal Phase 1** — see its §4.3. The reason: filling `[Inject]` reflection-free
+> needs *nothing* from the construction seam. It needs one interface (`IInjectable`) and one call site
+> (`if (v is IInjectable i) i.Inject(sp);`) inside `CreateRoot()` / `PushAsync<T>()`, both of which hand
+> back **retained** instances. Bundling it here would have gated AOT-clean DI behind `RenderScope`/
+> `KeyFor` positional identity — the unresolved crux in §7.2. Tier 1 now **reuses** that generator,
+> extending it to inline children once retention exists.
 
 ### 5.3 The construct-vs-parameterize rule the generator needs
 The generator must know which values are **parent data** vs **container services**. Recommended
@@ -116,12 +129,12 @@ convention (Blazor-aligned, and it makes forwarder signatures pure data):
 > **Constructor parameters = parent data (parameters). `[Inject]` properties = services from the
 > container.**
 
-Note this is a deliberate shift from the DI proposal's §4 default (constructor injection *of
-services*). Adopting the function form pushes services onto `[Inject]` members so the generated
-forwarder's signature carries only data. (Alternative, documented but not recommended: forward *all*
-ctor params and let `ActivatorUtilities.CreateInstance` fill service-typed params from the container
-at runtime — more magic, harder for the generator to reason about, reflection-tinged.) **This is a
-decision to ratify (§8).**
+**Ratified 2026-07-19** (DI proposal §13, decision 9) — both docs now state this rule. Constructor
+injection of services stays *supported*, since the container builds roots and pushed pages, but
+`[Inject]` is the documented default because it is the generator-friendly, reflection-free form and it
+keeps generated forwarder signatures pure data. (Alternative, documented but rejected: forward *all*
+ctor params and let `ActivatorUtilities.CreateInstance` fill service-typed params at runtime — more
+magic, harder for the generator to reason about, reflection-tinged.)
 
 ## 6. Worked example — DI + service + state
 
@@ -141,10 +154,10 @@ A composite screen — **`[Inject]` services**, a **ctor parameter** (parent dat
 using SwiftDotNet;
 using Microsoft.Extensions.Logging;
 
-public sealed class WeatherView : View
+public sealed partial class WeatherView : View
 {
-    [Inject] public IWeatherService Weather { get; set; } = default!;   // service (container)
-    [Inject] public ILogger<WeatherView> Log { get; set; } = default!;  // service (container)
+    [Inject] public partial IWeatherService Weather { get; }    // service (container)
+    [Inject] public partial ILogger<WeatherView> Log { get; }   // service (container)
 
     readonly string _city;                          // parameter (from parent, via ctor)
     readonly State<string> _summary = State("…");   // local state (survives once retained)
@@ -181,13 +194,14 @@ public sealed class RefreshButton : View
 }
 ```
 
-Registration (shared `AppRoot`, per DI proposal §4.1):
+Registration (shared `SwiftProgram.cs`, per DI proposal §4.1):
 
 ```csharp
-var b = SwiftDotNetHostApp.CreateBuilder();
-b.Services.AddSingleton<IWeatherService, WeatherService>();
-b.Services.AddSingleton<IAudit, Audit>();
-b.Services.AddLogging();
+var builder = SwiftDotNetApp.CreateBuilder();
+builder.UseSwiftApp<ContentView>();
+builder.Services.AddSingleton<IWeatherService, WeatherService>();
+builder.Services.AddSingleton<IAudit, Audit>();
+builder.Logging.AddDebug();
 // WeatherView is authored via WeatherView("London") in a Body — the factory constructs it, so no
 // container registration of the view type itself is required unless it is a resolved root/route.
 ```
@@ -238,10 +252,7 @@ public static partial class Views
                factory: static (sp, city) =>
                {
                    var v = new WeatherView(city);
-                   v.Weather = Microsoft.Extensions.DependencyInjection
-                                   .ServiceProviderServiceExtensions.GetRequiredService<IWeatherService>(sp);
-                   v.Log     = Microsoft.Extensions.DependencyInjection
-                                   .ServiceProviderServiceExtensions.GetRequiredService<ILogger<WeatherView>>(sp);
+                   ((IInjectable)v).Inject(sp);   // generated in DI Phase 1 — see that doc's §4.3
                    return v;
                },
                arg: city,
@@ -266,7 +277,7 @@ public static class ViewFactory
     {
         var scope = RenderScope.Current;                 // ambient, set while a Body is being evaluated
         if (scope is null)                                // Tier-0 fallback path / tests
-            return factory(SwiftServices.Current!, arg);
+            return factory(SwiftHost.Services!, arg);
 
         var key = scope.KeyFor(callSite);                 // positional identity within the current group
         if (scope.TryReuse<T>(key, out var existing))
@@ -301,16 +312,18 @@ public static class ViewFactory
   sea of global functions is a weaker "what can I type here" story.
 - **Positional identity needs stable call order** (Tier 1) — `if`/`foreach` in `Body` require group
   keys, or state teleports between siblings. This is the crux design problem.
-- **Two-doc consistency.** The `[Inject]`-for-services rule (§5.3) shifts the DI proposal's
-  constructor-injection default; the two docs must land on one rule.
+- ~~**Two-doc consistency.**~~ **Resolved 2026-07-19** — both docs state *constructor = parent data,
+  `[Inject]` = services* (§5.3).
 
 **Decisions to ratify**
 1. **Adopt the function form at all?** Or keep `new` and treat the seam as internal-only. *Rec: adopt,
-   Tier 0 first — it is cheap, reversible, and unlocks everything else.*
+   Tier 0 first — it is cheap, reversible, and unlocks everything else.* **← still open; this is now
+   the only load-bearing question in this doc, since DI no longer depends on it.**
 2. **Generator vs hand-written forwarders.** *Rec: generator — it is the only way custom controls stay
    uniform with built-ins.*
-3. **Service delivery: `[Inject]` properties (§5.3) or ctor injection via `ActivatorUtilities`?**
-   *Rec: `[Inject]` properties, with generator-emitted reflection-free fill (AOT-clean).*
+3. ~~**Service delivery: `[Inject]` properties or ctor injection via `ActivatorUtilities`?**~~
+   **Ratified: `[Inject]` properties**, generator-emitted, reflection-free — and shipped in DI Phase 1,
+   not here (§5.2).
 4. **Tier 1 memo-key strategy** — pure positional (Compose-style, needs group keys) vs
    explicit-key-required for retained children. *Rec: positional with an opt-in `Key(...)` escape hatch;
    sequence behind the reconciliation milestone.*
@@ -321,7 +334,7 @@ public static class ViewFactory
 | Phase | Deliverable | Depends on |
 |-------|-------------|------------|
 | **0** | Source generator emits **Tier 0** forwarders for all `View` subclasses; adopt `Views` static import in the sample. Pure sugar, no behavior change. | Nothing. Additive; `new` keeps working. |
-| **1** | `[Inject]` members + generator-emitted reflection-free fill; `ViewFactory.Create` with a **no-retention** path (constructs each render, injects services). Delivers DI to any view, AOT-clean. | DI proposal Phase 1 (ambient container). |
+| **1** | `ViewFactory.Create` with a **no-retention** path (constructs each render, calls the existing `IInjectable.Inject`). Extends `[Inject]` to inline children. | DI proposal Phase 1 — which already ships the `[Inject]` generator, `SwiftHost`, and the container. |
 | **2** | `RenderScope.Current` around `Body`; **positional retention** + `OnAppear`/`OnDisappear` on mount/unmount; group/`Key(...)` rules for `if`/`foreach`. This is the reconciliation unlock. | DI proposal Phase 2 (dispatcher, lifecycle). |
 | **3** | Scoped-per-retained-view lifetimes (per-page / per-row `IServiceScope`), riding on the retained instances from Phase 2. | DI proposal Phase 3. |
 

@@ -11,23 +11,27 @@ namespace SwiftDotNet;
 /// [Register("AppDelegate")]
 /// public sealed class AppDelegate : SwiftDotNetAppDelegate
 /// {
-///     protected override View CreateRoot() => new ContentView();
+///     protected override SwiftDotNetApp CreateSwiftApp() => SwiftProgram.CreateSwiftApp();
 /// }
 /// // static void Main(string[] args) => UIApplication.Main(args, null, typeof(AppDelegate));
 /// </code>
 /// </summary>
 public abstract class SwiftDotNetAppDelegate : UIApplicationDelegate
 {
-    /// <summary>Return the root view for the app. Called once during launch.</summary>
-    protected abstract View CreateRoot();
+    /// <summary>
+    /// Build the app — services, logging and the root view. Called once during launch.
+    /// The MAUI analog of <c>CreateMauiApp()</c>; put the body in a shared <c>SwiftProgram</c>.
+    /// </summary>
+    protected abstract Hosting.SwiftDotNetApp CreateSwiftApp();
 
     public override UIWindow? Window { get; set; }
 
     public override bool FinishedLaunching(UIApplication application, NSDictionary launchOptions)
     {
+        var app = CreateSwiftApp();
         Window = new UIWindow(UIScreen.MainScreen.Bounds)
         {
-            RootViewController = SwiftDotNetHost.CreateRootController(CreateRoot()),
+            RootViewController = SwiftDotNetHost.CreateRootController(app.CreateRoot(), app.Services),
         };
         Window.MakeKeyAndVisible();
         return true;

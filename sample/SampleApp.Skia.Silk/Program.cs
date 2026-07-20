@@ -36,7 +36,8 @@ window.Load += () =>
 
     SkiaRenderers.Register("Map", new MapRenderer());
     bridge = new SkiaBridge();
-    SwiftApp.Run(new ContentView(), bridge);
+    var swiftApp = SwiftProgram.CreateSwiftApp();
+    SwiftApp.Run(swiftApp.CreateRoot(), bridge, swiftApp.Services);
 
     var input = window.CreateInput();
     foreach (var mouse in input.Mice)

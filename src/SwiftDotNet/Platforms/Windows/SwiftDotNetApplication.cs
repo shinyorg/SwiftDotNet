@@ -9,7 +9,7 @@ namespace SwiftDotNet;
 /// <code>
 /// public sealed class App : SwiftDotNetApplication
 /// {
-///     protected override View CreateRoot() => new ContentView();
+///     protected override SwiftDotNetApp CreateSwiftApp() => SwiftProgram.CreateSwiftApp();
 /// }
 /// // [STAThread] static void Main() => Application.Start(_ => _ = new App());
 /// </code>
@@ -18,8 +18,11 @@ public abstract class SwiftDotNetApplication : Application
 {
     Window? _window;
 
-    /// <summary>Return the root view for the app. Called once during launch.</summary>
-    protected abstract View CreateRoot();
+    /// <summary>
+    /// Build the app — services, logging and the root view. Called once during launch.
+    /// The MAUI analog of <c>CreateMauiApp()</c>; put the body in a shared <c>SwiftProgram</c>.
+    /// </summary>
+    protected abstract Hosting.SwiftDotNetApp CreateSwiftApp();
 
     /// <summary>Window title. Override to change it.</summary>
     protected virtual string WindowTitle => "SwiftDotNet";
@@ -32,8 +35,9 @@ public abstract class SwiftDotNetApplication : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        var app = CreateSwiftApp();
         _window = new Window { Title = WindowTitle };
-        _window.Content = SwiftDotNetHost.CreateRootElement(CreateRoot());
+        _window.Content = SwiftDotNetHost.CreateRootElement(app.CreateRoot(), app.Services);
         _window.Activate();
     }
 }

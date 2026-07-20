@@ -1,6 +1,7 @@
 # Plan 1: Missing framework features to host the Shiny controls port
 
-**Status:** Draft for review · **Date:** 2026-07-19
+**Status:** **Partially shipped** — Wave A (F1–F5) complete on every backend; Wave B partial (F6, F9).
+F7/F8/F10/F11/F12 still open or descoped. · **Date:** 2026-07-19 (status refreshed 2026-07-19)
 **Save to (repo convention):** `plans/controls-missing-features-plan.md`
 **Companion:** [Plan 2 — the controls library itself](controls-library-plan.md). This plan lands the
 framework primitives **first**; Plan 2 builds the controls on top.

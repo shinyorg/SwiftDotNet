@@ -1,5 +1,7 @@
 using Foundation;
 using SwiftDotNet;
+using SwiftDotNet.Hosting;
+using SwiftDotNet.Sample;
 using UIKit;
 
 namespace SampleApp;
@@ -7,7 +9,7 @@ namespace SampleApp;
 [Register("AppDelegate")]
 public sealed class AppDelegate : SwiftDotNetAppDelegate
 {
-    protected override View CreateRoot() => AppRoot.Create();
+    protected override SwiftDotNetApp CreateSwiftApp() => SwiftProgram.CreateSwiftApp();
 }
 
 public static class Program

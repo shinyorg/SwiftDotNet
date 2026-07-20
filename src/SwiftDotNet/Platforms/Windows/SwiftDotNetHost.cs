@@ -14,10 +14,10 @@ public static class SwiftDotNetHost
     /// Builds the WinUI-backed root <see cref="UIElement"/> for <paramref name="root"/> and starts the
     /// render loop. From here, C# state changes drive real WinUI controls.
     /// </summary>
-    public static UIElement CreateRootElement(View root)
+    public static UIElement CreateRootElement(View root, IServiceProvider? services = null)
     {
         var bridge = new WinBridge();
-        SwiftApp.Run(root, bridge);
+        SwiftApp.Run(root, bridge, services);
         return bridge.Host;
     }
 }

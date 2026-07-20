@@ -8,7 +8,10 @@ using SwiftDotNet.Sample;
 if (Environment.GetEnvironmentVariable("SDN_TEST") == "1")
     return CustomControlTest.Run();
 
-return SwiftDotNetHost.Run(new OverlayHost(new ContentView()));
+// Build the shared app (services + root view), then hand its provider to the GTK host so views can
+// reach services via [Inject] / Service<T>().
+var swiftApp = SwiftProgram.CreateSwiftApp();
+return SwiftDotNetHost.Run(swiftApp.CreateRoot(), services: swiftApp.Services);
 
 /// <summary>
 /// A CUSTOM NATIVE PRIMITIVE (not a composition) — emits type "NativeRating"; a GTK renderer registered

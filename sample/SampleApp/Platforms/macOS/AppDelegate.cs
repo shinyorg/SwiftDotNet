@@ -1,13 +1,16 @@
 using AppKit;
 using Foundation;
 using SwiftDotNet;
+using SwiftDotNet.Hosting;
+using SwiftDotNet.Sample;
 
 namespace SampleApp;
 
 [Register("AppDelegate")]
 public sealed class AppDelegate : SwiftDotNetAppDelegate
 {
-    protected override View CreateRoot() => AppRoot.Create();
+    protected override SwiftDotNetApp CreateSwiftApp() =>
+        SwiftProgram.CreateSwiftApp(b => b.UseAppleMaps());
 }
 
 static class Program

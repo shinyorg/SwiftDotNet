@@ -23,6 +23,10 @@
         <!-- The ported controls library — pure composition over the core, driven headless in tests. -->
         <ProjectReference Include="..\..\src\SwiftDotNet.Controls\SwiftDotNet.Controls.csproj"/>
         <ProjectReference Include="..\..\src\SwiftDotNet.Controls.Camera\SwiftDotNet.Controls.Camera.csproj"/>
+        <!-- The [Inject] source generator, referenced as an analyzer so the generated IInjectable
+             implementations are exercised by the DI tests. -->
+        <ProjectReference Include="..\..\src\SwiftDotNet.SourceGenerators\SwiftDotNet.SourceGenerators.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false"/>
     </ItemGroup>
 
 </Project>

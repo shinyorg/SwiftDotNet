@@ -9,7 +9,7 @@ namespace SwiftDotNet;
 /// </summary>
 public static class SwiftDotNetHost
 {
-    public static int Run(View root, string applicationId = "com.swiftdotnet.gtk")
+    public static int Run(View root, string applicationId = "com.swiftdotnet.gtk", IServiceProvider? services = null)
     {
         var app = Gtk.Application.New(applicationId, Gio.ApplicationFlags.DefaultFlags);
 
@@ -22,7 +22,7 @@ public static class SwiftDotNetHost
             window.Child = bridge.Host;
 
             // Start the render loop; from here C# state changes drive real GTK widgets.
-            SwiftApp.Run(root, bridge);
+            SwiftApp.Run(root, bridge, services);
 
             window.Present();
         };

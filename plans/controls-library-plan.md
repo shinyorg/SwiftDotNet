@@ -1,6 +1,8 @@
 # Plan 2: The controls library (`SwiftDotNet.Controls`)
 
-**Status:** Draft for review · **Date:** 2026-07-19
+**Status:** **Partially shipped** — ~33 controls built (all pure composites); Camera family core landed
+but not device-verified. See the "STILL OPEN" and "SKIPPED" lists below for what remains.
+· **Date:** 2026-07-19 (status refreshed 2026-07-19)
 **Save to (repo convention):** `plans/controls-library-plan.md`
 **Depends on:** [Plan 1 — Missing framework features](controls-missing-features-plan.md). Each wave below
 names the Plan-1 features (F1–F11) it needs; a wave cannot start before its features land.

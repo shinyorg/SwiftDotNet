@@ -36,7 +36,20 @@ public sealed class OverlaysSample : View
             ImageViewer.FromUrl("https://picsum.photos/400/300").ThumbnailSize(120),
 
             new Text("Frosted glass").Font(Font.Headline),
-            new FrostedGlassView(new Text("Blurred backdrop panel").ForegroundColor(Color.Hex("#007AFF")))
+            new Text("Glass only reads over content — this one sits on a gradient backdrop.")
+                .Font(Font.Caption).ForegroundColor(Color.Secondary),
+            new FrostedGlassView(
+                    new VStack(
+                        new Text("Frosted panel").Font(Font.Headline),
+                        new Text(".Material(.Thin) over a gradient").Font(Font.Caption))
+                    .Spacing(4))
+                .Over(new ZStack()
+                    .Frame(320, 170)
+                    .Background(new LinearGradient(35,
+                        new GradientStop(Color.Hex("#FF5252"), 0),
+                        new GradientStop(Color.Hex("#7C4DFF"), 0.5),
+                        new GradientStop(Color.Hex("#00BCD4"), 1)))
+                    .CornerRadius(18))
                 .Style(MaterialStyle.Thin)
         ).Spacing(16).Alignment(HorizontalAlignment.Leading)
         ).Padding(20).NavigationTitle("Overlays & Media");

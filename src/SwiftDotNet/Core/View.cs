@@ -55,4 +55,41 @@ public abstract class View
 
     /// <summary>Declares SwiftUI-style local state. Mirrors <c>@State private var x = ...</c>.</summary>
     protected static State<T> State<T>(T initialValue) => new(initialValue);
+
+    /// <summary>
+    /// Resolve a required service from the running app's container.
+    ///
+    /// This is the escape hatch for views built inline inside a <c>Body</c>: they are rebuilt every
+    /// render and never pass through the container, so they cannot take services by constructor or by
+    /// <c>[Inject]</c>. Views the container builds — the root, and pages pushed on the navigation
+    /// stack — should prefer constructor parameters or <c>[Inject]</c> properties.
+    /// </summary>
+    protected static TService Service<TService>() where TService : notnull
+        => SwiftHost.Require<TService>();
+
+    /// <summary>Resolve an optional service; <c>default</c> when unregistered or when no app is running.</summary>
+    protected static TService? OptionalService<TService>()
+        => SwiftHost.Optional<TService>();
+
+    // ---- Lifecycle ----------------------------------------------------------------------------
+    // Raised only for retained views (the root today). Views built inline inside a Body are rebuilt
+    // every render pass, so these would fire continuously and mean nothing — they get no callbacks.
+    // Every registered IViewLifecycle observer is called for the same events; see that interface.
+
+    /// <summary>
+    /// The view has been constructed and its <c>[Inject]</c> members filled. Fires once, before the
+    /// first render.
+    /// </summary>
+    protected internal virtual void OnCreated() { }
+
+    /// <summary>The view became visible, or visible again. Can fire more than once.</summary>
+    protected internal virtual void OnAppearing() { }
+
+    /// <summary>The view is no longer visible. Always paired with a prior <see cref="OnAppearing"/>.</summary>
+    protected internal virtual void OnDisappearing() { }
+
+    /// <summary>
+    /// The view has been torn down and will not be shown again. Fires once, after <see cref="OnDisappearing"/>.
+    /// </summary>
+    protected internal virtual void OnDestroyed() { }
 }

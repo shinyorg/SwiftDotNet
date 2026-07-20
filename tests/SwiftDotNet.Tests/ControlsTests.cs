@@ -297,9 +297,10 @@ public class ControlsTests
         Assert.Contains(Walk(node), n => Text(n) == "Hi there");
         Assert.Contains(Walk(node), n => Text(n) == "Hello!");
         Assert.Contains(Walk(node), n => Text(n) == "Alex");        // sender label on incoming
-        Assert.Contains(Walk(node), n => Text(n) == "• • •");       // typing indicator
         Assert.Contains(Walk(node), n => Text(n) == "Load earlier");
-        Assert.Contains(Walk(node), n => n.GetProperty("type").GetString() == "Button" && n.GetProperty("props").GetProperty("title").GetString() == "Send");
+        Assert.Contains(Walk(node), n => Text(n) == "Send");         // styled send affordance
+        // The typing indicator is three animated dots (Circles), not a text glyph.
+        Assert.True(Walk(node).Count(n => n.GetProperty("type").GetString() == "Circle") >= 3);
     }
 
     [Fact]
@@ -309,8 +310,9 @@ public class ControlsTests
         string? sent = null;
         var bridge = new CaptureBridge();
         SwiftApp.Run(new ControlHost(new ChatView(Array.Empty<ChatMessage>(), draft).OnSend(t => sent = t)), bridge);
-        var send = Walk(Root(bridge.Json)).First(n => n.GetProperty("type").GetString() == "Button");
-        bridge.Fire(send.GetProperty("id").GetString()!, null);
+        // Send is a styled tappable Text; fire its onTapGesture event id.
+        var send = Walk(Root(bridge.Json)).First(n => Text(n) == "Send");
+        bridge.Fire(TapEvent(send), null);
         Assert.Equal("ping", sent);
     }
 

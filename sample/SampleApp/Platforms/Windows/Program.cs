@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
 using SwiftDotNet;
+using SwiftDotNet.Hosting;
+using SwiftDotNet.Sample;
 
 namespace SampleApp;
 
@@ -11,5 +13,5 @@ public static class Program
 
 public sealed class App : SwiftDotNetApplication
 {
-    protected override View CreateRoot() => AppRoot.Create();
+    protected override SwiftDotNetApp CreateSwiftApp() => SwiftProgram.CreateSwiftApp();
 }

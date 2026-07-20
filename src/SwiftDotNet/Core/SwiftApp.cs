@@ -12,7 +12,7 @@ namespace SwiftDotNet;
 /// <item><b>Coalescing</b> — several <see cref="State{T}"/> mutations in one tick collapse into a
 /// single render, so <c>a.Value = x; b.Value = y;</c> builds/diffs the tree once, not twice.</item>
 /// <item><b>Main-thread marshaling</b> — the render is posted to the UI thread captured at
-/// <see cref="Run"/>, so a background event (GPS, timer, socket) can assign <c>State.Value</c>
+/// <see cref="Run(View, IBridge, IServiceProvider?)"/>, so a background event (GPS, timer, socket) can assign <c>State.Value</c>
 /// directly without hopping threads itself.</item>
 /// </list>
 /// Use <see cref="Transaction"/> for an explicit, synchronous batch boundary.
@@ -24,15 +24,25 @@ public static class SwiftApp
     static Dictionary<string, Action<string?>> _actions = new();
     static Node? _lastTree;
 
-    /// <summary>UI-thread pump captured at <see cref="Run"/>; null on backends without one (render inline).</summary>
+    /// <summary>UI-thread pump captured at <see cref="Run(View, IBridge, IServiceProvider?)"/>; null on backends without one (render inline).</summary>
     static SynchronizationContext? _uiContext;
     /// <summary>A coalesced render is already posted and waiting to run.</summary>
     static bool _renderQueued;
     /// <summary>Inside a <see cref="Transaction"/>: swallow per-assignment renders and flush once at the end.</summary>
     static bool _batching;
 
-    public static void Run(View root, IBridge bridge)
+    public static void Run(View root, IBridge bridge) => Run(root, bridge, null);
+
+    /// <summary>
+    /// Run <paramref name="root"/>, publishing <paramref name="services"/> as the app's ambient
+    /// container so views can reach services via <c>Service&lt;T&gt;()</c> / <c>[Inject]</c>.
+    /// Platform host bases pass <c>SwiftDotNetApp.Services</c> here.
+    /// </summary>
+    public static void Run(View root, IBridge bridge, IServiceProvider? services)
     {
+        if (services is not null)
+            SwiftHost.Services = services;
+
         _root = root;
         _bridge = bridge;
         _lastTree = null; // fresh run: emit a full replace rather than diffing against a prior root's tree
@@ -72,7 +82,7 @@ public static class SwiftApp
     /// <summary>
     /// Schedule a render. Called by <see cref="State{T}"/> when a value actually changes. Coalesces
     /// bursts into one render and marshals to the UI thread when a <see cref="SynchronizationContext"/>
-    /// was captured at <see cref="Run"/>.
+    /// was captured at <see cref="Run(View, IBridge, IServiceProvider?)"/>.
     /// </summary>
     internal static void RequestRender()
     {

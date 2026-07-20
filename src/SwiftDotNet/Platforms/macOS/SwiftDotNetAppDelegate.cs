@@ -12,7 +12,7 @@ namespace SwiftDotNet;
 /// [Register("AppDelegate")]
 /// public sealed class AppDelegate : SwiftDotNetAppDelegate
 /// {
-///     protected override View CreateRoot() => new ContentView();
+///     protected override SwiftDotNetApp CreateSwiftApp() => SwiftProgram.CreateSwiftApp();
 /// }
 /// </code>
 /// </summary>
@@ -20,8 +20,11 @@ public abstract class SwiftDotNetAppDelegate : NSApplicationDelegate
 {
     NSWindow? _window;
 
-    /// <summary>Return the root view for the app. Called once during launch.</summary>
-    protected abstract View CreateRoot();
+    /// <summary>
+    /// Build the app — services, logging and the root view. Called once during launch.
+    /// The MAUI analog of <c>CreateMauiApp()</c>; put the body in a shared <c>SwiftProgram</c>.
+    /// </summary>
+    protected abstract Hosting.SwiftDotNetApp CreateSwiftApp();
 
     /// <summary>Initial content size of the host window. Override to change it.</summary>
     protected virtual CGSize InitialSize => new(440, 820);
@@ -31,7 +34,8 @@ public abstract class SwiftDotNetAppDelegate : NSApplicationDelegate
 
     public override void DidFinishLaunching(NSNotification notification)
     {
-        var host = SwiftDotNetHost.CreateRootController(CreateRoot());
+        var app = CreateSwiftApp();
+        var host = SwiftDotNetHost.CreateRootController(app.CreateRoot(), app.Services);
 
         _window = new NSWindow(
             new CGRect(CGPoint.Empty, InitialSize),

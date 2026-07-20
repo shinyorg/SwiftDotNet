@@ -121,8 +121,11 @@ is a one-liner:
 | `SwiftDotNetActivity : ComponentActivity` | Android | `[Activity(MainLauncher=true)] class MainActivity : SwiftDotNetActivity` |
 | `SwiftDotNetApplication : Application` | Windows | `class App : SwiftDotNetApplication` |
 
-Each override is just `protected override View CreateRoot() => AppRoot.Create();`, and `AppRoot.Create()`
-(the single registration point) returns `new ContentView()`.
+Each override is just `protected override SwiftDotNetApp CreateSwiftApp() => SwiftProgram.CreateSwiftApp();`
+— the MAUI `MauiProgram.cs` shape. `SwiftProgram` is the single place the app registers services, logging and
+its root view; the host base takes the built app's provider and passes it to `SwiftApp.Run`, so views can
+reach services via `[Inject]` / `Service<T>()`. See
+[Hosting & Dependency Injection](hosting-and-di.md).
 
 > The bases are **non-generic** abstract classes — a generic `NSObject`/`Java.Lang.Object` subclass can't be
 > registered with the ObjC/Android runtimes.

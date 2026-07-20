@@ -1,16 +1,82 @@
 # Plan: Windows / Scenes for SwiftDotNet (multi-window)
 
-**Status:** Draft for review
-**Date:** 2026-07-18
+**Status:** Draft for review — **nothing built** · **Date:** 2026-07-18 (refreshed 2026-07-19)
 **Scope:** A declarative **`Scene` / `Window` / `WindowGroup`** layer that lets an app declare and open more
 than one top-level window from C#, mapped onto real windows on macOS, Windows (WinUI), and Linux (GTK);
 onto scenes on iPadOS; and onto sensible degradations everywhere else (iPhone, tvOS, Android, Web).
 
 > **Interpretation note.** "Windows" here means the *UI concept* of a top-level window (SwiftUI's
 > `WindowGroup` / `Window` / `Settings` scenes), **not** the Windows OS backend (which already exists —
-> see [[swiftdotnet-windows]]). If you meant something else, stop me here.
+> see [Windows backend](../docs/backends/windows.md)). If you meant something else, stop me here.
 
 ---
+
+## 0. Refresh — 2026-07-19
+
+No `App`, `Scene`, `WindowGroup`, `Window`, `Settings` or `OpenWindow` exists in `src/`. What changed is
+the ground underneath the plan.
+
+### 0.1 Two prerequisites are now satisfied
+
+DI Phase 1 shipped ([`dependency-injection-proposal.md`](./dependency-injection-proposal.md),
+[docs](../docs/hosting-and-di.md)), which delivers what §5.3 and §7 were waiting on:
+
+- **The ambient locator exists.** `View.Service<T>()` resolves from the running app's container, so
+  `view.OpenWindow(id)` over an `IWindowService` can be written exactly as §4 specifies.
+- **Per-window DI scopes exist.** `ViewScope` pairs a retained view with its own `IServiceScope` plus
+  lifecycle and disposal — precisely §7's "each window = a DI scope". It is built, tested, and currently
+  has **no production caller**, so windows would be its first real consumer.
+- `ISwiftDispatcher` is *mostly moot*: `SwiftApp` already captures a `SynchronizationContext` at `Run` on
+  every backend except the Skia hosts.
+
+### 0.2 Step 0 the plan is missing: `SwiftApp` is a static singleton
+
+§2 notes that `AppRoot.Create()`, `SwiftDotNetHost.CreateRoot*` and `IBridge` are singular, but understates
+the blocker. [`Core/SwiftApp.cs`](../src/SwiftDotNet/Core/SwiftApp.cs) is a **`static class`** whose
+`_root`, `_bridge`, `_lastTree`, `_actions` and `_uiContext` are static fields.
+
+**N independent render pipelines are impossible until `SwiftApp` becomes instantiable** (or gains a
+per-window context object). This applies to *every* backend — including the pure-C# ones §6 calls "cheap",
+because their cheapness assumed only `IBridge` needed multiplying. This is task zero, ahead of the Swift
+shim work.
+
+The native-shim half of §5.2 is confirmed unchanged: `Bridge.swift` still has
+`static let shared = RenderStore()`, and `swiftdotnet_render(_ json:)` takes no host handle. As the plan
+hoped, `swiftdotnet_make_host_controller()` *does* already return a fresh controller per call, so the
+host-handle refactor is still the right shape.
+
+### 0.3 The migration story in §5.1 is stale
+
+`AppRoot` no longer exists. The entry point is now `SwiftProgram.CreateSwiftApp()` returning a
+`SwiftDotNetApp` built by `SwiftDotNetApp.CreateBuilder()`, and every host base implements
+`protected abstract SwiftDotNetApp CreateSwiftApp()`.
+
+That makes the additive path **cleaner** than §5.1 imagined — a builder extension alongside the existing
+one, rather than a second method on `AppRoot`:
+
+```csharp
+builder.UseSwiftApp<ContentView>();          // today: sugar for a one-window WindowGroup
+builder.UseSwiftScenes(new SceneSet(...));   // proposed: the multi-window form
+```
+
+`SwiftDotNetApp` then exposes the scene set instead of a single `CreateRoot()`, and the host bases
+enumerate it. Decision 1 (§10) should be re-read in that light — the builder gives an obvious additive seam.
+
+### 0.4 Window lifecycle events (§5.4) have a home now
+
+`IViewLifecycle` + `ViewLifecycleDispatcher` shipped, with defined ordering. `OnWindowClosed`/
+`OnWindowFocused` should ride that rather than inventing a parallel channel — a window's root view is a
+retained view, which is exactly what the dispatcher targets.
+
+### 0.5 Revised task order
+
+1. **De-singleton `SwiftApp`** (C#) — unlisted in the original plan; blocks everything.
+2. **Host-handle refactor of the Swift shim** so each controller owns its store (§5.2, decision 2).
+3. `App`/`Scene`/`WindowGroup`/`Window(id)` model + `WindowManager` registry (§4, §5.1).
+4. `IWindowService` over the now-existing ambient locator (§5.3), one `ViewScope` per window.
+5. macOS + GTK first to prove both routes, then WinUI.
+
+All five decisions in §10 remain open.
 
 ## 1. Goal
 
@@ -71,7 +137,7 @@ the framework in three ways nothing so far has:
 3. **Opening a window is an imperative side effect from declarative code.** `OpenWindow`/`DismissWindow`
    are *actions*, like SwiftUI's `@Environment(\.openWindow)`. They need an **ambient window service**
    reachable from any view without threading it through — exactly the ambient-locator seam the DI proposal
-   introduces ([[dependency-injection-proposal]]).
+   introduces ([`dependency-injection-proposal.md`](./dependency-injection-proposal.md)).
 
 These are real framework changes (§5) and they generalize: the per-window store work also unlocks
 independent state scopes, and the ambient action seam is reused by DI and by the animation transaction API.
@@ -174,7 +240,7 @@ singleton:
 Reuse the DI proposal's ambient locator: `view.Service<IWindowService>().Open(id)`, surfaced as the tidy
 `view.OpenWindow(id)` extension. On backends where actions must marshal to the UI thread, dispatch through
 `ISwiftDispatcher` (also from the DI plan). No new cross-cutting mechanism — windows are the first real
-consumer of both seams. [[dependency-injection-proposal]]
+consumer of both seams. [`dependency-injection-proposal.md`](./dependency-injection-proposal.md)
 
 ### 5.4 Window lifecycle events (Phase 2+)
 
@@ -186,11 +252,11 @@ etc.). These ride the existing event channel (window id as the source id).
 | Backend | Real multi-window? | Window primitive | Approach & degradation |
 |---------|-------------------|------------------|------------------------|
 | **macOS** (SwiftUI/AppKit) | ✅ Full | `NSWindow` + `NSHostingController` per window | Best fit. `WindowManager` creates an `NSWindow` per quad (reuses the existing collapse-to-intrinsic sizing fix). `Settings` → real Preferences window; `Window(id)` → unique window. |
-| **Windows** (WinUI 3) | ✅ Full | `Microsoft.UI.Xaml.Window` per window | Strong fit, like macOS. One `Window` object per quad; `Settings` → a normal secondary window. First-build API checks needed (see [[swiftdotnet-windows]]). |
+| **Windows** (WinUI 3) | ✅ Full | `Microsoft.UI.Xaml.Window` per window | Strong fit, like macOS. One `Window` object per quad; `Settings` → a normal secondary window. First-build API checks needed (see [Windows backend](../docs/backends/windows.md)). |
 | **Linux** (GTK4) | ✅ Full | `Gtk.Window` / `Gtk.ApplicationWindow` | Strong fit. `WindowManager` adds windows to the `Gtk.Application`; each hosts an independent `GtkBridge` widget tree. `Settings` → a normal window. |
 | **iPadOS** (SwiftUI/UIKit) | ⚠️ Scenes | `UIWindowScene` via `requestSceneSessionActivation` | Real multi-window on iPad only. Needs a `UISceneDelegate` that builds a host controller per scene. `WindowGroup<T>` → one scene per document. |
 | **iPhone** (SwiftUI/UIKit) | ❌ Single | one `UIWindow` | No user windows. `OpenWindow` degrades to a **full-screen cover / pushed screen**; primary `WindowGroup` only. |
-| **tvOS** (SwiftUI/UIKit) | ❌ Single | one `UIWindow` | Full-screen only. Secondary windows degrade to `fullScreenCover`/sheet; `Settings` → a pushed screen. Same degrade pattern as its control fallbacks ([[swiftdotnet-tvos]]). |
+| **tvOS** (SwiftUI/UIKit) | ❌ Single | one `UIWindow` | Full-screen only. Secondary windows degrade to `fullScreenCover`/sheet; `Settings` → a pushed screen. Same degrade pattern as its control fallbacks ([Apple backends](../docs/backends/apple.md)). |
 | **Android** (Compose) | ⚠️ Limited | secondary `Activity` **or** Compose `Dialog` | No desktop-style windows. `OpenWindow(id)` → launch a secondary `SwiftDotNetActivity` hosting that scene's root (real "window" in recents / split-screen on Android 12+), **or** a full-screen `Dialog` for lighter cases. `Settings` → a pushed screen or secondary activity. |
 | **Web** (Blazor) | ⚠️ Simulated | in-page floating window **or** `window.open` | No OS windows. Reference = an **in-page window manager**: each open window is a draggable/resizable absolutely-positioned host `<div>` with its own `SwiftDotNetView` render root (independent bridge). `window.open` popups are a harder alt (needs a second Blazor root) — offer as opt-in. `Settings` → a modal window. |
 
@@ -201,12 +267,12 @@ instance** rather than duplicating.
 
 ## 7. Interplay with other milestones
 
-- **DI proposal** ([[dependency-injection-proposal]]): windows are the first real consumer of the ambient
+- **DI proposal** ([`dependency-injection-proposal.md`](./dependency-injection-proposal.md)): windows are the first real consumer of the ambient
   `View.Service<T>()` locator and `ISwiftDispatcher`. A per-window **scoped DI container** is a natural
   extension (each window = a DI scope).
 - **Per-view state ownership** (Core next step): the per-window store work in §5.2 is a stepping stone —
   independent stores per window generalize toward independent state scopes per subtree.
-- **Animations** ([[animations-plan.md]] via the plans folder): window present/dismiss transitions compose
+- **Animations** (the animations work (no plan doc in `plans/`; see [Modifiers, Gestures & Animation](../docs/modifiers-gestures-animation.md)) via the plans folder): window present/dismiss transitions compose
   with the animation transaction work; the render-batching that plan needs also benefits multi-window
   (batch per window).
 - **Navigation**: `NavigationStack` is *within* a window; windows are *above* nav. Data-driven

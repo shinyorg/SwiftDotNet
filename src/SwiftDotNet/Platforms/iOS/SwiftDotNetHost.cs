@@ -17,11 +17,11 @@ public static class SwiftDotNetHost
     /// Builds the SwiftUI-backed root <see cref="UIViewController"/> for <paramref name="root"/> and
     /// starts the render loop. From here, C# state changes drive real SwiftUI.
     /// </summary>
-    public static UIViewController CreateRootController(View root)
+    public static UIViewController CreateRootController(View root, IServiceProvider? services = null)
     {
         var bridge = new IosBridge();
         var controller = bridge.CreateHostController();
-        SwiftApp.Run(root, bridge);
+        SwiftApp.Run(root, bridge, services);
         return controller;
     }
 }

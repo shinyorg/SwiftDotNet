@@ -31,6 +31,15 @@
   <ItemGroup>
     <Compile Remove="Platforms/**/*.cs" />
   </ItemGroup>
+
+  <!-- Hosting/DI (Core/Hosting/**). Taken by the root library on purpose: SwiftProgram.CreateSwiftApp()
+       is the framework's front door, and the UseX() seam has to live where the sibling libraries
+       (Controls, Maps, Camera, Skia) can extend it. The render path stays free of these types — it binds
+       only to BCL IServiceProvider via SwiftHost. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.*" />
+  </ItemGroup>
   <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios'">
     <Compile Include="Platforms/iOS/**/*.cs" />
   </ItemGroup>

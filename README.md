@@ -50,6 +50,7 @@ public sealed class ContentView : View
 Full docs live in **[`docs/`](docs/README.md)**. Quick links:
 
 - **[Getting Started](docs/getting-started.md)** · **[Architecture](docs/architecture.md)**
+- **[Hosting & Dependency Injection](docs/hosting-and-di.md)** — `SwiftProgram.CreateSwiftApp()`, `[Inject]`, lifecycle
 - Authoring: **[Views & Controls](docs/views-and-controls.md)** ·
   **[Modifiers, Gestures & Animation](docs/modifiers-gestures-animation.md)** ·
   **[State & Binding](docs/state-and-binding.md)** · **[Collection View](docs/collection-view.md)** ·
@@ -198,7 +199,7 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 | `native/SwiftDotNetBridge` | Swift | `Bridge.swift` + build script → `build/SwiftDotNetBridge.xcframework` (SwiftUI interpreter; 5 slices — iOS device/sim, tvOS device/sim, macOS) |
 | `native/SwiftDotNetComposeBridge` | Kotlin | `Bridge.kt` + Gradle → `build/SwiftDotNetComposeBridge.aar` (Jetpack Compose interpreter) |
 | `sample/SharedUI` | `net10.0` | The demo `ContentView` (MAUI-style flyout menu) + composite `Rating` control — one file, shared by all apps |
-| `sample/SampleApp` | **multi-target** | **One sample app**, multi-targeted like the library: `net10.0-android` always, `+ios;-macos;-tvos` on a Mac, `+windows` on Windows. `Platforms/{iOS,macOS,tvOS,Android,Windows}/` hold the thin per-OS entry points; the root view is registered once in `AppRoot.cs`. |
+| `sample/SampleApp` | **multi-target** | **One sample app**, multi-targeted like the library: `net10.0-android` always, `+ios;-macos;-tvos` on a Mac, `+windows` on Windows. `Platforms/{iOS,macOS,tvOS,Android,Windows}/` hold the thin per-OS entry points; services and the root view are registered once in `SharedUI/SwiftProgram.cs`. |
 | `sample/SampleApp.Gtk` | `net10.0` | Thin GTK app: references `SwiftDotNet.Gtk` (separate — no distinct TFM) |
 | `sample/SampleApp.Web` | `net10.0` (Blazor WASM) | Thin web app: hosts `<SwiftDotNetView Root="new ContentView()">` (separate — no distinct TFM) |
 | `sample/SampleApp.Skia` | `net10.0` | Headless harness: renders `ContentView` to PNGs, drives taps/scroll/typing/overlays/animation (the Skia analog of the `SDN_TEST` harness). |
@@ -221,9 +222,10 @@ is a one-liner that just names its root view:
 | `SwiftDotNetActivity : ComponentActivity` | Android | `[Activity(MainLauncher=true)] class MainActivity : SwiftDotNetActivity` |
 | `SwiftDotNetApplication : Application` | Windows | `class App : SwiftDotNetApplication` |
 
-Each override is just `protected override View CreateRoot() => AppRoot.Create();`, and `AppRoot.Create()`
-(the single registration point) returns `new ContentView()`. So the window/host/activation wiring is written
-once in the framework, and the sample declares its UI in exactly one place. (The bases are non-generic abstract
+Each override is just `protected override SwiftDotNetApp CreateSwiftApp() => SwiftProgram.CreateSwiftApp();`
+— deliberately the same shape as .NET MAUI's `MauiProgram.cs`. `SwiftProgram` is the single place the app
+registers its services, logging and root view. So the window/host/activation wiring is written once in the
+framework, and the sample declares its UI and its dependencies in exactly one place. (The bases are non-generic abstract
 classes — a generic `NSObject`/`Java.Lang.Object` subclass can't be registered with the ObjC/Android runtimes.)
 
 The **same `SharedUI.ContentView`** renders as **SwiftUI on iOS**, **SwiftUI (AppKit-hosted) on macOS**,

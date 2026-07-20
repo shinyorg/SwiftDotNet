@@ -13,14 +13,23 @@ views keeping local state across renders via view-instance reconciliation. It un
 - inline-`Body`-child [lifecycle](#page--view-lifecycle) hooks,
 - keyed `ForEach` for animated list insert/remove/move.
 
+> **Plan index:** [`plans/README.md`](../plans/README.md) lists every design doc with its real status
+> and what's left in each.
+
 ## Open workstreams
 
-### Dependency injection
-[`plans/dependency-injection-proposal.md`](../plans/dependency-injection-proposal.md) — MS.DI container at the
-composition root (`AppRoot`); root via ctor injection + a `View.Service<T>()` ambient locator for inline
-children; `ISwiftDispatcher` for thread-safe `RequestRender`. Phased (Phase 1 = root + locator; child ctor
-injection waits on per-view reconciliation). Ships as a `SwiftDotNet.Extensions.DependencyInjection` add-on so
-Core stays dependency-free.
+### Dependency injection — **Phase 1 shipped**
+See [Hosting & Dependency Injection](hosting-and-di.md);
+design in [`plans/dependency-injection-proposal.md`](../plans/dependency-injection-proposal.md).
+MAUI-style `SwiftProgram.CreateSwiftApp()` + `SwiftDotNetApp.CreateBuilder()`, `[Inject]` partial properties
+filled by a **reflection-free source generator**, `View.Service<T>()` for inline children, `IViewLifecycle`
+observers + view hooks, and `ISwiftInitializer`. MS.DI is referenced by the **root** library (the add-on idea
+was rejected — hosting is the front door).
+
+Remaining: per-page `IServiceScope` (needs the paused
+[navigation service](../plans/navigation-service-plan.md)); child-view injection (waits on per-view
+reconciliation); `ISwiftDispatcher` — mostly moot, since `SwiftApp` already marshals via the captured
+`SynchronizationContext`, so the work is auditing backends that lack one.
 
 ### Animation
 Implicit `.Animation(spec, on:)` **shipped** (see
@@ -35,11 +44,20 @@ and enter/leave `.Transition(...)` (gated on reconciliation). Phases: 1 = implic
 throttled/committed event channel + a `Transformable` container — native-owned live transform, C# syncs on
 end); `.Rotation`/`.Offset` siblings; and the `.Tag(name)` native-view-access seam.
 
-### Page / view lifecycle
-[`plans/page-lifecycle-plan.md`](../plans/page-lifecycle-plan.md) — `OnLoad`/`OnAppear`/`OnAppearAsync(ct)`/
-`OnDisappear`/`OnUnload` + `OnResume`/`OnPause`; visibility is native-authoritative, reported over the
-existing event channel. Phase 1 = root; Phase 2 = nav/tab/sheet entries; Phase 3 = inline `Body` children
-(gated on reconciliation). Also `IAppLifecycle` and `.OnChange(state, handler)`.
+### Page / view lifecycle — **Phase 1 shipped**
+[`plans/page-lifecycle-plan.md`](../plans/page-lifecycle-plan.md) (reconciled 2026-07-19).
+Shipped with DI Phase 1: `OnCreated`/`OnAppearing`/`OnDisappearing`/`OnDestroyed` on `View`, plus
+`IViewLifecycle` observers registered in the container and a dispatcher with a defined ordering
+(observers → view on setup, view → observers on teardown). See
+[Hosting & Dependency Injection](hosting-and-di.md).
+
+**Caveat worth knowing:** visibility is not real yet — `OnAppearing` is currently raised by the host code
+path (app start / `ViewScope`), not by actual platform visibility. The next slice is the
+**native appear/disappear emitters** per backend (SwiftUI `.onAppear`, Compose `DisposableEffect`, WinUI
+`Loaded`, GTK `map`, Blazor `OnAfterRenderAsync`) plus node-id→view routing in `SwiftApp`. Then
+`IAppLifecycle`, `.OnChange(state, handler)`, and `OnAppearAsync(ct)`. Per-**page** lifecycle is blocked on
+the paused [navigation service](../plans/navigation-service-plan.md); inline-child lifecycle waits on
+reconciliation.
 
 ### Native view access
 [`plans/native-view-access-plan.md`](../plans/native-view-access-plan.md) — tag-based access to a control's

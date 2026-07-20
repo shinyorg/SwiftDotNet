@@ -1,6 +1,7 @@
 # Plan: Native-view access ("escape hatch")
 
-Status: **planned** · Author: design notes · Target: SwiftDotNet all backends
+Status: **planned — nothing built** (verified 2026-07-19: no `.Tag` modifier or `Customize` registry in
+`src/`) · Author: design notes · Target: SwiftDotNet all backends
 
 Let a developer reach the real native control behind a SwiftDotNet view to customize it directly —
 the equivalent of SwiftUI's `.introspect()` / MAUI's `Handler.PlatformView`. Keep the shared DSL clean;

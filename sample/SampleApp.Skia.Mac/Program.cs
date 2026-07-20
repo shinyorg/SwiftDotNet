@@ -39,7 +39,8 @@ sealed class AppDelegate : NSApplicationDelegate
         {
             Title = "SwiftDotNet · Skia",
         };
-        var view = new SkiaMacView(rect, new ContentView());
+        var swiftApp = SwiftProgram.CreateSwiftApp();
+        var view = new SkiaMacView(rect, swiftApp.CreateRoot(), swiftApp.Services);
         _window.ContentView = view;
         _window.MakeKeyAndOrderFront(null);
         _window.MakeFirstResponder(view);
@@ -55,10 +56,10 @@ sealed class SkiaMacView : NSView
     readonly SkiaBridge _bridge = new();
     NSTimer? _timer;
 
-    public SkiaMacView(CGRect frame, View root) : base(frame)
+    public SkiaMacView(CGRect frame, View root, IServiceProvider? services = null) : base(frame)
     {
         _bridge.Invalidate += () => NeedsDisplay = true;
-        SwiftApp.Run(root, _bridge);
+        SwiftApp.Run(root, _bridge, services);
         // ~60fps clock for implicit animations; only repaints while something is animating.
         _timer = NSTimer.CreateRepeatingScheduledTimer(1.0 / 60, _ => _bridge.Tick(1.0 / 60));
     }

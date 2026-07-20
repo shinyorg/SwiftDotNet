@@ -1,5 +1,7 @@
 using Foundation;
 using SwiftDotNet;
+using SwiftDotNet.Hosting;
+using SwiftDotNet.Sample;
 using UIKit;
 
 namespace SampleApp;
@@ -7,11 +9,9 @@ namespace SampleApp;
 [Register("AppDelegate")]
 public sealed class AppDelegate : SwiftDotNetAppDelegate
 {
-    protected override View CreateRoot()
-    {
-        AppleMaps.Register();   // activate the native MapKit renderer before the first render
-        return AppRoot.Create();
-    }
+    // The head does nothing but build the shared app, adding the renderers only iOS can offer.
+    protected override SwiftDotNetApp CreateSwiftApp() =>
+        SwiftProgram.CreateSwiftApp(b => b.UseAppleMaps());
 }
 
 public static class Program

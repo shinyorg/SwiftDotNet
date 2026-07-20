@@ -22,6 +22,7 @@
     <Project Path="src/SwiftDotNet.Maps.Web/SwiftDotNet.Maps.Web.csproj"/>
     <Project Path="src/SwiftDotNet.Web/SwiftDotNet.Web.csproj"/>
     <Project Path="src/SwiftDotNet/SwiftDotNet.csproj"/>
+    <Project Path="src/SwiftDotNet.SourceGenerators/SwiftDotNet.SourceGenerators.csproj"/>
     <Folder Name="/Tests/">
         <Project Path="tests/SwiftDotNet.Tests/SwiftDotNet.Tests.csproj"/>
     </Folder>

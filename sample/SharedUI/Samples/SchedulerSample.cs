@@ -12,9 +12,10 @@ public sealed class SchedulerSample : View
 
     static readonly CalendarEvent[] Events =
     {
-        new(new DateTime(2026, 7, 15), "Product launch", Color.Red),
-        new(new DateTime(2026, 7, 15), "Team lunch", Color.Green),
-        new(new DateTime(2026, 7, 22), "Sprint review", Color.Blue),
+        new(new DateTime(2026, 7, 15, 9, 30, 0), "Product launch", Color.Red),
+        new(new DateTime(2026, 7, 15, 12, 0, 0), "Team lunch", Color.Green),
+        new(new DateTime(2026, 7, 15, 15, 45, 0), "Retro", Color.Accent),
+        new(new DateTime(2026, 7, 22, 10, 0, 0), "Sprint review", Color.Blue),
     };
 
     public override View Body =>

@@ -15,11 +15,11 @@ public static class SwiftDotNetHost
     /// Builds the Compose-backed root <see cref="AndroidView"/> for <paramref name="root"/> and
     /// starts the render loop. From here, C# state changes drive real Jetpack Compose.
     /// </summary>
-    public static AndroidView CreateRootView(Context context, View root)
+    public static AndroidView CreateRootView(Context context, View root, IServiceProvider? services = null)
     {
         var bridge = new AndroidBridge();
         var view = bridge.CreateHostView(context);
-        SwiftApp.Run(root, bridge);
+        SwiftApp.Run(root, bridge, services);
         return view;
     }
 }
