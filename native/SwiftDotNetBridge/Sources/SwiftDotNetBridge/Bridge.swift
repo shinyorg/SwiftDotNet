@@ -58,6 +58,7 @@ struct ModifierData: Decodable, Equatable {
     let degrees: Double?       // F4: rotation
     let repeatCount: Double?   // F4: looping animation (-1 = forever)
     let autoreverse: String?   // F4: "true"/"false"
+    let regions: String?       // safe area: "container" / "keyboard" / "all"
 }
 
 final class WireNode: Decodable {
@@ -279,6 +280,30 @@ private func vAlignFor(_ token: String?) -> SwiftUI.VerticalAlignment {
     switch token { case "top": return .top; case "bottom": return .bottom; default: return .center }
 }
 
+/// Safe area: the comma-joined edge tokens the C# `Edge` flags serialize to ("all", or e.g. "top,bottom").
+private func edgeSetFor(_ token: String?) -> SwiftUI.Edge.Set {
+    guard let token, token != "all" else { return .all }
+    var set: SwiftUI.Edge.Set = []
+    for part in token.split(separator: ",") {
+        switch part {
+        case "top": set.insert(.top)
+        case "leading": set.insert(.leading)
+        case "bottom": set.insert(.bottom)
+        case "trailing": set.insert(.trailing)
+        default: break
+        }
+    }
+    return set
+}
+
+private func safeAreaRegionsFor(_ token: String?) -> SafeAreaRegions {
+    switch token {
+    case "keyboard": return .keyboard
+    case "all": return .all
+    default: return .container
+    }
+}
+
 private func animationFor(_ m: ModifierData) -> SwiftUI.Animation {
     let dur = m.duration ?? 0.3
     let base: SwiftUI.Animation
@@ -301,6 +326,16 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
             out = AnyView(out.padding(EdgeInsets(
                 top: CGFloat(m.top ?? 0), leading: CGFloat(m.leading ?? 0),
                 bottom: CGFloat(m.bottom ?? 0), trailing: CGFloat(m.trailing ?? 0))))
+        // Safe area is a device-window concept, so the C# API is annotated iOS/Android-only and the
+        // handlers are compiled in only for iOS — macOS/tvOS fall through to `default: break`.
+        #if os(iOS)
+        case "safeAreaPadding":
+            // SwiftUI's `.safeAreaPadding` takes edges only; the keyboard region is already handled by
+            // SwiftUI's automatic keyboard avoidance, so `regions` is informational here.
+            out = AnyView(out.safeAreaPadding(edgeSetFor(m.value)))
+        case "ignoresSafeArea":
+            out = AnyView(out.ignoresSafeArea(safeAreaRegionsFor(m.regions), edges: edgeSetFor(m.value)))
+        #endif
         case "font":
             out = AnyView(out.font(fontFor(m.value)))
         case "foregroundColor":
@@ -1080,6 +1115,17 @@ struct WebEngineView: NSViewRepresentable {
 struct RootHostView: View {
     var store = RenderStore.shared
     var body: some View {
+        content
+        #if os(iOS)
+            // Layout-neutral: an empty overlay that only listens for notifications and reports the
+            // *window's* insets to C#. Deliberately not a GeometryReader around the root — that would
+            // re-align and re-inset every existing app's layout.
+            .overlay(SafeAreaReporter().frame(width: 0, height: 0))
+        #endif
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if let root = store.root {
             NodeView(node: root)
         } else {
@@ -1087,6 +1133,65 @@ struct RootHostView: View {
         }
     }
 }
+
+#if os(iOS)
+/// Pushes the window's safe-area insets (plus the live keyboard height) to C# on the reserved
+/// `$safeArea` event id. The insets come from the key window rather than a `GeometryReader`, so the
+/// reporter contributes nothing to layout; the keyboard height comes from UIKit's keyboard-frame
+/// notifications, which SwiftUI has no first-class equivalent for.
+private struct SafeAreaReporter: View {
+    @State private var keyboard: CGFloat = 0
+    @State private var lastPayload: String = ""
+
+    var body: some View {
+        Color.clear
+            .onAppear { report() }
+            // Insets change on rotation, on scene resize (iPad multitasking), and when the status bar
+            // does. `didChangeStatusBarFrame` catches the last of those; the other two land here too.
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                // The window's insets update after the rotation commits, so read on the next runloop turn.
+                DispatchQueue.main.async { report() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in report() }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
+                guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+                      let window = UIWindow.keyWindow else { keyboard = 0; report(); return }
+                keyboard = max(0, window.bounds.height - frame.origin.y)
+                report()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                keyboard = 0
+                report()
+            }
+    }
+
+    private func report() {
+        let insets = UIWindow.keyWindow?.safeAreaInsets ?? .zero
+        // UIKit reports physical left/right; the wire is leading/trailing. They coincide in LTR, which is
+        // the mapping the rest of the bridge already assumes for alignment tokens.
+        let payload = String(
+            format: "%f;%f;%f;%f;%f",
+            insets.top, insets.left, insets.bottom, insets.right, keyboard)
+        guard payload != lastPayload else { return }
+        lastPayload = payload
+        emitEvent(SAFE_AREA_EVENT_ID, payload)
+    }
+}
+
+private extension UIWindow {
+    /// The active key window (`UIApplication.keyWindow` is deprecated and wrong in multi-scene setups).
+    static var keyWindow: UIWindow? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+    }
+}
+#endif
+
+/// Reserved event id for safe-area inset reports — mirrors `SwiftDotNet.SafeArea.EventId`. Node ids are
+/// structural paths rooted at "0", so a `$` prefix can never collide with one.
+let SAFE_AREA_EVENT_ID = "$safeArea"
 
 // MARK: - C ABI bridge (P/Invoke target from C#)
 

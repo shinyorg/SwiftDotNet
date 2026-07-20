@@ -70,6 +70,14 @@ Some types have a wire encoding worth knowing:
 | `bool` (`Toggle`) | `"true"` / `"false"` |
 | Button tap | `null` value |
 
+## Host-pushed ambient state
+
+Not every re-render starts from a `State<T>` you own. `SafeArea.Current` (iOS/Android) is pushed *by the
+host* on a reserved event id and drives the same loop: a change stores the new insets and calls
+`RequestRender`, so a `Body` reading it recomputes exactly as if you'd assigned to a state cell. An
+unchanged report is dropped without scheduling anything. See
+[Safe area](modifiers-gestures-animation.md#safe-area-ios--android-only).
+
 ## Collections
 
 For list data, `List.ForEach(items, id, row)` provides **keyed identity** so reorders/insert/remove diff

@@ -37,6 +37,41 @@ sealed class PaddingModifier : Modifier
     };
 }
 
+/// <summary>
+/// Insets content by the platform's safe area (mirrors SwiftUI's <c>.safeAreaPadding(_:)</c>). Mobile
+/// only: iOS and Android implement it, every other backend ignores the wire type.
+/// </summary>
+sealed class SafeAreaPaddingModifier : Modifier
+{
+    readonly Edge _edges;
+    readonly SafeAreaRegions _regions;
+    public SafeAreaPaddingModifier(Edge edges, SafeAreaRegions regions) { _edges = edges; _regions = regions; }
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path) => new()
+    {
+        ["type"] = "safeAreaPadding",
+        ["value"] = _edges.Token(),
+        ["regions"] = _regions.Token(),
+    };
+}
+
+/// <summary>
+/// Lets content extend under the safe area (mirrors SwiftUI's <c>.ignoresSafeArea(_:edges:)</c>). Mobile
+/// only; on Compose — which is already edge-to-edge — this consumes the insets so descendants don't
+/// re-apply them.
+/// </summary>
+sealed class IgnoresSafeAreaModifier : Modifier
+{
+    readonly Edge _edges;
+    readonly SafeAreaRegions _regions;
+    public IgnoresSafeAreaModifier(Edge edges, SafeAreaRegions regions) { _edges = edges; _regions = regions; }
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path) => new()
+    {
+        ["type"] = "ignoresSafeArea",
+        ["value"] = _edges.Token(),
+        ["regions"] = _regions.Token(),
+    };
+}
+
 sealed class FontModifier : Modifier
 {
     readonly string _value;

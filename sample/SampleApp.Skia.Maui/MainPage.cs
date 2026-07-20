@@ -21,10 +21,11 @@ public class MainPage : ContentPage
     {
         Title = "SwiftDotNet · Skia + Shiny";
 
-        // .NET 10's ContentPage defaults to SafeAreaRegions.None (edge-to-edge) on every platform, and the
-        // Skia canvas draws the *whole* UI itself — so without this the scene paints under the status bar,
-        // notch/Dynamic Island and home indicator. The engine has no safe-area concept of its own.
-        SafeAreaEdges = new SafeAreaEdges(SafeAreaRegions.Container);
+        // .NET 10's ContentPage defaults to edge-to-edge on every platform, and the Skia canvas draws the
+        // *whole* UI itself — so without this the scene paints under the status bar, notch/Dynamic Island
+        // and home indicator. Fully qualified because Core's own SwiftDotNet.SafeAreaRegions (the iOS/
+        // Android `.SafeAreaPadding` API) collides with MAUI's by simple name, and this is MAUI's.
+        SafeAreaEdges = new Microsoft.Maui.SafeAreaEdges(Microsoft.Maui.SafeAreaRegions.Container);
 
 #if NO_SHINY
         var status = "(Shiny disabled — host-render proof)";

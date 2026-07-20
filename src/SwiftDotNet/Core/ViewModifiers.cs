@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+
 namespace SwiftDotNet;
 
 /// <summary>
@@ -59,6 +61,39 @@ public static class ViewModifiers
     public static T Padding<T>(this T view, double horizontal, double vertical) where T : View
     {
         view.Modifiers.Add(new PaddingModifier(horizontal, vertical));
+        return view;
+    }
+
+    /// <summary>
+    /// Insets the view by the platform's safe area so it stays clear of the status bar, cutout, home
+    /// indicator, and — with <see cref="SafeAreaRegions.Keyboard"/> — the soft keyboard. Mirrors SwiftUI's
+    /// <c>.safeAreaPadding(_:)</c>.
+    ///
+    /// <b>iOS and Android only.</b> Guard the call with <see cref="SafeArea.IsSupported"/> from a
+    /// platform-neutral project; every other backend ignores the modifier if one reaches it anyway.
+    /// </summary>
+    [SupportedOSPlatform("ios")]
+    [SupportedOSPlatform("android")]
+    [UnsupportedOSPlatform("maccatalyst")]
+    public static T SafeAreaPadding<T>(this T view, Edge edges = Edge.All, SafeAreaRegions regions = SafeAreaRegions.Container) where T : View
+    {
+        view.Modifiers.Add(new SafeAreaPaddingModifier(edges, regions));
+        return view;
+    }
+
+    /// <summary>
+    /// Lets the view extend under the safe area on <paramref name="edges"/> — a full-bleed background or
+    /// header. Mirrors SwiftUI's <c>.ignoresSafeArea(_:edges:)</c>.
+    ///
+    /// <b>iOS and Android only.</b> On Compose, where content is already edge-to-edge, this *consumes*
+    /// the insets so descendants don't re-apply them. Guard with <see cref="SafeArea.IsSupported"/>.
+    /// </summary>
+    [SupportedOSPlatform("ios")]
+    [SupportedOSPlatform("android")]
+    [UnsupportedOSPlatform("maccatalyst")]
+    public static T IgnoresSafeArea<T>(this T view, Edge edges = Edge.All, SafeAreaRegions regions = SafeAreaRegions.All) where T : View
+    {
+        view.Modifiers.Add(new IgnoresSafeAreaModifier(edges, regions));
         return view;
     }
 

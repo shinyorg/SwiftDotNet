@@ -8,7 +8,7 @@ does today and the plan describes how it got there.
 A plan is deleted once it is fully implemented and its content lives in `docs/` (e.g. the Skia backend
 plan, removed 2026-07-19 — see [Skia backend](../docs/backends/skia.md)).
 
-## Status at a glance — 2026-07-19
+## Status at a glance — 2026-07-20
 
 | Plan | Status | What's left |
 |---|---|---|
@@ -16,6 +16,8 @@ plan, removed 2026-07-19 — see [Skia backend](../docs/backends/skia.md)).
 | [Page & view lifecycle](page-lifecycle-plan.md) | **Partially shipped** | The big one: **native visibility emitters** — `OnAppearing` isn't wired to real platform visibility yet. Then `IAppLifecycle`, `.OnChange`, `OnAppearAsync(ct)` |
 | [Controls: missing framework features](controls-missing-features-plan.md) | **Partially shipped** | Wave A done; F7 collections, F8 drawing canvas, F10 services, F11 geometry |
 | [Controls library](controls-library-plan.md) | **Partially shipped** | VirtualizedGrid, ~8 cell types, Compose/WinUI camera renderers; camera not device-verified |
+| [Safe area insets](safe-area-insets-plan.md) | **Implemented, unverified** | Device/simulator run (notched iOS sim + Android 15 emulator); RTL reconciliation; a sample that uses it; decide on the `SafeAreaRegions` name collision with MAUI. Docs: [Safe area](../docs/modifiers-gestures-animation.md#safe-area-ios--android-only) |
+| [Skia MAUI host](skia-maui-host-plan.md) | **iOS runs; repaint broken** | 🐞 **Live defect** — no C# state change repaints on the MAUI host. Triage step 1 is one logging run. Docs: [Skia](../docs/backends/skia.md) |
 | [Navigation service](navigation-service-plan.md) | ⏸ **Paused** | Everything. Would be the first consumer of `ViewScope` (built, no caller) |
 | [View construction seam](view-construction-seam.md) | Draft | Decision 1 — adopt the function form (`Text()` vs `new Text()`)? The `[Inject]` generator it once owned already shipped |
 | [Windows / Scenes (multi-window)](windows-plan.md) | Draft — nothing built | Step 0 is de-singletoning `SwiftApp`; then the Swift shim host-handle refactor |
@@ -35,3 +37,12 @@ instances across renders, so an inline `Body` child is a stable object rather th
 - Animations — enter/leave transitions, keyed `ForEach`
 
 Nothing has started on it. It is the single highest-leverage piece of unbuilt framework work.
+
+## Second cross-cutting milestone: de-singletoning `SwiftApp`
+
+`SwiftApp` keeps `_bridge`, `_lastTree` and `_uiContext` in statics, so exactly one view tree can be live
+per process. [Windows / Scenes](windows-plan.md) names this as its Step 0, and it now has a **concrete
+bug driving it** rather than only a hypothetical multi-window requirement: the
+[Skia MAUI host](skia-maui-host-plan.md) defect is best explained by a second host view rebinding those
+statics away from the view that is actually on screen. Fixing that defect properly is the first slice of
+this milestone — and unlike the reconciliation milestone above, it is small and well-scoped.

@@ -35,6 +35,7 @@ new Text("Hi")
 | `.ScaleEffect` | Native scale transform, around an anchor. |
 | `.Align` | Fill width + align. |
 | `.NavigationTitle` | Nav bar title. |
+| `.SafeAreaPadding` / `.IgnoresSafeArea` | System-chrome insets — **iOS/Android only**, see [below](#safe-area-ios--android-only). |
 
 Because modifiers are a universal wrapper, `.Opacity` / `.Disabled` / `.ScaleEffect` work on **every** view.
 
@@ -47,6 +48,68 @@ Because modifiers are a universal wrapper, `.Opacity` / `.Disabled` / `.ScaleEff
 > - `.Material` is a real backdrop blur only on **SwiftUI** and **Web**; GTK, Skia, Compose and WinUI
 >   render a translucent tint. On Compose that's deliberate — `Modifier.blur` blurs the node's own content,
 >   not the backdrop.
+
+## Safe area (iOS & Android only)
+
+The safe area is the part of the window not covered by system chrome — the status bar, the display
+cutout/notch, the home indicator or navigation bar, and (optionally) the soft keyboard. It's a
+device-window concept, so unlike every other modifier this one exists **only on iOS and Android**;
+the API is annotated `[SupportedOSPlatform("ios")] [SupportedOSPlatform("android")]`.
+
+```csharp
+// Guard from a platform-neutral project (SharedUI is net10.0) — this is what silences CA1416.
+if (SafeArea.IsSupported)
+{
+    header = header.IgnoresSafeArea(Edge.Top);        // full-bleed banner under the status bar
+    content = content.SafeAreaPadding(Edge.All);      // keep body content clear of the chrome
+    input   = input.SafeAreaPadding(Edge.Bottom, SafeAreaRegions.Keyboard);   // lift above the keyboard
+
+    var topInset = SafeArea.Current.Top;              // live values, in points/dp
+}
+```
+
+| API | What it does |
+|-----|--------------|
+| `.SafeAreaPadding(edges, regions)` | Insets the view by the safe area. SwiftUI's `.safeAreaPadding(_:)`. |
+| `.IgnoresSafeArea(edges, regions)` | Lets the view bleed under the chrome. SwiftUI's `.ignoresSafeArea(_:edges:)`. |
+| `SafeArea.Current` | Live `SafeAreaInsets` (`Top`/`Leading`/`Bottom`/`Trailing`/`Keyboard`). |
+| `SafeArea.IsSupported` | The platform guard. Carries `[SupportedOSPlatformGuard]`, so the analyzer trusts it. |
+
+`edges` reuses the existing `[Flags] Edge` enum (`Edge.Top`, `Edge.Horizontal`, `Edge.All`, …).
+`regions` is `Container` (chrome only — the default for padding), `Keyboard`, or `All`.
+
+`SafeArea.Current` participates in the render loop exactly like `State<T>`: the host pushes new insets
+on rotation, keyboard show/hide, and cutout changes, which schedules a re-render, so a `Body` that
+reads it recomputes automatically.
+
+| Backend | Behavior |
+|---------|----------|
+| **iOS** (SwiftUI) | `.safeAreaPadding` / `.ignoresSafeArea` directly. Insets come from the key window; keyboard height from UIKit's keyboard-frame notifications. |
+| **Android** (Compose) | `Modifier.windowInsetsPadding` / `consumeWindowInsets` over `WindowInsets.safeDrawing` (unioned with `WindowInsets.ime` for the keyboard region). `SwiftDotNetActivity` calls `EdgeToEdge.Enable` so the insets are non-zero. |
+| macOS / tvOS / GTK / WinUI / Web / Skia | **Not available** — CA1416 at the call site; the wire modifier is ignored if one reaches them anyway. |
+
+> **Gotchas.**
+> - **Compose is edge-to-edge by default**, so "ignoring" the safe area is the *absence* of padding.
+>   `.IgnoresSafeArea` therefore *consumes* the insets, which stops a descendant's `.SafeAreaPadding`
+>   from re-insetting a region you deliberately bled into.
+> - **`SafeArea.Current` is zero on the first render.** Both hosts report after their first layout
+>   pass; the report then triggers a re-render with the real values. Lay out so zeros are harmless.
+> - **Reports are de-duplicated.** Both hosts emit on every layout pass; an unchanged report is dropped
+>   without scheduling a render, so reading the insets doesn't spin the render loop.
+> - **Mac Catalyst is explicitly excluded** (`[UnsupportedOSPlatform("maccatalyst")]`). The analyzer
+>   treats Catalyst as a subset of iOS, but nothing in the Catalyst chain reaches the SwiftUI shim —
+>   including [`SwiftDotNet.Skia.Maui`](backends/skia.md), which binds only Core's neutral `net10.0` TFM
+>   and so cannot see this API at all.
+> - **Android IME insets need `adjustResize`** (the default) — a host activity that sets
+>   `windowSoftInputMode="adjustPan"` will report a keyboard height of 0.
+>
+> **Status:** 🧩 Scaffolded. The wire contract, inset plumbing and de-duplication are covered by
+> [`SafeAreaTests.cs`](../tests/SwiftDotNet.Tests/SafeAreaTests.cs) (21 tests), and both shims compile
+> (Swift for iOS/macOS/tvOS, Kotlin via `assembleRelease`). **Not yet verified on a device or
+> simulator** — the real inset values, rotation, and keyboard behavior are unconfirmed.
+
+Source: [`SafeArea.cs`](../src/SwiftDotNet/Core/SafeArea.cs),
+[`ViewModifiers.cs`](../src/SwiftDotNet/Core/ViewModifiers.cs).
 
 ## Gestures
 

@@ -56,6 +56,8 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.TextStyle
@@ -386,6 +388,43 @@ private fun rowAlignFor(token: String?): Alignment.Vertical = when (token) {
     else -> Alignment.CenterVertically
 }
 
+/** Reserved event id for safe-area inset reports — mirrors `SwiftDotNet.SafeArea.EventId`. */
+private const val SAFE_AREA_EVENT_ID = "\$safeArea"
+
+/**
+ * Builds the `WindowInsets` a `safeAreaPadding` / `ignoresSafeArea` modifier refers to: the
+ * `safeDrawing` insets (status bar, cutout, navigation bar), unioned with the IME insets when the
+ * modifier asks for the keyboard region, then narrowed to the requested edges.
+ */
+@Composable
+private fun safeAreaInsetsFor(mod: Map<String, Any?>): WindowInsets {
+    val regions = mod["regions"] as? String ?: "container"
+    var insets = when (regions) {
+        "keyboard" -> WindowInsets.ime
+        "all" -> WindowInsets.safeDrawing.union(WindowInsets.ime)
+        else -> WindowInsets.safeDrawing
+    }
+
+    val edges = mod["value"] as? String ?: "all"
+    if (edges != "all") {
+        var sides: WindowInsetsSides? = null
+        for (part in edges.split(",")) {
+            val side = when (part) {
+                "top" -> WindowInsetsSides.Top
+                "leading" -> WindowInsetsSides.Start
+                "bottom" -> WindowInsetsSides.Bottom
+                "trailing" -> WindowInsetsSides.End
+                else -> null
+            } ?: continue
+            sides = sides?.plus(side) ?: side
+        }
+        // No recognized edge → nothing to inset; an empty WindowInsets keeps the modifier a no-op
+        // rather than silently falling back to insetting on all four sides.
+        insets = sides?.let { insets.only(it) } ?: WindowInsets(0, 0, 0, 0)
+    }
+    return insets
+}
+
 // MARK: - Modifier application ----------------------------------------------
 
 @Composable
@@ -412,6 +451,11 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                 end = (numOf(mod["trailing"]) ?: 0.0).dp,
                 bottom = (numOf(mod["bottom"]) ?: 0.0).dp,
             )
+            "safeAreaPadding" -> m = m.windowInsetsPadding(safeAreaInsetsFor(mod))
+            // Compose content is already edge-to-edge, so "ignoring" the safe area is the *absence* of
+            // padding. What this must still do is consume the insets, so a descendant that applies
+            // safeAreaPadding doesn't re-inset a region this view has deliberately bled into.
+            "ignoresSafeArea" -> m = m.consumeWindowInsets(safeAreaInsetsFor(mod))
             "frame" -> {
                 numOf(mod["width"])?.let { m = m.width(it.dp) }
                 numOf(mod["height"])?.let { m = m.height(it.dp) }
@@ -586,10 +630,34 @@ fun registerRenderer(type: String, renderer: SwiftDotNetRenderer) {
 @Composable
 private fun RootHostView() {
     val root = SwiftDotNetBridge.root
+    ReportSafeAreaInsets()
     Box(Modifier.fillMaxSize()) {
         if (root != null) NodeView(root)
         else Text("SwiftDotNet: waiting for first render…", Modifier.align(Alignment.Center))
     }
+}
+
+/**
+ * Pushes the window's safe-area insets (plus the live IME height) to C# on the reserved `$safeArea`
+ * event id, in dp. Reading them here rather than inside a layout node keeps the report layout-neutral —
+ * this composable emits nothing into the tree. `LaunchedEffect` is keyed on the payload, so it fires
+ * only when a value actually changes, not on every recomposition.
+ */
+@Composable
+private fun ReportSafeAreaInsets() {
+    val density = LocalDensity.current
+    val safe = WindowInsets.safeDrawing
+    val ime = WindowInsets.ime
+    val payload = with(density) {
+        listOf(
+            safe.getTop(density).toDp().value,
+            safe.getLeft(density, LocalLayoutDirection.current).toDp().value,
+            safe.getBottom(density).toDp().value,
+            safe.getRight(density, LocalLayoutDirection.current).toDp().value,
+            ime.getBottom(density).toDp().value,
+        ).joinToString(";")
+    }
+    LaunchedEffect(payload) { SwiftDotNetBridge.emit(SAFE_AREA_EVENT_ID, payload) }
 }
 
 @Composable

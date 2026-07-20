@@ -155,6 +155,14 @@ public static class SwiftApp
 
     static void OnEvent(string nodeId, string? value)
     {
+        // Reserved host→C# channel: safe-area insets aren't tied to a node, so they ride the event
+        // callback under a `$`-prefixed id that no structural node path can produce.
+        if (nodeId == SafeArea.EventId)
+        {
+            SafeArea.Update(value);
+            return;
+        }
+
         if (_actions.TryGetValue(nodeId, out var action))
             action(value);
     }

@@ -97,7 +97,19 @@ The engine is host-agnostic via `ISkiaHost`. Available hosts:
 | **Headless** | [`sample/SampleApp.Skia`](../../sample/SampleApp.Skia) | Console harness → PNGs; `-- <dir> anim` renders animation frames. Walks the whole flyout, including every controls page. |
 | **macOS / AppKit** | [`sample/SampleApp.Skia.Mac`](../../sample/SampleApp.Skia.Mac) | Interactive `NSView` blits the scene; mouse/scroll/keyboard → router → bridge; `NSTimer(1/60)` drives both the animation clock and `router.Poll`. Real trackpad pinch via `MagnifyWithEvent`; ⌃-scroll zooms on a mouse. |
 | **Silk.NET desktop** | [`sample/SampleApp.Skia.Silk`](../../sample/SampleApp.Skia.Silk) | Silk.NET (GLFW) window + GL context; SkiaSharp draws to a GL-backed surface. Dependency-free cross-platform desktop; base for embedded/framebuffer Linux. GLFW has no pinch event, so zoom is ctrl+wheel. |
-| **MAUI + Shiny** | [`src/SwiftDotNet.Skia.Maui`](../../src/SwiftDotNet.Skia.Maui) + [`sample/SampleApp.Skia.Maui`](../../sample/SampleApp.Skia.Maui) | `SwiftDotNetSkiaView : SKCanvasView`; composes with **Shiny** via `.UseSkiaSharp().UseShiny()` — Skia UI + Shiny plugins share one DI container. Real two-finger pinch via MAUI's `PinchGestureRecognizer`. |
+| **MAUI + Shiny** | [`src/SwiftDotNet.Skia.Maui`](../../src/SwiftDotNet.Skia.Maui) + [`sample/SampleApp.Skia.Maui`](../../sample/SampleApp.Skia.Maui) | `SwiftDotNetSkiaView : SKCanvasView`; composes with **Shiny** via `.UseSkiaSharp().UseShiny()` — Skia UI + Shiny plugins share one DI container. Real two-finger pinch via MAUI's `PinchGestureRecognizer`. Targets `net10.0-ios;net10.0-maccatalyst`. ⚠️ **State-driven repaint is broken on this host** — see below. |
+
+> ⚠️ **Known defect — the MAUI host does not repaint on state change.** Run on an iOS simulator, the tree
+> paints and engine-local input works (nav push/pop), but nothing driven by a C# `State<T>` change ever
+> reaches the screen. Touches arrive with correct coordinates, the frame clock runs, and `Emit` reaches
+> Core's handler with a live `UIKitSynchronizationContext` — so the break is after the event and before
+> the canvas. The AppKit and Silk hosts are unaffected. Leading suspect is `SwiftApp`'s static singleton
+> state being rebound by a second `SwiftDotNetSkiaView`. Triage steps and hypotheses:
+> [`plans/skia-maui-host-plan.md`](../../plans/skia-maui-host-plan.md).
+>
+> An iOS app hosting this view must also `<Import>` [`SwiftDotNetBridge.targets`](../../src/SwiftDotNet/SwiftDotNetBridge.targets)
+> — the app's ProjectReference graph resolves `SwiftDotNet` to its iOS slice, whose Swift-bridge P/Invokes
+> the native linker must resolve even though the Skia route never calls them.
 
 ## Gotchas
 

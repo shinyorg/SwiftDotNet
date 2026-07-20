@@ -24,6 +24,11 @@ public abstract class SwiftDotNetActivity : ComponentActivity
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
+        // Draw behind the system bars so `WindowInsets.safeDrawing` reports real values — and because
+        // Android 15+ enforces edge-to-edge for apps targeting SDK 35 anyway. Must run before
+        // base.OnCreate so the decor-view flags are in place when Compose first measures.
+        // Content stays clear of the bars via `.SafeAreaPadding(...)` — see docs/backends/android.md.
+        EdgeToEdge.Enable(this);
         base.OnCreate(savedInstanceState);
         var app = CreateSwiftApp();
         SetContentView(SwiftDotNetHost.CreateRootView(this, app.CreateRoot(), app.Services));

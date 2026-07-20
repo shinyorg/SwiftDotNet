@@ -74,6 +74,13 @@ See [Getting Started](../getting-started.md#ios-swiftui) for build/run commands.
   `ContentViewController` collapses the window to the SwiftUI intrinsic size (the 213×92 window bug).
 - **iOS launch screen / letterbox:** the `Info.plist` needs `Link="Info.plist"` in the csproj `None` item so
   the SDK's `_DetectAppManifest` picks it up (else no `UILaunchScreen`, full-screen letterbox).
+- **Safe area is iOS-only, not macOS/tvOS.** The `safeAreaPadding` / `ignoresSafeArea` cases in
+  `applyModifiers` are inside `#if os(iOS)`; the other Apple slices fall through to `default: break`, and
+  the C# API is annotated so those platforms can't call it. Insets are read from the **key window**
+  (not a `GeometryReader`) by a zero-size `SafeAreaReporter` overlay, so reporting contributes nothing to
+  layout — wrapping the root in a `GeometryReader` would have re-aligned every existing app. Keyboard
+  height comes from `UIResponder.keyboardWillChangeFrame`/`WillHide`, which SwiftUI has no equivalent for.
+  See [Safe area](../modifiers-gestures-animation.md#safe-area-ios--android-only).
 - **Maps:** MapKit ships as a separate companion xcframework (`SwiftDotNetMaps`), registered via
   `AppleMaps.Register()` — it stays out of the core bridge. See [Maps](../maps.md).
 

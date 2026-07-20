@@ -41,9 +41,20 @@ The reusable host base is `SwiftDotNetActivity : ComponentActivity` (a `Componen
 
 ## Gotchas
 
-- **Rebind after rebuilding the `.aar`.** Copy the freshly-built AAR from
-  `native/…/build/outputs/aar/` to `build/`, then `rm -rf` the `obj`/`bin` of both `src/SwiftDotNet` and
-  `sample/SampleApp` — an incremental build reuses the stale binding (→ "unknown view" or FileNotFound).
+- **Rebind after rebuilding the `.aar`, and clean `obj`/`bin` REPO-WIDE.** Copy the freshly-built AAR
+  from `native/…/build/outputs/aar/` to `build/`, then:
+
+  ```bash
+  find . -type d \( -name obj -o -name bin \) -not -path "./native/*" -prune -exec rm -rf {} +
+  ```
+
+  Clearing only `src/SwiftDotNet` and `sample/SampleApp` is **not** sufficient once another head (e.g.
+  `SwiftDotNet.Skia.Maui`) has been built. The failure mode is nasty because it doesn't look like a
+  binding problem: the AAR extracts fine to `obj/.../library_project_jars/`, but the jar never reaches
+  `obj/.../class-parse.rsp`, so **zero** bindings are generated and you get
+  `CS0246: 'Com' could not be found` / `'IEventCallback' could not be found` in `AndroidBridge.cs`.
+  `--no-incremental` does not fix it. If you suspect the AAR itself, check it with
+  `javap -classpath <extracted> com.swiftdotnet.bridge.SwiftDotNetBridge` — the types must be `public`.
 - **Compose strong-skipping** (Kotlin 2.x default) compares composable params by *reference identity* —
   mutating a VNode in place is **skipped**. Fix: `VNode.props`/`children`/`type` must be `mutableStateOf`
   (the Compose analog of iOS `@Observable`).
@@ -71,6 +82,28 @@ The reusable host base is `SwiftDotNetActivity : ComponentActivity` (a `Componen
   *backdrop* blur. Using them would smear the node's children, which is worse than the tint. Real backdrop
   blur on Android needs `Window.setBackgroundBlurRadius`, which is window-level and can't be expressed
   per-node.
+
+### Safe area / edge-to-edge
+
+`SwiftDotNetActivity.OnCreate` calls `EdgeToEdge.Enable(this)` **before** `base.OnCreate`, so the app
+draws behind the system bars — required on Android 15+ for apps targeting SDK 35, and what makes
+`WindowInsets.safeDrawing` report real values in the first place. Keep content clear of the bars with
+[`.SafeAreaPadding(...)`](../modifiers-gestures-animation.md#safe-area-ios--android-only).
+
+- `.SafeAreaPadding(edges, regions)` → `Modifier.windowInsetsPadding` over `WindowInsets.safeDrawing`,
+  unioned with `WindowInsets.ime` when the `Keyboard` region is asked for, narrowed via
+  `WindowInsetsSides`.
+- `.IgnoresSafeArea(...)` → `Modifier.consumeWindowInsets`. Compose content is *already* edge-to-edge, so
+  there is no padding to remove; consuming is what stops a descendant from re-applying insets an ancestor
+  deliberately bled into.
+- `RootHostView` reports `safeDrawing` + `ime` (in dp) to C# on the reserved `$safeArea` event id, keyed
+  by a `LaunchedEffect` so it fires only when a value actually changes.
+
+> **Gotcha:** IME insets require `windowSoftInputMode="adjustResize"` (the default). A host activity that
+> sets `adjustPan` reports a keyboard height of 0.
+
+🧩 **Not emulator-verified** — the Kotlin compiles and the wire contract is tested, but real inset values,
+rotation and keyboard behavior are unconfirmed.
 
 ### `CameraView` and `Map` are not in the AAR
 
