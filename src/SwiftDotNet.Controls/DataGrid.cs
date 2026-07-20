@@ -74,7 +74,12 @@ public sealed class DataGrid<T> : View
 
             return new VStack(
                     new HStack(header).Spacing(8).Padding(horizontal: 12, vertical: 8).Background(ControlPalette.SurfaceVariant),
-                    new ScrollView(new VStack(rowViews).Spacing(0).Alignment(HorizontalAlignment.Leading)))
+                    // .Align(Leading) makes the row stack fill the grid's width. Without it a backend
+                    // that centres scroll-view content (Skia does) offsets the rows relative to the
+                    // header, so the columns stop lining up.
+                    new ScrollView(new VStack(rowViews).Spacing(0)
+                        .Alignment(HorizontalAlignment.Leading)
+                        .Align(Alignment.Leading)))
                 .Spacing(0)
                 .Alignment(HorizontalAlignment.Leading)
                 .Border(ControlPalette.Outline, 1, cornerRadius: 8);
@@ -82,5 +87,5 @@ public sealed class DataGrid<T> : View
     }
 
     static View Cell(View content, double? width) =>
-        width is { } w ? new HStack(content).Frame(width: w) : new HStack(content, new Spacer());
+        width is { } w ? new HStack(content).Frame(width: w) : new HStack(content, new Spacer()).Align(Alignment.Leading);
 }

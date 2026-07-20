@@ -46,10 +46,10 @@ public sealed class BadgeView : View
             // Overhang the corner: pin to the corner then nudge outward by half the badge.
             var (align, dx, dy) = _position switch
             {
-                BadgePosition.TopStart => (Alignment.TopLeading, -6.0, -6.0),
-                BadgePosition.BottomEnd => (Alignment.BottomTrailing, 6.0, 6.0),
-                BadgePosition.BottomStart => (Alignment.BottomLeading, -6.0, 6.0),
-                _ => (Alignment.TopTrailing, 6.0, -6.0),
+                BadgePosition.TopStart => (Alignment.TopLeading, -10.0, -10.0),
+                BadgePosition.BottomEnd => (Alignment.BottomTrailing, 10.0, 10.0),
+                BadgePosition.BottomStart => (Alignment.BottomLeading, -10.0, 10.0),
+                _ => (Alignment.TopTrailing, 10.0, -10.0),
             };
             return new ZStack(_content, badge.Offset(dx, dy)).Alignment(align);
         }

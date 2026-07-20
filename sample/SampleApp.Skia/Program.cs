@@ -1,6 +1,7 @@
 using SkiaSharp;
 using SwiftDotNet;
 using SwiftDotNet.Sample;
+using SwiftDotNet.Sample.Skia;
 
 // Headless harness: renders the SHARED ContentView (the same MAUI-style flyout every backend renders)
 // through the Skia self-drawing engine, writing PNGs. Exercises the full loop (tap → Emit → state → diff →
@@ -34,7 +35,7 @@ if (args.Length > 1 && args[1] == "anim")
 
 // Register a custom Skia renderer for the "Map" CustomView (from SwiftDotNet.Maps) — proves the
 // registry seam: an unregistered type shows ⚠️, a registered one draws itself onto the canvas.
-SkiaRenderers.Register("Map", new MapRenderer());
+SkiaSampleRenderers.RegisterAll();
 
 var swiftApp = SwiftProgram.CreateSwiftApp();
 var view = swiftApp.CreateRoot();
@@ -93,6 +94,22 @@ Shot("page_animation_t0");
 host.Advance(0.12); Render(); Shot("page_animation_t1");
 host.Advance(0.60); Render(); Shot("page_animation_settled");
 
+// --- Shiny Controls section (index 6): the ported SwiftDotNet.Controls pages.
+// Pop back to the menu first — the animation section above leaves its page pushed.
+Back();
+for (var i = 0; i <= 6; i++)
+{
+    Render();
+    host.Scroll(220, 400, 900);     // bring the lower sections on screen
+    Render();
+    var id = $"0.0.6.{i}";
+    if (!bridge.TryGetFrame(id, out _)) { Console.WriteLine($"MISSING ROW {id}"); continue; }
+    TapId(id);
+    Shot($"shiny_{i}");
+
+    Back();
+}
+
 Console.WriteLine("wrote all screenshots to " + Path.GetFullPath(outDir));
 
 /// <summary>A tiny screen whose panel animates (height + opacity) via .Animation(spring, on: state).</summary>
@@ -113,27 +130,3 @@ sealed class AnimatedDemo : View
     ).Spacing(16).Padding(24);
 }
 
-/// <summary>A custom Skia renderer for the Map CustomView: draws a stylized map with a grid and a pin.</summary>
-sealed class MapRenderer : ISkiaRenderer
-{
-    public SKSize Measure(SkiaRenderContext ctx, SKSize available) => available; // greedy fill
-
-    public void Paint(SkiaRenderContext ctx, SKCanvas c, SKRect r)
-    {
-        using var bg = new SKPaint { Color = new SKColor(0xDD, 0xEC, 0xE0), IsAntialias = true };
-        c.DrawRoundRect(r, 10, 10, bg);
-        var save = c.Save();
-        c.ClipRoundRect(new SKRoundRect(r, 10));
-        using var grid = new SKPaint { Color = new SKColor(0xB4, 0xCC, 0xBC), StrokeWidth = 1 };
-        for (var x = r.Left; x < r.Right; x += 40) c.DrawLine(x, r.Top, x, r.Bottom, grid);
-        for (var y = r.Top; y < r.Bottom; y += 40) c.DrawLine(r.Left, y, r.Right, y, grid);
-        using var road = new SKPaint { Color = new SKColor(0xFF, 0xFF, 0xFF), StrokeWidth = 8, IsAntialias = true };
-        c.DrawLine(r.Left, r.MidY + 30, r.Right, r.MidY - 40, road);
-        using var pin = new SKPaint { Color = new SKColor(0xFF, 0x3B, 0x30), IsAntialias = true };
-        c.DrawCircle(r.MidX, r.MidY, 9, pin);
-        c.RestoreToCount(save);
-        using var f = new SKFont(SKTypeface.Default, 13);
-        using var label = new SKPaint { Color = SKColors.Black, IsAntialias = true };
-        c.DrawText("Custom SkiaRenderer ✓  (registry seam)", r.Left + 12, r.Top + 24, f, label);
-    }
-}

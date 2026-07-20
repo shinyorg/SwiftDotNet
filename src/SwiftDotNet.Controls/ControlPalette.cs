@@ -27,8 +27,8 @@ static class ControlPalette
     public static SwiftColor OnSurface => Hex("#1C1C1E");
     public static SwiftColor OnSurfaceVariant => Hex("#8E8E93");
     public static SwiftColor Outline => Hex("#C7C7CC");
-    public static SwiftColor Shimmer => Hex("#E5E5EA");
-    public static SwiftColor ShimmerHighlight => Hex("#F7F7FA");
+    public static SwiftColor Shimmer => Hex("#D3D3DC");           // visible against a white surface
+    public static SwiftColor ShimmerHighlight => Hex("#F4F4F8");  // the moving highlight band
 
     static SwiftColor Hex(string hex) => SwiftColor.Hex(hex);
 }

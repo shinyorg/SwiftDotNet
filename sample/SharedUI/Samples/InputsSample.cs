@@ -28,12 +28,11 @@ public sealed class InputsSample : View
 
             new Text("PIN & Entry").Font(Font.Headline),
             new SecurityPin(_pin, length: 4),
-            new TextEntry("Email", _email).Keyboard(KeyboardType.Email),
+            new TextField("Email", _email).Keyboard(KeyboardType.Email),
             new AutoCompleteEntry(_fruit, Fruits).Placeholder("Type a fruit…"),
 
             new Text("Color Picker").Font(Font.Headline),
             new SwiftDotNet.Controls.ColorPicker(_hue).OnColorChanged(hex => _picked.Value = hex),
-            new Text(_picked.Value).Font(Font.Caption),
 
             new Text("Duration").Font(Font.Headline),
             new DurationPicker(_duration, seconds: true)

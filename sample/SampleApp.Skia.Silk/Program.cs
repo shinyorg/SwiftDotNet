@@ -5,6 +5,7 @@ using Silk.NET.Windowing;
 using SkiaSharp;
 using SwiftDotNet;
 using SwiftDotNet.Sample;
+using SwiftDotNet.Sample.Skia;
 
 // Dependency-free desktop host for the Skia self-drawing backend: a Silk.NET (GLFW) window with a GL
 // context, onto which SkiaSharp draws via a GL-backed SKSurface. No GTK/WinUI/AppKit — one binary runs on
@@ -34,7 +35,7 @@ window.Load += () =>
     using var glInterface = GRGlInterface.Create();
     grContext = GRContext.CreateGl(glInterface);
 
-    SkiaRenderers.Register("Map", new MapRenderer());
+    SkiaSampleRenderers.RegisterAll();
     bridge = new SkiaBridge();
     var swiftApp = SwiftProgram.CreateSwiftApp();
     SwiftApp.Run(swiftApp.CreateRoot(), bridge, swiftApp.Services);
@@ -76,21 +77,3 @@ window.Closing += () => { grContext?.Dispose(); };
 window.Run();
 
 /// <summary>Custom Skia renderer for the Map CustomView — stylized map instead of the ⚠️ placeholder.</summary>
-sealed class MapRenderer : ISkiaRenderer
-{
-    public SKSize Measure(SkiaRenderContext ctx, SKSize available) => available;
-
-    public void Paint(SkiaRenderContext ctx, SKCanvas c, SKRect r)
-    {
-        using var bg = new SKPaint { Color = new SKColor(0xDD, 0xEC, 0xE0), IsAntialias = true };
-        c.DrawRoundRect(r, 10, 10, bg);
-        var save = c.Save();
-        c.ClipRoundRect(new SKRoundRect(r, 10));
-        using var grid = new SKPaint { Color = new SKColor(0xB4, 0xCC, 0xBC), StrokeWidth = 1 };
-        for (var x = r.Left; x < r.Right; x += 40) c.DrawLine(x, r.Top, x, r.Bottom, grid);
-        for (var y = r.Top; y < r.Bottom; y += 40) c.DrawLine(r.Left, y, r.Right, y, grid);
-        using var pin = new SKPaint { Color = new SKColor(0xFF, 0x3B, 0x30), IsAntialias = true };
-        c.DrawCircle(r.MidX, r.MidY, 9, pin);
-        c.RestoreToCount(save);
-    }
-}

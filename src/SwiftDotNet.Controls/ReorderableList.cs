@@ -39,6 +39,7 @@ public sealed class ReorderableList<T> : View
                         new Text("≡").ForegroundColor(ControlPalette.OnSurfaceVariant),
                         _row(item),
                         new Spacer())
+                    .Align(Alignment.Leading)
                     .Spacing(12)
                     .Padding(horizontal: 12, vertical: 0)
                     .Frame(height: _rowHeight)

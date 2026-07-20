@@ -42,7 +42,7 @@ public sealed class SwipeContainer : View
                     .Background(a.Color)
                     .OnTapGesture(() => { a.Action(); _offset.Value = 0; });
             }
-            var actionLayer = new HStack(new Spacer(), new HStack(buttons).Spacing(0)).Spacing(0);
+            var actionLayer = new HStack(new Spacer(), new HStack(buttons).Spacing(0)).Spacing(0).Align(Alignment.Trailing);
 
             // Content on top, shifted by the drag; an opaque surface so it hides the buttons when closed.
             var top = new ZStack(_content)

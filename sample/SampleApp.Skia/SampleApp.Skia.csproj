@@ -11,6 +11,7 @@
     <ItemGroup>
         <ProjectReference Include="..\..\src\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj"/>
         <ProjectReference Include="..\SharedUI\SharedUI.csproj"/>
+    <ProjectReference Include="..\SampleApp.Skia.Renderers\SampleApp.Skia.Renderers.csproj"/>
     </ItemGroup>
 
 </Project>

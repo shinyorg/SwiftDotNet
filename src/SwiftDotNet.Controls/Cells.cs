@@ -14,7 +14,7 @@ public static class Cell
             ? (View)new Text(title)
             : new HStack(Image.System(icon), new Text(title)).Spacing(10).Alignment(VerticalAlignment.Center);
         return detail is null
-            ? Row(lead)
+            ? Row(lead, new Spacer())
             : Row(lead, new Spacer(), new Text(detail).ForegroundColor(ControlPalette.OnSurfaceVariant));
     }
 
@@ -23,7 +23,8 @@ public static class Cell
 
     /// <summary>A tappable action row (Shiny's <c>ButtonCell</c>).</summary>
     public static View Button(string title, Action action, bool destructive = false)
-        => Row(new Text(title).ForegroundColor(destructive ? ControlPalette.Accent(PillType.Critical) : ControlPalette.Accent(PillType.Info)))
+        => Row(new Text(title).ForegroundColor(destructive ? ControlPalette.Accent(PillType.Critical) : ControlPalette.Accent(PillType.Info)),
+                new Spacer())
             .OnTapGesture(action);
 
     /// <summary>An inline text-entry row (Shiny's <c>EntryCell</c>).</summary>
@@ -40,6 +41,9 @@ public static class Cell
     public static View Navigation(string title, View destination)
         => new NavigationLink(new Text(title), destination);
 
+    // `.Align` is required for the row to span its parent — a Spacer measures to zero and cannot widen
+    // the row on its own, so without this the trailing detail/control sits next to the title, not at the edge.
+    // Every caller must pass at least one Spacer: a spanning stack with NO spacers centres its content.
     static HStack Row(params View[] content) =>
-        new HStack(content).Spacing(8).Alignment(VerticalAlignment.Center);
+        new HStack(content).Spacing(8).Alignment(VerticalAlignment.Center).Align(Alignment.Leading);
 }

@@ -3,18 +3,23 @@ using System.Globalization;
 namespace SwiftDotNet.Controls;
 
 /// <summary>
-/// An in-app color picker — a rainbow hue bar you drag to pick a hue, with a live swatch — ported (in
-/// reduced form) from Shiny's <c>ColorPicker</c>. Built from an F5 gradient + an F1 drag; the bar's fixed
-/// width lets the drag location map straight to a hue with no measured geometry. The full 2D
-/// saturation/brightness field awaits alpha-capable gradient stops (a small F5 follow-up).
+/// An in-app color picker — a rainbow <b>hue</b> bar plus a <b>brightness</b> bar, with a live swatch and
+/// hex readout. Ported (in reduced form) from Shiny's <c>ColorPicker</c>. Built from F5 gradients + F1
+/// drags; each bar's fixed width maps the drag location straight to a value with no measured geometry.
+/// (A full saturation/brightness *field* needs alpha-capable gradient stops — a small F5 follow-up.)
 /// </summary>
 public sealed class ColorPicker : View
 {
-    readonly State<double> _hue;   // 0–360, two-way bound
+    readonly State<double> _hue;          // 0–360, two-way bound
+    readonly State<double> _brightness;   // 0–1
     Action<string>? _onHex;
     double _width = 240;
 
-    public ColorPicker(State<double> hue) => _hue = hue;
+    public ColorPicker(State<double> hue, State<double>? brightness = null)
+    {
+        _hue = hue;
+        _brightness = brightness ?? new State<double>(1.0);
+    }
 
     /// <summary>Fires with the selected color as a <c>#RRGGBB</c> string as the hue changes.</summary>
     public ColorPicker OnColorChanged(Action<string> onHex) { _onHex = onHex; return this; }
@@ -44,7 +49,7 @@ public sealed class ColorPicker : View
                 {
                     var frac = Math.Clamp(info.LocationX / _width, 0, 1);
                     _hue.Value = frac * 360;
-                    _onHex?.Invoke(HsbToHex(_hue.Value, 1, 1));
+                    _onHex?.Invoke(HsbToHex(_hue.Value, 1, _brightness.Value));
                 });
 
             var thumbX = _hue.Value / 360.0 * _width;
@@ -54,16 +59,36 @@ public sealed class ColorPicker : View
                 .Border(ControlPalette.Outline, 2, cornerRadius: 11)
                 .Offset(thumbX - 11, 0);
 
+            // Brightness: black → the fully-saturated hue, dragged the same way.
+            var brightGradient = new LinearGradient(0,
+                new GradientStop(SwiftColor.Hex("#000000"), 0),
+                new GradientStop(SwiftColor.Hex(HsbToHex(_hue.Value, 1, 1)), 1));
+
+            var brightBar = new ZStack()
+                .Background(brightGradient)
+                .Frame(_width, 24)
+                .CornerRadius(12)
+                .OnDrag(info => _brightness.Value = Math.Clamp(info.LocationX / _width, 0, 1));
+
+            var brightThumb = new Circle()
+                .Frame(22, 22)
+                .ForegroundColor(SwiftColor.Hex("#FFFFFF"))
+                .Border(ControlPalette.Outline, 2, cornerRadius: 11)
+                .Offset(_brightness.Value * _width - 11, 0);
+
+            var hex = HsbToHex(_hue.Value, 1, _brightness.Value);
             var swatch = new ZStack()
                 .Frame(_width, 44)
-                .Background(SwiftColor.Hex(HsbToHex(_hue.Value, 1, 1)))
+                .Background(SwiftColor.Hex(hex))
                 .CornerRadius(10)
                 .Border(ControlPalette.Outline, 1, cornerRadius: 10);
 
             return new VStack(
                     new ZStack(bar, thumb).Alignment(Alignment.Leading),
-                    swatch)
-                .Spacing(14);
+                    new ZStack(brightBar, brightThumb).Alignment(Alignment.Leading),
+                    swatch,
+                    new Text(hex).Font(Font.Caption).ForegroundColor(ControlPalette.OnSurfaceVariant))
+                .Spacing(12);
         }
     }
 

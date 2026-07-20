@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Skia renderers for the sample's CustomView-based controls (Map, CameraView), shared by every Skia
+    head (headless harness, AppKit window, Silk/GLFW window) instead of being copy-pasted into each.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj" />
+  </ItemGroup>
+
+</Project>

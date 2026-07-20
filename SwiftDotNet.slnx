@@ -11,6 +11,7 @@
         <Project Path="sample/SampleApp.Skia/SampleApp.Skia.csproj"/>
         <Project Path="sample/SampleApp.Skia.Mac/SampleApp.Skia.Mac.csproj"/>
         <Project Path="sample/SampleApp.Skia.Silk/SampleApp.Skia.Silk.csproj"/>
+        <Project Path="sample/SampleApp.Skia.Renderers/SampleApp.Skia.Renderers.csproj"/>
         <Project Path="sample/SampleApp.Skia.Maui/SampleApp.Skia.Maui.csproj"/>
     </Folder>
     <Project Path="src/SwiftDotNet.Gtk/SwiftDotNet.Gtk.csproj"/>

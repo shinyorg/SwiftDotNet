@@ -46,8 +46,9 @@ public sealed class CollectionsSample : View
                 Tile("D", Color.Accent, 50), Tile("E", Color.Hex("#FF9500"), 80)
             ).ByHeight(i => new[] { 60.0, 90, 100, 50, 80 }[i]),
 
-            new Text("Carousel").Font(Font.Headline),
-            new CarouselGallery(_carousel, Tile("Page 1", Color.Red, 120), Tile("Page 2", Color.Green, 120), Tile("Page 3", Color.Blue, 120)).Height(150),
+            new Text("Carousel (built-in paged TabView)").Font(Font.Headline),
+            new TabView(Tile("Page 1", Color.Red, 120), Tile("Page 2", Color.Green, 120), Tile("Page 3", Color.Blue, 120))
+                .Paged().SelectedIndex(_carousel).Frame(height: 150),
 
             new Text("Reorderable (drag ≡)").Font(Font.Headline),
             new ReorderableList<string>(_tasks, t => new Text(t)).RowHeight(48),

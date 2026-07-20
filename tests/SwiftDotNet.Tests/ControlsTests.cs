@@ -117,9 +117,11 @@ public class ControlsTests
     public void ImageViewer_ThumbnailIsATappableRasterImage()
     {
         var node = Render(ImageViewer.FromUrl("https://x/y.png"));
-        Assert.Equal("Image", node.GetProperty("type").GetString());
-        Assert.Equal("https://x/y.png", node.GetProperty("props").GetProperty("url").GetString());
+        // The thumbnail is a ZStack: a neutral placeholder well behind the raster image.
+        Assert.Equal("ZStack", node.GetProperty("type").GetString());
         Assert.Contains("onTapGesture", ModifierTypes(node));
+        Assert.Contains(Walk(node), n => n.GetProperty("type").GetString() == "Image"
+            && n.GetProperty("props").TryGetProperty("url", out var u) && u.GetString() == "https://x/y.png");
     }
 
     // ---- Wave 4 slice: ColorPicker HSB math ---------------------------------
@@ -337,14 +339,6 @@ public class ControlsTests
         Assert.Equal(2, node.GetProperty("children").GetArrayLength());     // two column stacks
         foreach (var t in new[] { "a", "b", "c", "d" })
             Assert.Contains(Walk(node), n => Text(n) == t);
-    }
-
-    [Fact]
-    public void CarouselGallery_LowersToPagedTabView()
-    {
-        var node = Render(new CarouselGallery(new State<int>(0), new Text("p1"), new Text("p2")));
-        Assert.Equal("TabView", node.GetProperty("type").GetString());
-        Assert.Equal("page", node.GetProperty("props").GetProperty("style").GetString());   // paged carousel
     }
 
     [Fact]

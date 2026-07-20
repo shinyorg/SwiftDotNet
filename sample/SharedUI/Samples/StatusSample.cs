@@ -17,11 +17,13 @@ public sealed class StatusSample : View
             ).Spacing(8),
 
             new Text("Badges").Font(Font.Headline),
+            new Text("Badges clip the corner of square content (icons/avatars).")
+                .Font(Font.Caption).ForegroundColor(Color.Secondary),
             new HStack(
-                new BadgeView(new Text("📥 Inbox").Font(Font.Body)).Count(12),
-                new BadgeView(new Text("🔔 Alerts").Font(Font.Body)).Dot().Color(Color.Hex("#007AFF")),
-                new BadgeView(new Text("🛒 Cart").Font(Font.Body)).Count(250).MaxCount(99)
-            ).Spacing(24),
+                new BadgeView(IconTile("📥")).Count(12),
+                new BadgeView(IconTile("🔔")).Dot().Color(Color.Hex("#007AFF")),
+                new BadgeView(IconTile("🛒")).Count(250).MaxCount(99)
+            ).Spacing(28),
 
             new Text("Skeleton").Font(Font.Headline),
             new VStack(
@@ -31,7 +33,13 @@ public sealed class StatusSample : View
             ).Spacing(8).Alignment(HorizontalAlignment.Leading),
 
             new Text("Progress").Font(Font.Headline),
-            new ProgressBar(0.65).Label("Uploading")
+            new ProgressView(0.65, "Uploading")
         ).Spacing(14).Alignment(HorizontalAlignment.Leading)
         ).Padding(20).NavigationTitle("Status");
+
+    static View IconTile(string glyph) =>
+        new ZStack(new Text(glyph).Font(Font.Title))
+            .Frame(52, 52)
+            .Background(Color.Hex("#F2F2F7"))
+            .CornerRadius(12);
 }

@@ -4,6 +4,7 @@ using Foundation;
 using SkiaSharp;
 using SwiftDotNet;
 using SwiftDotNet.Sample;
+using SwiftDotNet.Sample.Skia;
 
 namespace SampleApp.Skia.Mac;
 
@@ -18,7 +19,7 @@ static class Program
     static void Main(string[] args)
     {
         NSApplication.Init();
-        SkiaRenderers.Register("Map", new MapRenderer()); // custom Map renderer (registry seam)
+        SkiaSampleRenderers.RegisterAll();   // Map + CameraView renderers (registry seam)
         var app = NSApplication.SharedApplication;
         app.ActivationPolicy = NSApplicationActivationPolicy.Regular;
         app.Delegate = new AppDelegate();
@@ -110,21 +111,3 @@ sealed class SkiaMacView : NSView
 }
 
 /// <summary>Custom Skia renderer for the Map CustomView — stylized map instead of the ⚠️ placeholder.</summary>
-sealed class MapRenderer : ISkiaRenderer
-{
-    public SKSize Measure(SkiaRenderContext ctx, SKSize available) => available;
-
-    public void Paint(SkiaRenderContext ctx, SKCanvas c, SKRect r)
-    {
-        using var bg = new SKPaint { Color = new SKColor(0xDD, 0xEC, 0xE0), IsAntialias = true };
-        c.DrawRoundRect(r, 10, 10, bg);
-        var save = c.Save();
-        c.ClipRoundRect(new SKRoundRect(r, 10));
-        using var grid = new SKPaint { Color = new SKColor(0xB4, 0xCC, 0xBC), StrokeWidth = 1 };
-        for (var x = r.Left; x < r.Right; x += 40) c.DrawLine(x, r.Top, x, r.Bottom, grid);
-        for (var y = r.Top; y < r.Bottom; y += 40) c.DrawLine(r.Left, y, r.Right, y, grid);
-        using var pin = new SKPaint { Color = new SKColor(0xFF, 0x3B, 0x30), IsAntialias = true };
-        c.DrawCircle(r.MidX, r.MidY, 9, pin);
-        c.RestoreToCount(save);
-    }
-}

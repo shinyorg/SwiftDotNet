@@ -199,7 +199,9 @@ sealed partial class SkiaNode
                     canvas.DrawImage(img, dst, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
                     canvas.RestoreToCount(save);
                 }
-                else
+                else if (Str("system").Length > 0)
+                    // Only fall back to a glyph when the app actually asked for an SF Symbol. A raster-only
+                    // image that failed/hasn't loaded draws nothing, so callers can supply their own placeholder.
                     SkiaText.DrawLine(canvas, SkiaTheme.Icon(Str("system")), _content.Left, Baseline(_content, IconFont(22)), IconFont(22), ForegroundColor(dark));
                 break;
             case "Label":

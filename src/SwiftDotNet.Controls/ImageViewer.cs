@@ -27,10 +27,17 @@ public sealed class ImageViewer : View
     };
 
     public override View Body =>
-        BuildImage()
-            .ContentMode(ImageContentMode.Fill)
-            .Frame(_thumbSize, _thumbSize)
-            .CornerRadius(10)
+        // A neutral placeholder sits *behind* the image, so a slow/failed load shows an image well
+        // instead of the bare SF-symbol fallback glyph.
+        new ZStack(
+                new ZStack(new Text("🖼").Font(Font.Title).Opacity(0.35))
+                    .Frame(_thumbSize, _thumbSize)
+                    .Background(ControlPalette.SurfaceVariant)
+                    .CornerRadius(10),
+                BuildImage()
+                    .ContentMode(ImageContentMode.Fill)
+                    .Frame(_thumbSize, _thumbSize)
+                    .CornerRadius(10))
             .OnTapGesture(Open);
 
     void Open()

@@ -513,7 +513,9 @@ sealed class GtkNode
             }
         }
         catch { /* fall through to a placeholder glyph on any decode error */ }
-        return Label(GtkStyle.Emoji(Str("system")));
+        // Only fall back to a glyph when an SF Symbol was actually requested; a raster-only image that
+        // failed to load renders empty so the caller's own placeholder shows through.
+        return Label(Str("system").Length > 0 ? GtkStyle.Emoji(Str("system")) : "");
     }
 
     Gtk.Widget MakeProgress()

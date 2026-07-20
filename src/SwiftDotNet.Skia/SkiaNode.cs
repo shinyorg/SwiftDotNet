@@ -348,18 +348,67 @@ sealed partial class SkiaNode
     SKSize MeasureStack(SKSize inner, bool horizontal)
     {
         var spacing = (float)(Num("spacing") ?? 8);
-        float main = 0, cross = 0;
-        var count = 0;
-        foreach (var c in Children)
+        var count = Children.Count;
+        var gaps = count > 1 ? spacing * (count - 1) : 0;
+
+        if (!horizontal)
         {
-            var s = c.Measure(inner);
-            _childMeasured.Add(s);
-            if (horizontal) { main += s.Width; cross = Math.Max(cross, s.Height); }
-            else { main += s.Height; cross = Math.Max(cross, s.Width); }
-            count++;
+            float mainV = 0, crossV = 0;
+            foreach (var c in Children)
+            {
+                var s = c.Measure(inner);
+                _childMeasured.Add(s);
+                mainV += s.Height;
+                crossV = Math.Max(crossV, s.Width);
+            }
+            return new SKSize(crossV, mainV + gaps);
         }
-        if (count > 1) main += spacing * (count - 1);
-        return horizontal ? new SKSize(main, cross) : new SKSize(cross, main);
+
+        // Horizontal: measure everyone at the full offered width first (SwiftUI-ish: each child takes
+        // its ideal size).
+        var sizes = new SKSize[count];
+        float main = gaps, cross = 0;
+        for (var i = 0; i < count; i++)
+        {
+            var s = Children[i].Measure(inner);
+            sizes[i] = s;
+            main += s.Width;
+            cross = Math.Max(cross, s.Height);
+        }
+
+        // Only if that overflows the row do greedy children (TextField, Slider, anything with a
+        // maxWidth frame — each of which claimed the *whole* width) give ground and share what's
+        // left over after the fixed-size ones. Rows that already fit are untouched, so this changes
+        // nothing except the overflow case — e.g. HStack(TextField, "Send"), which otherwise measures
+        // wider than its parent and gets centred to a negative x, clipping at both edges.
+        if (main > inner.Width)
+        {
+            var greedy = new List<int>();
+            float fixedW = 0;
+            for (var i = 0; i < count; i++)
+            {
+                if (Children[i].GreedyWidth) greedy.Add(i);
+                else fixedW += sizes[i].Width;
+            }
+
+            if (greedy.Count > 0)
+            {
+                var share = Math.Max(0, inner.Width - fixedW - gaps) / greedy.Count;
+                main = gaps + fixedW;
+                cross = 0;
+                foreach (var s in sizes) cross = Math.Max(cross, s.Height);
+                foreach (var i in greedy)
+                {
+                    var s = Children[i].Measure(new SKSize(share, inner.Height));
+                    sizes[i] = s;
+                    main += s.Width;
+                    cross = Math.Max(cross, s.Height);
+                }
+            }
+        }
+
+        _childMeasured.AddRange(sizes);
+        return new SKSize(main, cross);
     }
 
     // Scrollables measure their content like a VStack but report only the available height
@@ -889,6 +938,14 @@ sealed partial class SkiaNode
     //  MODIFIER / PROP HELPERS
     // ========================================================================
 
+    /// <summary>
+    /// True when this node claims all the width offered to it — either because its type is
+    /// inherently greedy, or because a <c>.Frame(maxWidth: …)</c>-style align modifier makes it so
+    /// (both cases are what <see cref="Measure"/> widens to <c>available.Width</c>).
+    /// Horizontal stacks use this to decide who shares the leftover space.
+    /// </summary>
+    internal bool GreedyWidth => Mod("align") is not null || FillsWidth;
+
     bool FillsWidth => Type is "Divider" or "ProgressView" or "Gauge" or "WebView"
         or "TextField" or "SecureField" or "TextEditor"
         or "Toggle" or "Slider" or "Stepper" or "Picker" or "DatePicker" or "ColorPicker" or "Menu"
@@ -1017,8 +1074,10 @@ sealed partial class SkiaNode
             ? token is "bottom" or "bottomLeading" or "bottomTrailing"
             : token is "trailing" or "topTrailing" or "bottomTrailing";
         if (leading) return start;
-        if (trailing) return start + extent - size;
-        return start + (extent - size) / 2;
+        if (trailing) return Math.Max(start, start + extent - size);
+        // Content wider than its slot would otherwise centre to a negative origin and clip on BOTH
+        // edges; pin it to the leading edge so it only ever overflows one way.
+        return size > extent ? start : start + (extent - size) / 2;
     }
 
     string? CrossToken() => Props.GetValueOrDefault("alignment") as string;

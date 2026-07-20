@@ -40,19 +40,45 @@ Sheet bottom-sheet, Alert modal, Menu popover); the custom-renderer registry; ge
 dispatch); and an implicit animation clock (opacity + height interpolate). The [Collection View](../collection-view.md)
 is fully test-verified on Skia.
 
+### `SwiftDotNet.Controls`
+
+**Every control in [`SwiftDotNet.Controls`](../../src/SwiftDotNet.Controls) renders on Skia**, verified by
+pushing all seven "Shiny Controls" sample pages through the headless harness and inspecting the output.
+Nothing was needed to make this work: the controls are **pure composites** that lower to the core views
+Skia already draws — pills, badges, skeletons, progress, sliders, PIN entry, autocomplete, colour picker,
+duration picker, table/tree/data-grid, staggered grid, carousel, scheduler (calendar + agenda), chat,
+toasts, dialogs, FABs, floating panels and frosted glass.
+
+The one exception is `CameraView`, which is a **custom native primitive**, not a composite. Skia has no
+capture stack, so the sample registers an honest viewfinder placeholder rather than faking a feed — see
+[`SkiaSampleRenderers`](../../sample/SampleApp.Skia.Renderers/SkiaSampleRenderers.cs). Without a
+registered renderer it would paint the generic "⚠️ unknown view" box, which reads as a bug rather than an
+unsupported capability.
+
 ## Hosts
 
 The engine is host-agnostic via `ISkiaHost`. Available hosts:
 
 | Host | Project | Notes |
 |------|---------|-------|
-| **Headless** | [`sample/SampleApp.Skia`](../../sample/SampleApp.Skia) | Console harness → PNGs; `-- <dir> anim` renders animation frames; registers a custom Map renderer. |
+| **Headless** | [`sample/SampleApp.Skia`](../../sample/SampleApp.Skia) | Console harness → PNGs; `-- <dir> anim` renders animation frames. Walks the whole flyout, including every controls page. |
 | **macOS / AppKit** | [`sample/SampleApp.Skia.Mac`](../../sample/SampleApp.Skia.Mac) | Interactive `NSView` blits the scene; mouse/scroll/keyboard → bridge; `NSTimer(1/60)` → animation clock. |
 | **Silk.NET desktop** | [`sample/SampleApp.Skia.Silk`](../../sample/SampleApp.Skia.Silk) | Silk.NET (GLFW) window + GL context; SkiaSharp draws to a GL-backed surface. Dependency-free cross-platform desktop; base for embedded/framebuffer Linux. |
 | **MAUI + Shiny** | [`src/SwiftDotNet.Skia.Maui`](../../src/SwiftDotNet.Skia.Maui) + [`sample/SampleApp.Skia.Maui`](../../sample/SampleApp.Skia.Maui) | `SwiftDotNetSkiaView : SKCanvasView`; composes with **Shiny** via `.UseSkiaSharp().UseShiny()` — Skia UI + Shiny plugins share one DI container. |
 
 ## Gotchas
 
+- **A `ScrollView` centres its content** (a `Form`/`List`/`Section` is leading-aligned instead). A composite
+  whose header sits outside the scroll view and whose rows sit inside it will therefore *not* line up unless
+  the inner stack fills the width — add `.Align(Alignment.Leading)`. `DataGrid` hit exactly this.
+- **A greedy child in an `HStack` shrinks only when the row would overflow.** `TextField`, `Slider`,
+  `Toggle`, `Picker` and anything with a `maxWidth` frame each claim the full width offered; when the row
+  doesn't fit, they share what is left after the fixed-size siblings. Rows that already fit keep their
+  natural sizing. Regression-tested in
+  [`SkiaRowOverflowTests`](../../tests/SwiftDotNet.Tests/SkiaRowOverflowTests.cs).
+- **`SKTypeface.Default` has no emoji coverage.** Text drawn by the engine goes through the fallback chain
+  and renders emoji fine, but a *custom renderer* calling `SKFont(SKTypeface.Default, …)` directly will paint
+  tofu — resolve a fallback face or avoid emoji in custom paint code.
 - **No AppKit SkiaSharp views package exists** (`SkiaSharp.Views.Mac`/`.Apple`/`.iOS` are not on NuGet). The
   macOS host blits `SKSurface → PNG → NSImage` into an `NSView` itself.
 - The Skia **macOS** app must import [`SwiftDotNetBridge.targets`](../../src/SwiftDotNet/SwiftDotNetBridge.targets)

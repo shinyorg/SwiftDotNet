@@ -545,7 +545,13 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
                 : n.S("file") is { Length: > 0 } f ? f
                 : n.S("bytes") is { Length: > 0 } bytes ? $"data:image/png;base64,{bytes}"
                 : null;
-        if (src is null) { Leaf(b, n, "span", WebStyle.Emoji(n.S("system")), "font-size:22px;"); return; }
+        if (src is null)
+        {
+            // Raster-only image that hasn't loaded: render nothing rather than a stray bullet.
+            if (n.S("system").Length > 0) Leaf(b, n, "span", WebStyle.Emoji(n.S("system")), "font-size:22px;");
+            else Element(b, n, "span", "", null);
+            return;
+        }
         var fit = n.S("contentMode") == "fill" ? "cover" : "contain";
         b.OpenElement(_seq++, "img");
         Style(b, n, $"object-fit:{fit};max-width:100%;");

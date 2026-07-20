@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj" />
     <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
+    <ProjectReference Include="..\SampleApp.Skia.Renderers\SampleApp.Skia.Renderers.csproj" />
   </ItemGroup>
 
   <!-- Referencing SwiftDotNet on the macOS TFM compiles its SwiftUI MacBridge (Platforms/macOS), whose
