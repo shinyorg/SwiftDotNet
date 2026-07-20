@@ -30,6 +30,9 @@ public static class SwiftApp
     static bool _renderQueued;
     /// <summary>Inside a <see cref="Transaction"/>: swallow per-assignment renders and flush once at the end.</summary>
     static bool _batching;
+    /// <summary>Set by <see cref="Invalidate"/>: the next render discards the prior tree and emits a full replace.
+    /// Volatile because hot reload raises it from the runtime's update thread, not the UI thread.</summary>
+    static volatile bool _forceFullRender;
 
     public static void Run(View root, IBridge bridge) => Run(root, bridge, null);
 
@@ -47,6 +50,10 @@ public static class SwiftApp
         _bridge = bridge;
         _lastTree = null; // fresh run: emit a full replace rather than diffing against a prior root's tree
         _uiContext = SynchronizationContext.Current;
+        // Drop scheduling state owned by any previous run: a render still queued on the *old* context
+        // would otherwise leave _renderQueued latched true and swallow every later RequestRender.
+        _renderQueued = false;
+        _forceFullRender = false;
         bridge.SetEventHandler(OnEvent);
         Render();
     }
@@ -77,6 +84,23 @@ public static class SwiftApp
             _batching = false;
         }
         Render();
+    }
+
+    /// <summary>
+    /// Discard the diff baseline and re-render everything, so the next pass ships the whole tree rather
+    /// than a diff against a tree the old code produced.
+    ///
+    /// This is the hot-reload entry point (see <see cref="HotReload"/>): an edited <see cref="View.Body"/>
+    /// can change the tree's *shape* anywhere, and the retained node ids no longer correspond to what the
+    /// new code builds, so diffing against the stale tree would emit a patch that is subtly wrong. A full
+    /// replace is correct by construction and cheap enough for a dev-loop.
+    ///
+    /// Safe to call from any thread: the render itself is marshalled by <see cref="RequestRender"/>.
+    /// </summary>
+    public static void Invalidate()
+    {
+        _forceFullRender = true;
+        RequestRender();
     }
 
     /// <summary>
@@ -111,6 +135,12 @@ public static class SwiftApp
     {
         if (_root is null || _bridge is null)
             return;
+
+        if (_forceFullRender)
+        {
+            _forceFullRender = false;
+            _lastTree = null;   // no baseline → TreeDiffer emits a single replace of the root
+        }
 
         var ctx = new RenderContext();
         var tree = _root.ToNode(ctx, "0");

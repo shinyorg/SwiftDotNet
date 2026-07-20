@@ -33,6 +33,45 @@ static class GtkStyle
         _ => Gtk.Align.Center,
     };
 
+    /// <summary>
+    /// Applies an <c>Alignment.Token()</c> (topLeading…bottomTrailing) to a widget, constraining
+    /// <em>only the axes the token actually names</em>: <c>bottom</c> pins to the bottom edge but leaves
+    /// the horizontal axis at GTK's <c>Fill</c> default, which is what a full-width toast/banner needs;
+    /// <c>leading</c> pins horizontally and leaves the vertical axis filling. <c>center</c>/null touch
+    /// neither axis (Fill/Fill), preserving the pre-existing ZStack behaviour where an overlay child
+    /// stretches to the base child's size. Note this wins over a child's own <c>.Frame(alignment:)</c> on
+    /// the named axes.
+    /// </summary>
+    public static void ApplyAlignment(Gtk.Widget w, string? token)
+    {
+        switch (token)
+        {
+            case "leading" or "topLeading" or "bottomLeading": w.Halign = Gtk.Align.Start; break;
+            case "trailing" or "topTrailing" or "bottomTrailing": w.Halign = Gtk.Align.End; break;
+        }
+        switch (token)
+        {
+            case "top" or "topLeading" or "topTrailing": w.Valign = Gtk.Align.Start; break;
+            case "bottom" or "bottomLeading" or "bottomTrailing": w.Valign = Gtk.Align.End; break;
+        }
+    }
+
+    /// <summary>The pivot point (in child coordinates) an <c>Alignment.Token()</c> anchor names, for a
+    /// child of <paramref name="width"/>×<paramref name="height"/> — used to centre a Gsk scale/rotate.</summary>
+    public static (double x, double y) AnchorPoint(string? token, double width, double height) => (
+        token switch
+        {
+            "leading" or "topLeading" or "bottomLeading" => 0,
+            "trailing" or "topTrailing" or "bottomTrailing" => width,
+            _ => width / 2,
+        },
+        token switch
+        {
+            "top" or "topLeading" or "topTrailing" => 0,
+            "bottom" or "bottomLeading" or "bottomTrailing" => height,
+            _ => height / 2,
+        });
+
     static (int size, int weight) Font(string? token) => token switch
     {
         "largeTitle" => (30, 700),
@@ -82,8 +121,10 @@ static class GtkStyle
 
     static string Num(double v) => v.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>Builds the CSS declaration body for a node's visual modifiers (shape = fill via foreground).</summary>
-    public static string BuildCss(List<Dictionary<string, object?>> modifiers, bool shapeFill)
+    /// <summary>Builds the CSS declaration body for a node's visual modifiers (shape = fill via foreground).
+    /// <paramref name="loopName"/> is the node-unique <c>@keyframes</c> name a repeating <c>animation</c>
+    /// modifier references — see <see cref="BuildKeyframes"/>.</summary>
+    public static string BuildCss(List<Dictionary<string, object?>> modifiers, bool shapeFill, string loopName = "sdn-loop")
     {
         var sb = new StringBuilder();
         foreach (var m in modifiers)
@@ -133,17 +174,41 @@ static class GtkStyle
                     if (size > 0) sb.Append($"font-size:{size}px;font-weight:{weight};");
                     break;
                 case "animation":
-                    // GTK4 has no declarative animation engine; CSS transitions cover the properties GTK
-                    // exposes to CSS (color/background/border). Non-CSS props (widget opacity, frame size)
-                    // still snap — a documented degradation (spring also degrades to ease-in-out).
+                    // GTK4 has no declarative animation engine, but its CSS engine DOES implement both
+                    // `transition` and `@keyframes` + the `animation` shorthand, over the properties GTK
+                    // exposes to CSS (color/background/border/border-radius/box-shadow/opacity). Non-CSS
+                    // props (frame size, Gsk transforms) still snap — a documented degradation, and spring
+                    // degrades to ease-in-out.
                     var dur = Num(N(m, "duration", 0.3));
                     var delay = Num(N(m, "delay", 0));
-                    sb.Append($"transition:all {dur}s {Timing(m.GetValueOrDefault("curve") as string)} {delay}s;");
+                    if (m.GetValueOrDefault("repeatCount") is double rc)
+                    {
+                        // Self-playing loop (shimmer/pulse): -1 = forever, autoreverse = `alternate`.
+                        var iter = rc < 0 ? "infinite" : Num(Math.Max(1, (int)rc));
+                        var dir = (m.GetValueOrDefault("autoreverse") as string) == "true" ? "alternate" : "normal";
+                        sb.Append($"animation:{loopName} {dur}s {Timing(m.GetValueOrDefault("curve") as string)} {delay}s {iter} {dir};");
+                    }
+                    else
+                        sb.Append($"transition:all {dur}s {Timing(m.GetValueOrDefault("curve") as string)} {delay}s;");
                     break;
             }
         }
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The <c>@keyframes</c> block a repeating <c>animation</c> modifier needs, or <c>""</c> when the node
+    /// has no repeating animation. The wire carries no from/to pair — a repeating animation just says
+    /// "play forever" — so, exactly like the Web backend's shared <c>sdn-pulse</c> keyframes, we loop
+    /// <c>opacity</c> 1 → 0.4. That is the one animatable property that reads correctly for both callers:
+    /// SkeletonView's shimmer and BadgeView's pulse (whose <c>.ScaleEffect(1.0)</c> is identity anyway).
+    /// LIMIT: only opacity loops. GTK CSS has no <c>transform</c>, so a looping scale/rotate is not
+    /// expressible here even though one-shot scale/rotate now works via a Gsk transform (see GtkNode).
+    /// </summary>
+    public static string BuildKeyframes(List<Dictionary<string, object?>> modifiers, string loopName)
+        => modifiers.Any(m => m["type"] as string == "animation" && m.ContainsKey("repeatCount"))
+            ? $"@keyframes {loopName} {{ from {{ opacity:1; }} to {{ opacity:0.4; }} }}"
+            : "";
 
     static string Timing(string? curve) => curve switch
     {

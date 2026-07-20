@@ -55,14 +55,23 @@ sealed class AppDelegate : NSApplicationDelegate
 sealed class SkiaMacView : NSView
 {
     readonly SkiaBridge _bridge = new();
+    readonly SkiaPointerRouter _pointer;
     NSTimer? _timer;
+    double _clock;
 
     public SkiaMacView(CGRect frame, View root, IServiceProvider? services = null) : base(frame)
     {
+        _pointer = new SkiaPointerRouter(_bridge);
         _bridge.Invalidate += () => NeedsDisplay = true;
         SwiftApp.Run(root, _bridge, services);
-        // ~60fps clock for implicit animations; only repaints while something is animating.
-        _timer = NSTimer.CreateRepeatingScheduledTimer(1.0 / 60, _ => _bridge.Tick(1.0 / 60));
+        // ~60fps clock for implicit animations; only repaints while something is animating. Doubles as the
+        // router's clock — it needs one to resolve a hold into a long-press.
+        _timer = NSTimer.CreateRepeatingScheduledTimer(1.0 / 60, _ =>
+        {
+            _clock += 1.0 / 60;
+            _bridge.Tick(1.0 / 60);
+            _pointer.Poll(_clock);
+        });
     }
 
     public override bool IsFlipped => true;                 // top-left origin, matching the canvas
@@ -96,9 +105,30 @@ sealed class SkiaMacView : NSView
         return new SKPoint((float)p.X, (float)p.Y);
     }
 
-    public override void MouseDown(NSEvent theEvent) { _bridge.DispatchPointer(Point(theEvent)); }
-    public override void MouseDragged(NSEvent theEvent) { _bridge.DispatchPointer(Point(theEvent)); } // slider drag
-    public override void ScrollWheel(NSEvent theEvent) { _bridge.Scroll(Point(theEvent), -(float)theEvent.ScrollingDeltaY); }
+    // The router resolves the raw stream into tap / long-press / swipe / continuous drag.
+    public override void MouseDown(NSEvent theEvent) => _pointer.Down(Point(theEvent), _clock);
+    public override void MouseDragged(NSEvent theEvent) => _pointer.Move(Point(theEvent), _clock);
+    public override void MouseUp(NSEvent theEvent) => _pointer.Up(Point(theEvent), _clock);
+
+    public override void ScrollWheel(NSEvent theEvent)
+    {
+        // ⌘/⌃-scroll is the conventional trackpad zoom on a mouse; plain scroll still scrolls.
+        if (theEvent.ModifierFlags.HasFlag(NSEventModifierMask.ControlKeyMask))
+        {
+            _pointer.PinchDelta(Point(theEvent), 1 + (float)theEvent.ScrollingDeltaY * 0.01f);
+            return;
+        }
+        _pointer.EndPinch(Point(theEvent));
+        _bridge.Scroll(Point(theEvent), -(float)theEvent.ScrollingDeltaY);
+    }
+
+    /// <summary>Real trackpad pinch — AppKit hands us an incremental magnification factor per event.</summary>
+    public override void MagnifyWithEvent(NSEvent theEvent)
+    {
+        var p = Point(theEvent);
+        if (theEvent.Phase == NSEventPhase.Ended || theEvent.Phase == NSEventPhase.Cancelled) _pointer.EndPinch(p);
+        else _pointer.PinchDelta(p, 1 + (float)theEvent.Magnification);
+    }
 
     public override void KeyDown(NSEvent theEvent)
     {

@@ -29,6 +29,16 @@
     <PropertyGroup Condition="$(TargetFramework.EndsWith('-android'))">
         <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
     </PropertyGroup>
+
+    <!-- Hot reload on Apple platforms requires the Mono interpreter — the iOS/tvOS SDK hard-errors with
+         "Can't use Hot Reload or 'dotnet watch' unless the interpreter is enabled" otherwise.
+         Opt-in rather than always-on for Debug: the interpreter changes how every Debug build runs, and
+         hot reload on Apple targets is IDE-driven in practice (bare `dotnet watch` leaves the app's debug
+         agent with no IDE to connect to), so ordinary debug deploys shouldn't pay for it. Build with
+         -p:SwiftDotNetHotReload=true when you want it. See docs/hot-reload.md. -->
+    <PropertyGroup Condition="'$(SwiftDotNetHotReload)' == 'true' And ($(TargetFramework.EndsWith('-ios')) Or $(TargetFramework.EndsWith('-tvos')))">
+        <UseInterpreter>true</UseInterpreter>
+    </PropertyGroup>
     <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
         <OutputType>WinExe</OutputType>
         <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>

@@ -37,6 +37,33 @@ local stack, `Sheet`/`Alert`→fixed overlay `div`, `Image`/`Label`→emoji `spa
 **Modifiers → inline CSS** (padding/background/border/cornerRadius/shadow/opacity/foregroundColor/font/frame/
 align); `onTapGesture`→`onclick`. Events via `EventCallback.Factory.Create` / `Create<ChangeEventArgs>`.
 
+`ZStack` is a `display:grid` container whose layers all sit in `grid-area:1/1`; the node's `alignment` prop
+maps to each layer's `justify-content`/`align-items`. The layers **stretch** rather than shrink-wrap, which
+matters: `OverlayHost` lowers to a ZStack nested inside another ZStack, so a shrink-wrapped inner layer
+would have no cell to align within and `OverlayPosition.Bottom`/`Top` would silently render centred (which
+is what used to happen). Because `BuildRenderTree` re-reads props every render, a changing alignment
+repositions with no extra patch path.
+
+### Gestures
+
+`onTapGesture`, `onLongPress`, `onSwipe`, `onDrag` and `onMagnify` are all resolved from one pointer-event
+wiring. They must be wired **together in a single pass** — Blazor's `AddAttribute` replaces an earlier
+attribute of the same name, so registering `onpointerdown` twice (once for drag, once for long-press)
+silently dropped the first. That's what let `ImageViewer` pan and pinch coexist.
+
+- **Pinch** comes from two live pointers (distance ratio vs. the spread at gesture start), plus a
+  `wheel`+`ctrlKey` path for desktop trackpads. `touch-action:none` is set only when an `onMagnify`
+  modifier is present, so drag-only nodes keep their previous behaviour.
+- **Gotcha:** the touch path re-baselines every gesture (always starts at 1.0), but the ctrl+wheel path has
+  no begin/end boundary the browser exposes, so its factor accumulates for the component's lifetime —
+  effectively an absolute zoom level. `ImageViewer` clamps, so it behaves; a handler that assumes each
+  gesture starts at 1.0 will see the two paths differently. There is no backend-neutral fix.
+- **A repeating `.Repeating()` animation maps to a CSS `@keyframes` loop** (`-1`→`infinite`, autoreverse→
+  `animation-direction:alternate`) using the shared `sdn-pulse` keyframes, which fade `opacity` 1 → 0.4.
+  Because CSS keyframes must be declared ahead of time, **every** repeating animation renders as that same
+  opacity pulse regardless of which property the C# nominally animates. Skia, GTK and Compose deliberately
+  match this so the effect reads identically everywhere.
+
 ## Running
 
 ```bash
@@ -62,3 +89,10 @@ Web pull-refresh / load-more / list windowing need JS-interop `scrollTop` — no
 
 The Web map renderer is [`src/SwiftDotNet.Maps.Web`](../../src/SwiftDotNet.Maps.Web) (MapLibre GL, built &
 verified) — a stateful JS-interop component. See [Maps](../maps.md).
+
+## Hot reload
+
+🧩 **Partly verified.** `dotnet watch --project sample/SampleApp.Web` compiled and applied a `Body` edit
+("C# and Razor changes applied in 225 ms"), but no browser was attached, so the DOM re-render itself has
+not been observed. Blazor WebAssembly supports metadata updates natively and `WebBridge` already handles a
+mid-session `replace`, so this is expected to work. See [Hot Reload](../hot-reload.md).

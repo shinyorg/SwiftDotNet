@@ -14,6 +14,8 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
   sample app on each platform.
 - **[Architecture](architecture.md)** — the Core, the diff engine, the patch/event protocol, and the two
   backend routes (native shim vs. pure-C# interpreter).
+- **[Hot Reload](hot-reload.md)** — edit a `Body` and see it live under `dotnet watch`, with `State<T>`
+  preserved across the reload.
 
 ### Authoring UI
 - **[Hosting & Dependency Injection](hosting-and-di.md)** — `SwiftProgram.CreateSwiftApp()`, the builder,
@@ -29,6 +31,8 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
   modifier bundles, and design tokens (`Theme`).
 - **[Custom Controls](custom-controls.md)** — composite views (the common case) and custom native primitives
   via the renderer registry.
+- **[The Controls Library](controls-library.md)** — the `SwiftDotNet.Controls` companion package, what each
+  control depends on, and the honest per-backend support matrix.
 
 ### Backends
 - **[Backends Overview](backends/README.md)** — the platform matrix and the two rendering families.
@@ -52,7 +56,7 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 | tvOS | SwiftUI | Same Swift shim (`#if os(tvOS)` fallbacks) | ✅ Verified on Apple TV sim |
 | Android | Jetpack Compose | Kotlin shim (`.aar`, JNI) | ✅ Verified on emulator |
 | Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop |
-| Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded (needs Windows to build) |
+| Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded — **never compiled**, no tests |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp)** | ✅ Verified (macOS window + headless PNG) |
 

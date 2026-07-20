@@ -76,3 +76,12 @@ See [Getting Started](../getting-started.md#ios-swiftui) for build/run commands.
   the SDK's `_DetectAppManifest` picks it up (else no `UILaunchScreen`, full-screen letterbox).
 - **Maps:** MapKit ships as a separate companion xcframework (`SwiftDotNetMaps`), registered via
   `AppleMaps.Register()` — it stays out of the core bridge. See [Maps](../maps.md).
+
+## Hot reload
+
+⚠️ **Not working from the CLI.** The iOS/tvOS SDK requires `UseInterpreter=true` (opt in with
+`-p:SwiftDotNetHotReload=true`), and with it the app installs and launches but aborts during startup —
+`Socket error while connecting to IDE on 127.0.0.1:10000: Connection refused` — because bare `dotnet watch`
+does not stand up the IDE-side debug tunnel the interpreter build expects. Drive hot reload from Visual
+Studio, VS Code, or Rider instead. Nothing in the Swift shim is involved either way: a reload is an
+ordinary `replace` patch. See [Hot Reload](../hot-reload.md).

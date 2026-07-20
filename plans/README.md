@@ -19,6 +19,7 @@ plan, removed 2026-07-19 — see [Skia backend](../docs/backends/skia.md)).
 | [Navigation service](navigation-service-plan.md) | ⏸ **Paused** | Everything. Would be the first consumer of `ViewScope` (built, no caller) |
 | [View construction seam](view-construction-seam.md) | Draft | Decision 1 — adopt the function form (`Text()` vs `new Text()`)? The `[Inject]` generator it once owned already shipped |
 | [Windows / Scenes (multi-window)](windows-plan.md) | Draft — nothing built | Step 0 is de-singletoning `SwiftApp`; then the Swift shim host-handle refactor |
+| [MSBuild SDK / custom TFMs](msbuild-sdk-plan.md) | Draft — nothing built | Everything. Prototype-verified: a wrapper SDK is cheap; custom TFMs work but are viral (`NU1202` for stock-SDK consumers) |
 | [Native-view access](native-view-access-plan.md) | Draft — nothing built | Everything (`.Tag` + per-backend `Customize` registries) |
 | [Wayland host](wayland-host-plan.md) | Draft — not committed to build | Everything; explicitly not scheduled |
 

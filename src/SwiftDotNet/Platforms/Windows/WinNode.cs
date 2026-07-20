@@ -5,6 +5,19 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 
+// Core declares View types (Grid, Button, Slider, ColorPicker, TabView, Rectangle) and the enums
+// HorizontalAlignment / VerticalAlignment in this same namespace (SwiftDotNet). A simple name binds to the
+// enclosing namespace's member before any using-imported one, so the WinUI types are reached through these
+// distinctly-named aliases (a same-name alias would itself collide with the namespace member).
+using WinButton = Microsoft.UI.Xaml.Controls.Button;
+using WinColorPicker = Microsoft.UI.Xaml.Controls.ColorPicker;
+using WinGrid = Microsoft.UI.Xaml.Controls.Grid;
+using WinHorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment;
+using WinRectangle = Microsoft.UI.Xaml.Shapes.Rectangle;
+using WinSlider = Microsoft.UI.Xaml.Controls.Slider;
+using WinTabView = Microsoft.UI.Xaml.Controls.TabView;
+using WinVerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment;
+
 namespace SwiftDotNet;
 
 /// <summary>A node in the retained WinUI element tree — mirrors the wire node and holds its live control.</summary>
@@ -59,8 +72,8 @@ sealed class WinNode
     {
         "Text" => Text(Str("text")),
         "Button" => MakeButton(),
-        "Spacer" => new Border { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch },
-        "Divider" => new Border { Height = 1, Background = WinStyle.Brush("secondary"), HorizontalAlignment = HorizontalAlignment.Stretch },
+        "Spacer" => new Border { HorizontalAlignment = WinHorizontalAlignment.Stretch, VerticalAlignment = WinVerticalAlignment.Stretch },
+        "Divider" => new Border { Height = 1, Background = WinStyle.Brush("secondary"), HorizontalAlignment = WinHorizontalAlignment.Stretch },
         "VStack" => Stack(Orientation.Vertical),
         "HStack" => Stack(Orientation.Horizontal),
         "ZStack" => MakeZStack(),
@@ -93,10 +106,10 @@ sealed class WinNode
         "ProgressView" => MakeProgress(),
         "Gauge" => MakeGauge(),
         "Link" => new HyperlinkButton { Content = Str("title"), NavigateUri = Uri.TryCreate(Str("url"), UriKind.Absolute, out var u) ? u : null },
-        "Rectangle" => new Rectangle(),
+        "Rectangle" => new WinRectangle(),
         "Circle" => new Ellipse(),
-        "Capsule" => new Rectangle { RadiusX = 999, RadiusY = 999 },
-        "RoundedRectangle" => new Rectangle { RadiusX = Num("cornerRadius") ?? 8, RadiusY = Num("cornerRadius") ?? 8 },
+        "Capsule" => new WinRectangle { RadiusX = 999, RadiusY = 999 },
+        "RoundedRectangle" => new WinRectangle { RadiusX = Num("cornerRadius") ?? 8, RadiusY = Num("cornerRadius") ?? 8 },
         _ => CustomOrPlaceholder(),
     };
 
@@ -114,7 +127,7 @@ sealed class WinNode
 
     FrameworkElement MakeWebView()
     {
-        var web = new WebView2 { MinHeight = 300, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var web = new WebView2 { MinHeight = 300, HorizontalAlignment = WinHorizontalAlignment.Stretch };
         var url = Str("url");
         if (!string.IsNullOrEmpty(url) && Uri.TryCreate(url, UriKind.Absolute, out var u))
             web.Source = u;
@@ -131,7 +144,7 @@ sealed class WinNode
 
     FrameworkElement MakeButton()
     {
-        var b = new Button { Content = Str("title"), HorizontalAlignment = HorizontalAlignment.Center };
+        var b = new WinButton { Content = Str("title"), HorizontalAlignment = WinHorizontalAlignment.Center };
         b.Click += (_, _) => _bridge.Emit(Id, null);
         return b;
     }
@@ -141,18 +154,35 @@ sealed class WinNode
         var panel = new StackPanel { Orientation = orientation, Spacing = Num("spacing") ?? 0 };
         var align = Props.GetValueOrDefault("alignment") as string;
         if (orientation == Orientation.Vertical)
-            panel.HorizontalAlignment = align is null ? HorizontalAlignment.Center : AlignH(align);
+            panel.HorizontalAlignment = align is null ? WinHorizontalAlignment.Center : AlignH(align);
         else
-            panel.VerticalAlignment = align is null ? VerticalAlignment.Center : AlignV(align);
+            panel.VerticalAlignment = align is null ? WinVerticalAlignment.Center : AlignV(align);
         foreach (var c in Children) panel.Children.Add(c.Element);
         return panel;
     }
 
-    Grid MakeZStack()
+    WinGrid MakeZStack()
     {
-        var grid = new Grid();
+        var grid = new WinGrid();
         foreach (var c in Children) grid.Children.Add(c.Element);
+        ApplyZStackAlignment(grid);
         return grid;
+    }
+
+    /// <summary>ZStack's <c>alignment</c> prop (an <see cref="Alignment"/> token) has no Grid-level equivalent
+    /// in WinUI — a Grid positions each child independently — so it is pushed onto every child. The prop is
+    /// only serialized when the DSL sets it explicitly, but note it does override a child's own alignment.</summary>
+    void ApplyZStackAlignment(WinGrid grid)
+    {
+        if (Props.GetValueOrDefault("alignment") is not string token) return;
+        var h = AlignH(token);
+        var v = AlignV(token);
+        foreach (var child in grid.Children)
+            if (child is FrameworkElement fe)
+            {
+                fe.HorizontalAlignment = h;
+                fe.VerticalAlignment = v;
+            }
     }
 
     ScrollViewer MakeScroll()
@@ -161,17 +191,17 @@ sealed class WinNode
         {
             Orientation = Str("axis") == "horizontal" ? Orientation.Horizontal : Orientation.Vertical,
             Spacing = 12,
-            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalAlignment = WinHorizontalAlignment.Center,
         };
         foreach (var c in Children) inner.Children.Add(c.Element);
         return new ScrollViewer { Content = inner };
     }
 
-    Grid MakeGrid()
+    WinGrid MakeGrid()
     {
         var cols = (int)(Num("columns") ?? 2);
         var sp = Num("spacing") ?? 8;
-        var grid = new Grid { ColumnSpacing = sp, RowSpacing = sp };
+        var grid = new WinGrid { ColumnSpacing = sp, RowSpacing = sp };
         for (var i = 0; i < cols; i++)
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         for (var i = 0; i < Children.Count; i++)
@@ -179,8 +209,8 @@ sealed class WinNode
             var row = i / cols;
             if (grid.RowDefinitions.Count <= row) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var el = Children[i].Element;
-            Grid.SetColumn(el, i % cols);
-            Grid.SetRow(el, row);
+            WinGrid.SetColumn(el, i % cols);
+            WinGrid.SetRow(el, row);
             grid.Children.Add(el);
         }
         return grid;
@@ -251,15 +281,15 @@ sealed class WinNode
     {
         var content = new StackPanel { Spacing = 4 };
         foreach (var c in Children) content.Children.Add(c.Element);
-        var expander = new Expander { Header = Str("label"), Content = content, IsExpanded = Bool("expanded"), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var expander = new Expander { Header = Str("label"), Content = content, IsExpanded = Bool("expanded"), HorizontalAlignment = WinHorizontalAlignment.Stretch };
         expander.Expanding += (_, _) => _bridge.Emit(Id, "true");
         expander.Collapsed += (_, _) => _bridge.Emit(Id, "false");
         return expander;
     }
 
-    TabView MakeTabView()
+    WinTabView MakeTabView()
     {
-        var tabs = new TabView { IsAddTabButtonVisible = false, CanReorderTabs = false, CanDragTabs = false };
+        var tabs = new WinTabView { IsAddTabButtonVisible = false, CanReorderTabs = false, CanDragTabs = false };
         foreach (var tab in Children)
             tabs.TabItems.Add(new TabViewItem { Header = tab.Str("title"), Content = tab.Element, IsClosable = false });
         if (Props.ContainsKey("selectedIndex"))
@@ -272,14 +302,14 @@ sealed class WinNode
 
     void SyncTabView()
     {
-        if (Inner is TabView tv && Props.ContainsKey("selectedIndex"))
+        if (Inner is WinTabView tv && Props.ContainsKey("selectedIndex"))
         {
             var idx = (int)(Num("selectedIndex") ?? 0);
             if (tv.SelectedIndex != idx) tv.SelectedIndex = idx;
         }
     }
 
-    Button MakeMenu()
+    WinButton MakeMenu()
     {
         var flyout = new MenuFlyout();
         foreach (var c in Children)
@@ -289,28 +319,59 @@ sealed class WinNode
             item.Click += (_, _) => _bridge.Emit(childId, null);
             flyout.Items.Add(item);
         }
-        return new Button { Content = Str("label"), Flyout = flyout };
+        return new WinButton { Content = Str("label"), Flyout = flyout };
     }
 
     // ---- controls (two-way bound) -------------------------------------------
 
     TextBox MakeTextField()
     {
-        var tb = new TextBox { PlaceholderText = Str("placeholder"), Text = Str("text"), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var tb = new TextBox { PlaceholderText = Str("placeholder"), Text = Str("text"), HorizontalAlignment = WinHorizontalAlignment.Stretch };
+        if (KeyboardScope() is { } scope) tb.InputScope = scope;
+        if (Num("maxLength") is { } max) tb.MaxLength = (int)max;
         tb.TextChanged += (_, _) => _bridge.Emit(Id, tb.Text);
         return tb;
     }
 
     PasswordBox MakeSecureField()
     {
-        var pb = new PasswordBox { PlaceholderText = Str("placeholder"), Password = Str("text"), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var pb = new PasswordBox { PlaceholderText = Str("placeholder"), Password = Str("text"), HorizontalAlignment = WinHorizontalAlignment.Stretch };
+        if (KeyboardScope() is { } scope) pb.InputScope = scope;
+        if (Num("maxLength") is { } max) pb.MaxLength = (int)max;
         pb.PasswordChanged += (_, _) => _bridge.Emit(Id, pb.Password);
         return pb;
     }
 
+    /// <summary>F9 <c>keyboard</c> prop → a WinUI <c>InputScope</c>, which is what drives the touch
+    /// keyboard layout on Windows. Returns null for the default (unset) keyboard so the field keeps the
+    /// platform default.
+    /// <para>Degradation: the F9 <c>returnKey</c> prop (done/go/next/search/send) has NO WinUI equivalent —
+    /// unlike UIKit's <c>submitLabel</c> or Android's <c>ImeAction</c>, the Windows touch keyboard's Enter
+    /// key label is not settable from XAML, so the value is deliberately ignored rather than faked.</para>
+    /// <para>Degradation: <c>maxLength</c> is applied here, but Core also clamps in-binding, so a field whose
+    /// max changes after build stays correct in state even though the control's own cap is build-time only
+    /// (modifiers/props of this kind are not re-applied by <see cref="UpdateProps"/>).</para></summary>
+    Microsoft.UI.Xaml.Input.InputScope? KeyboardScope()
+    {
+        var value = Str("keyboard") switch
+        {
+            // "number" is SwiftUI's numberPad → digits only; "decimal" allows the decimal separator.
+            "number" => Microsoft.UI.Xaml.Input.InputScopeNameValue.Digits,
+            "decimal" => Microsoft.UI.Xaml.Input.InputScopeNameValue.Number,
+            "email" => Microsoft.UI.Xaml.Input.InputScopeNameValue.EmailSmtpAddress,
+            "phone" => Microsoft.UI.Xaml.Input.InputScopeNameValue.TelephoneNumber,
+            "url" => Microsoft.UI.Xaml.Input.InputScopeNameValue.Url,
+            _ => (Microsoft.UI.Xaml.Input.InputScopeNameValue?)null,
+        };
+        if (value is not { } v) return null;
+        var scope = new Microsoft.UI.Xaml.Input.InputScope();
+        scope.Names.Add(new Microsoft.UI.Xaml.Input.InputScopeName(v));
+        return scope;
+    }
+
     TextBox MakeTextEditor()
     {
-        var tb = new TextBox { Text = Str("text"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 100, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var tb = new TextBox { Text = Str("text"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 100, HorizontalAlignment = WinHorizontalAlignment.Stretch };
         tb.TextChanged += (_, _) => _bridge.Emit(Id, tb.Text);
         return tb;
     }
@@ -322,9 +383,9 @@ sealed class WinNode
         return ts;
     }
 
-    Slider MakeSlider()
+    WinSlider MakeSlider()
     {
-        var slider = new Slider { Minimum = Num("min") ?? 0, Maximum = Num("max") ?? 1, StepFrequency = 0.01, Value = Num("value") ?? 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var slider = new WinSlider { Minimum = Num("min") ?? 0, Maximum = Num("max") ?? 1, StepFrequency = 0.01, Value = Num("value") ?? 0, HorizontalAlignment = WinHorizontalAlignment.Stretch };
         slider.ValueChanged += (_, e) => _bridge.Emit(Id, e.NewValue.ToString(CultureInfo.InvariantCulture));
         return slider;
     }
@@ -332,7 +393,7 @@ sealed class WinNode
     StackPanel MakeStepper()
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        panel.Children.Add(new TextBlock { Text = Str("label"), VerticalAlignment = VerticalAlignment.Center });
+        panel.Children.Add(new TextBlock { Text = Str("label"), VerticalAlignment = WinVerticalAlignment.Center });
         var box = new NumberBox { Minimum = Num("min") ?? -1e9, Maximum = Num("max") ?? 1e9, SmallChange = 1, Value = Num("value") ?? 0, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline };
         box.ValueChanged += (_, _) => _bridge.Emit(Id, ((int)box.Value).ToString(CultureInfo.InvariantCulture));
         panel.Children.Add(box);
@@ -342,7 +403,7 @@ sealed class WinNode
     StackPanel MakePicker()
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        panel.Children.Add(new TextBlock { Text = Str("label"), VerticalAlignment = VerticalAlignment.Center });
+        panel.Children.Add(new TextBlock { Text = Str("label"), VerticalAlignment = WinVerticalAlignment.Center });
         var combo = new ComboBox { ItemsSource = Children.Select(c => c.Str("text")).ToList(), SelectedIndex = (int)(Num("selection") ?? 0) };
         combo.SelectionChanged += (_, _) => _bridge.Emit(Id, combo.SelectedIndex.ToString(CultureInfo.InvariantCulture));
         panel.Children.Add(combo);
@@ -352,7 +413,7 @@ sealed class WinNode
     StackPanel MakeDatePicker()
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        panel.Children.Add(new TextBlock { Text = Str("label"), VerticalAlignment = VerticalAlignment.Center });
+        panel.Children.Add(new TextBlock { Text = Str("label"), VerticalAlignment = WinVerticalAlignment.Center });
         var picker = new CalendarDatePicker { Date = DateTimeOffset.FromUnixTimeSeconds((long)(Num("value") ?? 0)) };
         picker.DateChanged += (_, e) =>
         {
@@ -365,29 +426,29 @@ sealed class WinNode
     StackPanel MakeColorPicker()
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        panel.Children.Add(new TextBlock { Text = Str("label"), VerticalAlignment = VerticalAlignment.Center });
+        panel.Children.Add(new TextBlock { Text = Str("label"), VerticalAlignment = WinVerticalAlignment.Center });
 
-        var colorPicker = new ColorPicker { IsMoreButtonVisible = false, IsColorSliderVisible = true, IsColorChannelTextInputVisible = false };
+        var colorPicker = new WinColorPicker { IsMoreButtonVisible = false, IsColorSliderVisible = true, IsColorChannelTextInputVisible = false };
         if (WinStyle.Color(Str("value")) is { } c) colorPicker.Color = c;
         colorPicker.ColorChanged += (_, e) =>
             _bridge.Emit(Id, $"#{e.NewColor.R:X2}{e.NewColor.G:X2}{e.NewColor.B:X2}");
 
         var swatch = new Border { Width = 32, Height = 24, CornerRadius = new CornerRadius(4), Background = WinStyle.Brush(Str("value")) };
         var flyout = new Flyout { Content = colorPicker };
-        var button = new Button { Content = swatch, Flyout = flyout, Padding = new Thickness(2) };
+        var button = new WinButton { Content = swatch, Flyout = flyout, Padding = new Thickness(2) };
         panel.Children.Add(button);
         return panel;
     }
 
     // ---- navigation ----------------------------------------------------------
 
-    Button MakeNavLink()
+    WinButton MakeNavLink()
     {
         var nav = _bridge.NavStack.Count > 0 ? _bridge.NavStack.Peek() : null;
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = WinHorizontalAlignment.Stretch };
         if (Children.Count > 0) row.Children.Add(Children[0].Element);
-        row.Children.Add(new TextBlock { Text = "›", HorizontalAlignment = HorizontalAlignment.Right });
-        var button = new Button { Content = row, HorizontalAlignment = HorizontalAlignment.Stretch };
+        row.Children.Add(new TextBlock { Text = "›", HorizontalAlignment = WinHorizontalAlignment.Right });
+        var button = new WinButton { Content = row, HorizontalAlignment = WinHorizontalAlignment.Stretch };
         if (Children.Count > 1)
         {
             var dest = Children[1].Element;
@@ -446,7 +507,7 @@ sealed class WinNode
 
     StackPanel MakeProgress()
     {
-        var panel = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center };
+        var panel = new StackPanel { Spacing = 4, HorizontalAlignment = WinHorizontalAlignment.Center };
         if (Props.GetValueOrDefault("label") is string text) panel.Children.Add(Text(text));
         if (Num("value") is { } value)
             panel.Children.Add(new ProgressBar { Value = value, Maximum = 1, Width = 200 });
@@ -459,7 +520,7 @@ sealed class WinNode
     {
         var panel = new StackPanel { Spacing = 4 };
         if (Props.GetValueOrDefault("label") is string text) panel.Children.Add(Text(text));
-        panel.Children.Add(new ProgressBar { Minimum = Num("min") ?? 0, Maximum = Num("max") ?? 1, Value = Num("value") ?? 0, HorizontalAlignment = HorizontalAlignment.Stretch });
+        panel.Children.Add(new ProgressBar { Minimum = Num("min") ?? 0, Maximum = Num("max") ?? 1, Value = Num("value") ?? 0, HorizontalAlignment = WinHorizontalAlignment.Stretch });
         return panel;
     }
 
@@ -484,6 +545,7 @@ sealed class WinNode
         double borderWidth = 1, corner = 0;
         var transforms = new Microsoft.UI.Xaml.Media.TransformGroup();  // F4: scale/offset/rotation compose here
         string? transformOrigin = null;
+        (double radius, double dx, double dy, Windows.UI.Color color)? shadow = null;
 
         foreach (var m in Modifiers)
         {
@@ -512,6 +574,12 @@ sealed class WinNode
                     borderColor = WinStyle.Color(m.GetValueOrDefault("color") as string);
                     borderWidth = N(m, "width", 1);
                     if (N(m, "cornerRadius") > 0) corner = N(m, "cornerRadius");
+                    break;
+                case "shadow":
+                    // Wire shape mirrors Web/Skia: radius + x/y offset + an optional color token. The default
+                    // matches Web's box-shadow fallback (black @ 35%).
+                    shadow = (N(m, "radius", 4), N(m, "x"), N(m, "y"),
+                        WinStyle.Color(m.GetValueOrDefault("color") as string) ?? Windows.UI.Color.FromArgb(0x59, 0, 0, 0));
                     break;
                 case "opacity":
                     Inner.Opacity = N(m, "amount", 1);
@@ -638,6 +706,54 @@ sealed class WinNode
         {
             Element = Inner;
         }
+
+        // The shadow wraps whatever the modifier chain produced (so it hugs the padded/bordered box).
+        if (shadow is { } sh) Element = WithShadow(Element, sh.radius, sh.dx, sh.dy, sh.color);
+    }
+
+    /// <summary>Casts a drop shadow behind <paramref name="content"/>.
+    /// <para>XAML's <c>ThemeShadow</c> (element <c>Shadow</c> + a <c>Translation</c> Z offset) is the simpler
+    /// recipe but exposes no radius/color/offset knobs — it derives everything from the Z depth — so it cannot
+    /// honor the wire props. The Composition <c>DropShadow</c> takes BlurRadius / Offset / Color directly, so
+    /// that is what is used: an empty, hit-test-invisible Border sits behind the content in a wrapper Grid and
+    /// hosts a SpriteVisual whose only paint is the shadow.</para>
+    /// <para>Degradation: with no alpha mask the silhouette is the content's bounding rectangle, so a rounded
+    /// or non-rectangular element still casts a square shadow (Web/Skia follow the corner radius).</para></summary>
+    static FrameworkElement WithShadow(FrameworkElement content, double radius, double dx, double dy, Windows.UI.Color color)
+    {
+        var host = new Border
+        {
+            IsHitTestVisible = false,
+            HorizontalAlignment = content.HorizontalAlignment,
+            VerticalAlignment = content.VerticalAlignment,
+        };
+        var wrapper = new WinGrid
+        {
+            HorizontalAlignment = content.HorizontalAlignment,
+            VerticalAlignment = content.VerticalAlignment,
+        };
+        wrapper.Children.Add(host);       // behind
+        wrapper.Children.Add(content);    // in front
+
+        var compositor = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(host).Compositor;
+        var drop = compositor.CreateDropShadow();
+        drop.BlurRadius = (float)radius;
+        drop.Offset = new System.Numerics.Vector3((float)dx, (float)dy, 0f);
+        drop.Color = color;
+        var sprite = compositor.CreateSpriteVisual();
+        sprite.Shadow = drop;
+        Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.SetElementChildVisual(host, sprite);
+
+        // The sprite has no layout of its own: keep it (and the host) matched to the measured content.
+        void Resize(double w, double h)
+        {
+            host.Width = w;
+            host.Height = h;
+            sprite.Size = new System.Numerics.Vector2((float)w, (float)h);
+        }
+        content.SizeChanged += (_, e) => Resize(e.NewSize.Width, e.NewSize.Height);
+        if (content.ActualWidth > 0) Resize(content.ActualWidth, content.ActualHeight);
+        return wrapper;
     }
 
     Windows.UI.Color? ModColor(string type)
@@ -653,7 +769,8 @@ sealed class WinNode
         switch (Type)
         {
             case "Text": ((TextBlock)Inner).Text = Str("text"); break;
-            case "Button": ((Button)Inner).Content = Str("title"); break;
+            case "ZStack": ApplyZStackAlignment((WinGrid)Inner); break;
+            case "Button": ((WinButton)Inner).Content = Str("title"); break;
             case "TextField": SyncText((TextBox)Inner, Str("text")); break;
             case "Toggle": if (((ToggleSwitch)Inner).IsOn != Bool("value")) ((ToggleSwitch)Inner).IsOn = Bool("value"); break;
             case "Slider": SyncSlider(); break;
@@ -666,7 +783,7 @@ sealed class WinNode
     }
 
     static void SyncText(TextBox tb, string value) { if (tb.Text != value) tb.Text = value; }
-    void SyncSlider() { var s = (Slider)Inner; if (Math.Abs(s.Value - (Num("value") ?? 0)) > 0.0001) s.Value = Num("value") ?? 0; }
+    void SyncSlider() { var s = (WinSlider)Inner; if (Math.Abs(s.Value - (Num("value") ?? 0)) > 0.0001) s.Value = Num("value") ?? 0; }
 
     ContentDialog? _sheet;
     ContentDialog? _alert;
@@ -708,10 +825,11 @@ sealed class WinNode
             LayoutListRows(host);
             return;
         }
-        if (Inner is Panel panel)        // direct panel container (Stack/Form/Section/Group)
+        if (Inner is Panel panel)        // direct panel container (Stack/Form/Section/Group/ZStack)
         {
             panel.Children.Clear();
             foreach (var child in Children) panel.Children.Add(child.Element);
+            if (panel is WinGrid zgrid && Type == "ZStack") ApplyZStackAlignment(zgrid);  // re-laid children lose it
         }
     }
 
@@ -738,18 +856,18 @@ sealed class WinNode
 
     // ---- helpers -------------------------------------------------------------
 
-    static HorizontalAlignment AlignH(string? t) => t switch
+    static WinHorizontalAlignment AlignH(string? t) => t switch
     {
-        "leading" or "topLeading" or "bottomLeading" => HorizontalAlignment.Left,
-        "trailing" or "topTrailing" or "bottomTrailing" => HorizontalAlignment.Right,
-        _ => HorizontalAlignment.Center,
+        "leading" or "topLeading" or "bottomLeading" => WinHorizontalAlignment.Left,
+        "trailing" or "topTrailing" or "bottomTrailing" => WinHorizontalAlignment.Right,
+        _ => WinHorizontalAlignment.Center,
     };
 
-    static VerticalAlignment AlignV(string? t) => t switch
+    static WinVerticalAlignment AlignV(string? t) => t switch
     {
-        "top" or "topLeading" or "topTrailing" => VerticalAlignment.Top,
-        "bottom" or "bottomLeading" or "bottomTrailing" => VerticalAlignment.Bottom,
-        _ => VerticalAlignment.Center,
+        "top" or "topLeading" or "topTrailing" => WinVerticalAlignment.Top,
+        "bottom" or "bottomLeading" or "bottomTrailing" => WinVerticalAlignment.Bottom,
+        _ => WinVerticalAlignment.Center,
     };
 
     string Str(string key) => Props.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
@@ -795,26 +913,26 @@ sealed class WinNavController
 {
     ContentControl _content = null!;
     TextBlock _title = null!;
-    Button _back = null!;
+    WinButton _back = null!;
     readonly List<(FrameworkElement element, string title)> _stack = new();
 
     public FrameworkElement Build(FrameworkElement root)
     {
-        var grid = new Grid();
+        var grid = new WinGrid();
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Padding = new Thickness(8) };
-        _back = new Button { Content = "‹ Back", Visibility = Visibility.Collapsed };
+        _back = new WinButton { Content = "‹ Back", Visibility = Visibility.Collapsed };
         _back.Click += (_, _) => Pop();
-        _title = new TextBlock { FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        _title = new TextBlock { FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = WinVerticalAlignment.Center };
         header.Children.Add(_back);
         header.Children.Add(_title);
-        Grid.SetRow(header, 0);
+        WinGrid.SetRow(header, 0);
         grid.Children.Add(header);
 
-        _content = new ContentControl { Content = root, HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
-        Grid.SetRow(_content, 1);
+        _content = new ContentControl { Content = root, HorizontalContentAlignment = WinHorizontalAlignment.Stretch, VerticalContentAlignment = WinVerticalAlignment.Stretch };
+        WinGrid.SetRow(_content, 1);
         grid.Children.Add(_content);
 
         _stack.Add((root, ""));

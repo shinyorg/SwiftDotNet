@@ -2,12 +2,16 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 
+// Core declares a static `Color` class in this same namespace (SwiftDotNet), which shadows the
+// using-imported Windows.UI.Color in type positions — hence the distinctly-named alias.
+using WinColor = Windows.UI.Color;
+
 namespace SwiftDotNet;
 
 /// <summary>Maps SwiftDotNet tokens to WinUI colors/fonts/brushes.</summary>
 static class WinStyle
 {
-    public static Color? Color(string? token)
+    public static WinColor? Color(string? token)
     {
         if (token is null || token == "primary") return null;
         if (token.StartsWith('#')) return FromHex(token);
@@ -77,9 +81,9 @@ static class WinStyle
         return list;
     }
 
-    static Color FromRgb(byte r, byte g, byte b) => Windows.UI.Color.FromArgb(0xFF, r, g, b);
+    static WinColor FromRgb(byte r, byte g, byte b) => Windows.UI.Color.FromArgb(0xFF, r, g, b);
 
-    static Color? FromHex(string hex)
+    static WinColor? FromHex(string hex)
     {
         var s = hex.TrimStart('#');
         if (s.Length != 6 || !uint.TryParse(s, System.Globalization.NumberStyles.HexNumber, null, out var v))

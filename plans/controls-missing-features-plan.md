@@ -1,37 +1,67 @@
 # Plan 1: Missing framework features to host the Shiny controls port
 
 **Status:** **Partially shipped** — Wave A (F1–F5) complete on every backend; Wave B partial (F6, F9).
-F7/F8/F10/F11/F12 still open or descoped. · **Date:** 2026-07-19 (status refreshed 2026-07-19)
+F7/F8/F10/F11/F12 still open or descoped. · **Date:** 2026-07-19 (status re-audited against the code
+2026-07-20; 137 tests green)
 **Save to (repo convention):** `plans/controls-missing-features-plan.md`
 **Companion:** [Plan 2 — the controls library itself](controls-library-plan.md). This plan lands the
 framework primitives **first**; Plan 2 builds the controls on top.
 
 ## Implementation status (2026-07-19)
 
-**Wave A is implemented** — F1–F5 landed across Core and every backend, with 17 new tests
-(`tests/SwiftDotNet.Tests/WaveAFeatureTests.cs`, 49 total green).
+**Wave A is implemented** — F1–F5 landed across Core and every backend.
+
+*(Status re-audited 2026-07-20: the previous matrix was optimistic on four counts — Skia's gestures were
+never wired end-to-end, Web had no pinch at all, ZStack alignment was dropped on three backends, and URL
+images were claimed where the code had explicit "documented gap" comments. All four are now closed; the
+footnotes below say exactly what each backend does and does not do.)*
 
 | Feature | Core | GTK | Web | Skia | SwiftUI | Compose | WinUI |
 |---|---|---|---|---|---|---|---|
-| F5 gradients | ✅ | ✅ | ✅ | ✅ | ✅¹ | ✅² | ✅² |
-| F4 transforms + loop-anim | ✅ | ➖³ | ✅ | ✅ | ✅¹ | ✅² | ✅² |
-| F3 raster images | ✅ | ✅ | ✅ | ✅ | ✅¹ | ✅² | ✅² |
-| F1 drag/pan + pinch | ✅ | ✅ | ✅⁴ | ✅⁵ | ✅¹ | ✅² | ✅² |
-| F2 overlay host + service | ✅⁶ | ✅⁶ | ✅⁶ | ✅⁶ | ✅⁶ | ✅⁶ | ✅⁶ |
+| F5 gradients | ✅ | ✅ | ✅ | ✅ | ✅¹ | ✅² | ✅³ |
+| F4 transforms | ✅ | ✅⁴ | ✅ | ✅ | ✅¹ | ✅² | ✅³ |
+| F4 loop-anim | ✅ | ✅⁵ | ✅⁵ | ✅⁵ | ✅¹ | ✅²˒⁵ | ➖⁶ |
+| F3 raster images | ✅ | ✅ | ✅ | ✅ | ✅¹ | ✅² | ✅³ |
+| F3 URL images | ✅ | ✅⁷ | ✅ | ✅⁷ | ✅¹ | ✅²˒⁷ | ✅³ |
+| F1 drag/pan | ✅ | ✅ | ✅ | ✅⁸ | ✅¹ | ✅² | ✅³ |
+| F1 pinch | ✅ | ✅ | ✅⁹ | ✅⁸ | ✅¹ | ✅² | ✅³ |
+| F2 overlay host + service | ✅¹⁰ | ✅¹⁰ | ✅¹⁰ | ✅¹⁰ | ✅¹⁰ | ✅¹⁰ | ✅³˒¹⁰ |
 
 ¹ Swift shim `typecheck`-verified against the macOS + iOS SDKs (xcframework not rebuilt here).
-² Compose/WinUI written to match; not compilable on this Mac (no Android SDK / Windows) — the repo's
-standing constraint. ³ GTK4: **`.Offset` now works** (translated via CSS margins — `margin-left:x;margin-right:-x` etc., which
-shifts a widget's allocation while keeping the layout footprint neutral; verified the exact CSS + headless
-widget build). `.Rotation`/`.ScaleEffect` remain no-ops (GTK4 has no widget rotate/scale). Gradients work. ⁴ Web drag lands; multi-pointer pinch is a follow-up. ⁵ Skia exposes
-`SkiaHost.Drag/Magnify`; each Skia host still wires its raw pointer stream to them. ⁶ **F2 is pure
-composition** (`OverlayHost` lowers to `ZStack`+`Rectangle`+gesture) so it needs **zero backend code** —
-`Overlay.Present/Dismiss/DismissAll` + `new OverlayHost(new ContentView())`.
+² Compose now **builds** — the AAR assembles on this Mac (Gradle 8.14.3 + Android SDK); still not run on a
+device or emulator.
+³ WinUI is **uncompiled and unverified** — `net10.0-windows` cannot build on this Mac, and there are no
+Windows tests. See [`docs/backends/windows.md`](../docs/backends/windows.md), including the Core-vs-WinUI
+namespace-shadowing blocker that would have failed the first build outright.
+⁴ GTK4: `.Offset` via CSS margins; `.Rotation`/`.ScaleEffect` now work by wrapping the widget in a
+`Gtk.Fixed` and applying a `GskTransform` (previously both were silent no-ops). Not visually verified.
+⁵ A repeating animation carries no from/to pair on the wire, so **every backend pulses opacity 1 → 0.4** —
+Web's `sdn-pulse` keyframes are the reference and Skia/GTK/Compose match it deliberately. Consequence:
+`BadgeView.Pulse` reads as an opacity pulse, not a size pulse, and `SkeletonView`'s shimmer fades rather
+than travelling. GTK additionally cannot loop a transform (its CSS has no `transform`).
+⁶ WinUI gets only a `RepositionThemeTransition` — no looping animation.
+⁷ Fetched asynchronously and cached by URL; the node renders its placeholder for a frame, then fills in.
+Failures degrade to the placeholder rather than throwing. Compose's AAR manifest now declares
+`android.permission.INTERNET`, which merges into every consuming app.
+⁸ Skia's engine always had `Drag`/`Magnify`, but **no host fed them**, so seven Controls (`Slider`,
+`RangeSlider`, `ColorPicker`, `FloatingPanel`, `SwipeContainer`, `ReorderableList`, `ImageViewer`) painted
+correctly and were inert. [`SkiaPointerRouter`](../src/SwiftDotNet.Skia/SkiaPointerRouter.cs) now resolves
+a raw pointer stream into tap/long-press/swipe/drag/pinch, and all three in-repo hosts are wired. A host
+that doesn't use it still gets tap-only.
+⁹ Web pinch = two live pointers, plus a ctrl+wheel trackpad path whose scale accumulates for the
+component's lifetime (the browser exposes no gesture boundary for it).
+¹⁰ **F2 is pure composition** (`OverlayHost` lowers to `ZStack`+`Rectangle`+gesture) so it needs no new
+backend *views* — but it does depend on the backend honouring `ZStack`'s `alignment` prop, which GTK, Web
+and WinUI all silently ignored, quietly centring every `OverlayPosition.Bottom`/`Top` toast, dialog and
+floating panel. All three now map the token; covered by
+[`ZStackAlignmentWireTests`](../tests/SwiftDotNet.Tests/ZStackAlignmentWireTests.cs).
 
 **Wave B (partial) also landed:** **F6** material/blur (real backdrop blur on Web/SwiftUI, translucent
-tint fallback on GTK/Skia/Compose/WinUI) and **F9** text-input config (`KeyboardType`/`ReturnKey`/
-`MaxLength` on `TextField`, enforced in-binding + native keyboard on Web/SwiftUI/Compose). Tests in
-`WaveAFeatureTests.cs`/`ControlsTests.cs`; 66 total green.
+tint fallback on GTK/Skia/Compose/WinUI — on Compose the tint is *deliberate*: `Modifier.blur` blurs a
+composable's own content, not the backdrop, so it would be worse than the tint) and **F9** text-input
+config (`KeyboardType`/`ReturnKey`/`MaxLength` on `TextField`, enforced in-binding + native keyboard on
+Web/SwiftUI/Compose; WinUI honours `keyboard`/`maxLength` but **`returnKey` has no WinUI equivalent** and
+is explicitly ignored; Skia and GTK do not apply any of the three).
 
 Still deferred: **F7** collection upgrades, **F8** drawing canvas, **F10** services, **F11** geometry
 (GeometryReader — needs per-backend layout-event plumbing; the fixed-frame + drag-location trick covers

@@ -20,6 +20,9 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
     readonly Dictionary<string, CancellationTokenSource> _longPress = new(); // in-flight long-press timers by event id
     readonly Dictionary<string, (double X, double Y)> _swipeStart = new();    // pointer-down origin by event id
     readonly Dictionary<string, (double X, double Y)> _dragStart = new();      // F1 continuous-drag origin by event id
+    readonly Dictionary<string, Dictionary<long, (double X, double Y)>> _pinchPoints = new(); // live pinch pointers by event id
+    readonly Dictionary<string, double> _pinchStart = new();                   // two-finger spread at pinch start by event id
+    readonly Dictionary<string, double> _wheelScale = new();                   // ctrl+wheel (trackpad pinch) factor by event id
     int _seq;
 
     protected override void OnInitialized()
@@ -157,17 +160,37 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
 
     void ZStack(RenderTreeBuilder b, WebNode n)
     {
+        // The `alignment` prop (Alignment.Token()) positions every layer inside the stack, like SwiftUI's
+        // ZStack(alignment:). Layers are stretched to the stack's grid cell rather than shrink-wrapped so a
+        // *nested* ZStack — how Overlay/OverlayHost lowers Top/Bottom positioning — still has room to align
+        // within. Re-read on every render, so a prop update repositions the layers.
+        var (justify, align) = ZAlign(n.S("alignment"));
         b.OpenElement(_seq++, "div");
-        Style(b, n, "display:grid;justify-items:center;align-items:center;");
+        Style(b, n, "display:grid;");
+        var layer = $"grid-area:1/1;display:flex;justify-content:{justify};align-items:{align};";
         foreach (var c in n.Children)
         {
             b.OpenElement(_seq++, "div");
-            b.AddAttribute(_seq++, "style", "grid-area:1/1;display:flex;align-items:center;justify-content:center;");
+            b.AddAttribute(_seq++, "style", layer);
             RenderNode(b, c);
             b.CloseElement();
         }
         b.CloseElement();
     }
+
+    // ZStack alignment token → the flex (justify-content, align-items) pair for a layer.
+    static (string Justify, string Align) ZAlign(string token) => token switch
+    {
+        "topLeading" => ("flex-start", "flex-start"),
+        "top" => ("center", "flex-start"),
+        "topTrailing" => ("flex-end", "flex-start"),
+        "leading" => ("flex-start", "center"),
+        "trailing" => ("flex-end", "center"),
+        "bottomLeading" => ("flex-start", "flex-end"),
+        "bottom" => ("center", "flex-end"),
+        "bottomTrailing" => ("flex-end", "flex-end"),
+        _ => ("center", "center"),
+    };
 
     void Grid(RenderTreeBuilder b, WebNode n)
     {
@@ -632,7 +655,11 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
     void Style(RenderTreeBuilder b, WebNode n, string? baseStyle)
     {
         var isShape = n.Type is "Rectangle" or "Circle" or "Capsule" or "RoundedRectangle";
-        var css = (baseStyle ?? "") + WebStyle.Modifiers(n.Modifiers, isShape);
+        var magnify = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onMagnify");
+        var css = (baseStyle ?? "") + WebStyle.Modifiers(n.Modifiers, isShape)
+            // A pinch target must own its pointer stream: without this the browser's own page zoom /
+            // scroll swallows the second finger before pointermove ever reaches Blazor.
+            + (magnify is not null ? "touch-action:none;" : "");
         if (css.Length > 0) b.AddAttribute(_seq++, "style", css);
 
         var tap = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onTapGesture");
@@ -642,33 +669,16 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
             b.AddAttribute(_seq++, name, EventCallback.Factory.Create(this, () => _bridge.Emit(ev, null)));
         }
 
-        // F1 continuous drag: pointerdown/move/up emit the drag grammar ("<phase>;tx,ty;lx,ly;vx,vy").
         var drag = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onDrag");
-        if (drag?.GetValueOrDefault("event") is string dragEv)
-        {
-            b.AddAttribute(_seq++, "onpointerdown", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
-            {
-                _dragStart[dragEv] = (e.ClientX, e.ClientY);
-                _bridge.Emit(dragEv, $"b;0,0;{Inv(e.OffsetX)},{Inv(e.OffsetY)};0,0");
-            }));
-            b.AddAttribute(_seq++, "onpointermove", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
-            {
-                if (!_dragStart.TryGetValue(dragEv, out var s)) return;
-                _bridge.Emit(dragEv, $"c;{Inv(e.ClientX - s.X)},{Inv(e.ClientY - s.Y)};{Inv(e.OffsetX)},{Inv(e.OffsetY)};0,0");
-            }));
-            b.AddAttribute(_seq++, "onpointerup", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
-            {
-                if (!_dragStart.Remove(dragEv, out var s)) return;
-                _bridge.Emit(dragEv, $"e;{Inv(e.ClientX - s.X)},{Inv(e.ClientY - s.Y)};{Inv(e.OffsetX)},{Inv(e.OffsetY)};0,0");
-            }));
-        }
-
         var longPress = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onLongPress");
         var swipe = n.Modifiers.FirstOrDefault(m => m["type"] as string == "onSwipe");
-        if (longPress is null && swipe is null) return;
+        if (drag is null && magnify is null && longPress is null && swipe is null) return;
 
-        // Long-press and swipe share pointerdown/up, so merge them into one handler pair to avoid
-        // one attribute clobbering the other when a view carries both.
+        // Drag, pinch, long-press and swipe all ride the same pointerdown/move/up/cancel attributes, and a
+        // later AddAttribute replaces an earlier one of the same name, so they are wired together in one
+        // handler set — a view carrying several (ImageViewer: drag + pinch) gets all of them.
+        var dragEv = drag?.GetValueOrDefault("event") as string;
+        var magEv = magnify?.GetValueOrDefault("event") as string;
         var lpEv = longPress?.GetValueOrDefault("event") as string;
         var lpDur = Amount(longPress, "amount", 0.5);
         var swEv = swipe?.GetValueOrDefault("event") as string;
@@ -676,21 +686,94 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
 
         b.AddAttribute(_seq++, "onpointerdown", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
         {
+            if (magEv is not null)
+            {
+                var pts = _pinchPoints.TryGetValue(magEv, out var p) ? p : _pinchPoints[magEv] = new();
+                pts[e.PointerId] = (e.ClientX, e.ClientY);
+                if (pts.Count == 2)
+                {
+                    _pinchStart[magEv] = Spread(pts);
+                    // The second finger turns a pan into a pinch: close out any in-flight drag first so the
+                    // handler sees a well-formed b…c…e sequence.
+                    if (dragEv is not null && _dragStart.Remove(dragEv, out var ds))
+                        _bridge.Emit(dragEv, $"e;{Inv(e.ClientX - ds.X)},{Inv(e.ClientY - ds.Y)};{Inv(e.OffsetX)},{Inv(e.OffsetY)};0,0");
+                }
+            }
+            // F1 continuous drag: pointerdown/move/up emit the drag grammar ("<phase>;tx,ty;lx,ly;vx,vy").
+            if (dragEv is not null && !Pinching(magEv))
+            {
+                _dragStart[dragEv] = (e.ClientX, e.ClientY);
+                _bridge.Emit(dragEv, $"b;0,0;{Inv(e.OffsetX)},{Inv(e.OffsetY)};0,0");
+            }
             if (lpEv is not null) StartLongPress(lpEv, lpDur);
             if (swEv is not null) _swipeStart[swEv] = (e.ClientX, e.ClientY);
         }));
+        if (dragEv is not null || magEv is not null)
+            b.AddAttribute(_seq++, "onpointermove", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
+            {
+                // F1 pinch: two live pointers → the cumulative scale factor (current spread ÷ the spread at
+                // the moment the second finger landed; 1.0 = unchanged), matching every other backend.
+                if (magEv is not null && _pinchPoints.TryGetValue(magEv, out var pts) && pts.ContainsKey(e.PointerId))
+                {
+                    pts[e.PointerId] = (e.ClientX, e.ClientY);
+                    if (pts.Count >= 2 && _pinchStart.TryGetValue(magEv, out var d0) && d0 > 0)
+                    {
+                        _bridge.Emit(magEv, Inv(Spread(pts) / d0));
+                        return;     // the pinch owns the stream; don't pan at the same time
+                    }
+                }
+                if (dragEv is not null && _dragStart.TryGetValue(dragEv, out var s))
+                    _bridge.Emit(dragEv, $"c;{Inv(e.ClientX - s.X)},{Inv(e.ClientY - s.Y)};{Inv(e.OffsetX)},{Inv(e.OffsetY)};0,0");
+            }));
         b.AddAttribute(_seq++, "onpointerup", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
         {
+            EndPinchPointer(magEv, e.PointerId);
+            if (dragEv is not null && _dragStart.Remove(dragEv, out var s))
+                _bridge.Emit(dragEv, $"e;{Inv(e.ClientX - s.X)},{Inv(e.ClientY - s.Y)};{Inv(e.OffsetX)},{Inv(e.OffsetY)};0,0");
             if (lpEv is not null) CancelLongPress(lpEv);
             if (swEv is not null) EndSwipe(swEv, swDir, e);
         }));
-        b.AddAttribute(_seq++, "onpointercancel", EventCallback.Factory.Create<PointerEventArgs>(this, _ =>
+        b.AddAttribute(_seq++, "onpointercancel", EventCallback.Factory.Create<PointerEventArgs>(this, e =>
         {
+            EndPinchPointer(magEv, e.PointerId);
+            if (dragEv is not null) _dragStart.Remove(dragEv);
             if (lpEv is not null) CancelLongPress(lpEv);
             if (swEv is not null) _swipeStart.Remove(swEv);
         }));
         if (lpEv is not null)
             b.AddAttribute(_seq++, "onpointerleave", EventCallback.Factory.Create<PointerEventArgs>(this, _ => CancelLongPress(lpEv)));
+
+        // Trackpad pinch on a desktop browser arrives as wheel+ctrlKey, never as two pointers. There is no
+        // begin/end for it, so the factor accumulates across the whole session (an absolute zoom level),
+        // which is the same 1.0-is-unchanged value the handler expects.
+        if (magEv is not null)
+        {
+            b.AddAttribute(_seq++, "onwheel", EventCallback.Factory.Create<WheelEventArgs>(this, e =>
+            {
+                if (!e.CtrlKey) return;
+                var scale = Math.Clamp(_wheelScale.GetValueOrDefault(magEv, 1) * Math.Exp(-e.DeltaY / 100.0), 0.05, 50);
+                _wheelScale[magEv] = scale;
+                _bridge.Emit(magEv, Inv(scale));
+            }));
+            b.AddEventPreventDefaultAttribute(_seq++, "onwheel", true);
+        }
+    }
+
+    /// <summary>Distance between the first two live pointers of a pinch.</summary>
+    static double Spread(Dictionary<long, (double X, double Y)> pts)
+    {
+        var a = pts.Values.ElementAt(0);
+        var b = pts.Values.ElementAt(1);
+        return Math.Sqrt(((a.X - b.X) * (a.X - b.X)) + ((a.Y - b.Y) * (a.Y - b.Y)));
+    }
+
+    bool Pinching(string? magEv) => magEv is not null && _pinchPoints.TryGetValue(magEv, out var p) && p.Count >= 2;
+
+    void EndPinchPointer(string? magEv, long pointerId)
+    {
+        if (magEv is null || !_pinchPoints.TryGetValue(magEv, out var pts)) return;
+        pts.Remove(pointerId);
+        if (pts.Count < 2) _pinchStart.Remove(magEv);
     }
 
     void StartLongPress(string ev, double seconds)

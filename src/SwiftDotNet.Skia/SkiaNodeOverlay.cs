@@ -60,6 +60,24 @@ sealed partial class SkiaNode
         return false;
     }
 
+    /// <summary>
+    /// The overlay's content subtree, if a point falls inside the region that subtree owns.
+    ///
+    /// An overlay's content is NOT part of <see cref="Children"/> — a pushed nav destination and a Sheet's
+    /// body are separate trees, arranged during <see cref="PaintOverlay"/>. Tap routing goes through
+    /// <see cref="HitTestOverlay"/>, but the continuous/deferred gestures (drag, pinch, long-press, swipe)
+    /// resolve their target by walking the node tree, so without this they only ever see the base scene —
+    /// which made every gesture dead on a pushed page or inside a Sheet, including the Controls library's
+    /// overlay-presented Dialog / FloatingPanel / ImageViewer.
+    /// </summary>
+    internal SkiaNode? OverlayContentAt(SKPoint p) => Type switch
+    {
+        "Sheet" when _sheetPanel.Contains(p) && Children.Count > 1 => Children[1],
+        "NavigationStack" when Frame.Contains(p) && !_navBack.Contains(p) => PushedContent,
+        // Alert and Menu are engine-drawn chrome with no gesture-bearing content subtree.
+        _ => null,
+    };
+
     static void Scrim(SKCanvas canvas, SKRect window)
     {
         using var s = new SKPaint { Color = new SKColor(0, 0, 0, 110) };

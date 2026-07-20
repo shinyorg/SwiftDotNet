@@ -28,6 +28,17 @@ public sealed class SkiaBridge : IBridge
     /// <summary>Raised whenever the scene changes (a patch was applied); the host should repaint.</summary>
     public event Action? Invalidate;
 
+    // Captured at construction (on the host's UI thread) so work that completes on a background thread —
+    // notably SkiaImageLoader's fetches — can raise Invalidate where the host can safely act on it.
+    readonly SynchronizationContext? _ui = SynchronizationContext.Current;
+
+    /// <summary>Raise <see cref="Invalidate"/>, marshalling to the UI thread when called from elsewhere.</summary>
+    internal void RequestRepaint()
+    {
+        if (_ui is null || _ui == SynchronizationContext.Current) Invalidate?.Invoke();
+        else _ui.Post(_ => Invalidate?.Invoke(), null);
+    }
+
     public void SetEventHandler(Action<string, string?> handler) => _handler = handler;
 
     /// <summary>Raise an event as if it came from a control (what hit-testing / recognizers call).</summary>
@@ -136,7 +147,7 @@ public sealed class SkiaBridge : IBridge
     /// <summary>Fire a long-press at a point (host resolves the hold from a pointer stream).</summary>
     public bool LongPress(SKPoint point)
     {
-        var handled = _root?.DispatchGesture(point, "onLongPress", null) ?? false;
+        var handled = Dispatch(point, "onLongPress", null);
         if (handled) Invalidate?.Invoke();
         return handled;
     }
@@ -144,10 +155,26 @@ public sealed class SkiaBridge : IBridge
     /// <summary>Fire a directional swipe at a point (host resolves direction from a drag).</summary>
     public bool Swipe(SKPoint point, string direction)
     {
-        var handled = _root?.DispatchGesture(point, "onSwipe", direction) ?? false;
+        var handled = Dispatch(point, "onSwipe", direction);
         if (handled) Invalidate?.Invoke();
         return handled;
     }
+
+    // Every gesture must search the presented overlays before the base scene, exactly as DispatchPointer
+    // does — an overlay's content (a pushed nav destination, a Sheet body) is a separate tree hanging off
+    // the overlay node, not part of _root's children.
+    /// <summary>The subtree a gesture at <paramref name="p"/> should search: topmost overlay content, else the scene.</summary>
+    SkiaNode? GestureTarget(SKPoint p)
+    {
+        if (_root is null) return null;
+        foreach (var overlay in OverlaysTopFirst(_root))
+            if (overlay.OverlayContentAt(p) is { } content)
+                return content;
+        return _root;
+    }
+
+    bool Dispatch(SKPoint p, string modType, string? direction)
+        => GestureTarget(p)?.DispatchGesture(p, modType, direction) ?? false;
 
     // F1 continuous drag/pinch. The host feeds a raw pointer stream; the engine captures the target node
     // at Began and routes subsequent Changed/Ended to it, emitting the shared drag grammar.
@@ -157,7 +184,7 @@ public sealed class SkiaBridge : IBridge
     /// <summary>Feed a continuous drag. <paramref name="phase"/>: begin captures the target; change/end reuse it.</summary>
     public bool Drag(SKPoint point, GesturePhase phase, float tx, float ty, float vx, float vy)
     {
-        if (phase == GesturePhase.Began) _dragTarget = _root?.NodeWithModAt(point, "onDrag");
+        if (phase == GesturePhase.Began) _dragTarget = GestureTarget(point)?.NodeWithModAt(point, "onDrag");
         if (_dragTarget?.ModEvent("onDrag") is not { } ev) return false;
         var ph = phase switch { GesturePhase.Began => "b", GesturePhase.Ended => "e", _ => "c" };
         Emit(ev, string.Format(CultureInfo.InvariantCulture, "{0};{1},{2};{3},{4};{5},{6}",
@@ -170,7 +197,7 @@ public sealed class SkiaBridge : IBridge
     /// <summary>Feed a continuous pinch. <paramref name="phase"/>: begin captures the target; scale is cumulative.</summary>
     public bool Magnify(SKPoint point, GesturePhase phase, float scale)
     {
-        if (phase == GesturePhase.Began) _magnifyTarget = _root?.NodeWithModAt(point, "onMagnify");
+        if (phase == GesturePhase.Began) _magnifyTarget = GestureTarget(point)?.NodeWithModAt(point, "onMagnify");
         if (_magnifyTarget?.ModEvent("onMagnify") is not { } ev) return false;
         Emit(ev, scale.ToString(CultureInfo.InvariantCulture));
         if (phase == GesturePhase.Ended) _magnifyTarget = null;

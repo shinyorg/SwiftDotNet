@@ -1,1 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- `Image.FromUrl` fetches remote images over HTTP; merges into the consuming app's manifest. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

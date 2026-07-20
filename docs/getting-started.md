@@ -112,6 +112,19 @@ dotnet build sample/SampleApp.Skia.Mac -c Release   # then launch the .app
 dotnet run --project sample/SampleApp.Skia.Silk
 ```
 
+## Hot reload
+
+Swap `dotnet run` for `dotnet watch run` on any of the heads above and edits to a `Body` apply to the
+running app — keeping the page you pushed and the text you typed:
+
+```bash
+dotnet watch run --project sample/SampleApp.Skia.Silk
+```
+
+No opt-in is needed in your app code. Apple targets are the exception (they need an IDE and the Mono
+interpreter). See **[Hot Reload](hot-reload.md)** for what reloads, what forces a restart, and the
+per-backend status.
+
 ## Consuming the library in your own app
 
 Reference the combined **`SwiftDotNet`** project/package. Then:

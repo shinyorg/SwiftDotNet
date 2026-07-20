@@ -63,10 +63,32 @@ Needs GTK4 native libs: macOS `brew install gtk4` (libs in `/opt/homebrew/lib`),
 - Gir.Core specifics: optional modifier keys need `GetValueOrDefault` (not the indexer);
   `grid.RowSpacing`/`ColumnSpacing` are `int`; `TextBuffer.GetStartIter`/`GetEndIter` are `out` params;
   `Gtk.Calendar.GetDate()` returns a `GLib.DateTime` (`.ToUnix()`).
-- **`.ScaleEffect` is a documented no-op** on GTK (no per-widget scale transform).
+- **`.ScaleEffect` / `.Rotation` wrap the widget in a `Gtk.Fixed`.** GTK4 widgets have no transform
+  property, but `Gtk.Fixed` can apply an arbitrary `GskTransform` to a child, so a transformed node's
+  `Widget` (what its *parent* sees) becomes that wrapper while everything internal keeps talking to
+  `_content`. That's why the prop-sync casts in `GtkNode.UpdateProps` target `_content`, not `Widget` — a
+  new sync path that casts `Widget` will throw the moment a transform is applied. The pivot comes from the
+  modifier's `value` anchor token and depends on the allocated size, so it is recomputed on map and on
+  size-request changes. 🧩 Not visually verified (needs a real Linux session).
+- **`.Material` is a translucent tint, not a real backdrop blur** — GTK4 exposes no backdrop-filter
+  equivalent.
+- **A repeating animation loops opacity only.** GTK's CSS engine does implement `@keyframes` and the
+  `animation` shorthand, so `.Repeating()` emits a per-node keyframes block — but only over the properties
+  GTK exposes to CSS. Like the Web backend's shared `sdn-pulse`, it loops `opacity` 1 → 0.4. A looping
+  *scale* or *rotate* is not expressible (GTK CSS has no `transform`), even though one-shot transforms now
+  work via the `Gtk.Fixed` route above.
+- **`Image.FromUrl` is fetched asynchronously** and cached by URL string, so the widget renders empty for a
+  frame and then fills in. Any failure (DNS, HTTP status, timeout, undecodable payload) is swallowed and the
+  placeholder stays — it never throws.
 
 ## Custom controls
 
 The renderer registry (`GtkRenderers.Register(type, ctx => Gtk.Widget)`) is hooked into the interpreter's
 default case, so custom native primitives need **no interpreter fork**. See
 [Custom Controls](../custom-controls.md).
+
+## Hot reload
+
+🧩 **Expected, not run** (needs Linux). `dotnet watch run --project sample/SampleApp.Gtk` should work with
+no extra setup: it is a plain `net10.0` app, GTK supplies a real `SynchronizationContext`, and `GtkBridge`
+already applies a mid-session `replace`. See [Hot Reload](../hot-reload.md).

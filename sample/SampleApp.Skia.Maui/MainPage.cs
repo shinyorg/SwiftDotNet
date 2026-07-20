@@ -2,6 +2,7 @@
 using Shiny.BluetoothLE;
 #endif
 using SwiftDotNet;
+using SwiftDotNet.Sample;
 // Disambiguate the SwiftDotNet DSL types from MAUI's same-named types (aliases beat global usings).
 using SdnView = SwiftDotNet.View;
 using Font = SwiftDotNet.Font;
@@ -20,6 +21,11 @@ public class MainPage : ContentPage
     {
         Title = "SwiftDotNet · Skia + Shiny";
 
+        // .NET 10's ContentPage defaults to SafeAreaRegions.None (edge-to-edge) on every platform, and the
+        // Skia canvas draws the *whole* UI itself — so without this the scene paints under the status bar,
+        // notch/Dynamic Island and home indicator. The engine has no safe-area concept of its own.
+        SafeAreaEdges = new SafeAreaEdges(SafeAreaRegions.Container);
+
 #if NO_SHINY
         var status = "(Shiny disabled — host-render proof)";
 #else
@@ -29,8 +35,15 @@ public class MainPage : ContentPage
             : $"IBleManager resolved ✓  ({ble.GetType().Name})";
 #endif
 
-        // The whole screen is one self-drawn Skia canvas.
-        Content = new SwiftDotNetSkiaView(new ShinyStatusView(status));
+        // The whole screen is one self-drawn Skia canvas. Render the full shared sample app (the same
+        // ContentView every other backend hosts) so this sample exercises real UI — sliders, panels and
+        // the rest — rather than a static proof card. Pass `?status=` style state via the view itself.
+        var swiftApp = SwiftProgram.CreateSwiftApp();
+        Content = new SwiftDotNetSkiaView(swiftApp.CreateRoot(), swiftApp.Services);
+
+        // Keep the Shiny resolution result visible in the page title — the point of this sample is that
+        // the Skia UI and Shiny's plugins come out of the same MAUI ServiceProvider.
+        Title = $"SwiftDotNet · Skia — {status}";
     }
 }
 

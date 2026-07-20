@@ -53,7 +53,43 @@ The reusable host base is `SwiftDotNetActivity : ComponentActivity` (a `Componen
 - Minor UX: the app currently shows both the Activity `ActionBar` and the Compose `TopAppBar` in nav
   (disable the ActionBar via theme). `ColorPicker` cycles a palette on tap (no native Android color picker).
 
+### Modifier behaviour
+
+- **`.Repeating()` animations** use `rememberInfiniteTransition` + `infiniteRepeatable` (for `-1`) or
+  `repeatable` with `RepeatMode.Reverse`/`Restart`. Like Web and Skia, a repeating animation pulses
+  **opacity** 1 → 0.4 — the wire carries no from/to pair, so every backend agrees on that one convention.
+  Consequence: `BadgeView.Pulse` reads as an opacity pulse rather than a size pulse (its `.ScaleEffect(1.0)`
+  is identity), and `SkeletonView`'s shimmer is a fading static gradient, not a travelling highlight. A
+  `spring` curve combined with a repeat degrades to a tween — springs have no duration and can't feed
+  `infiniteRepeatable`.
+- **`Image.FromUrl`** loads dependency-free (coroutine + `URL.openConnection` + `BitmapFactory`, cached by
+  URL in-process). No Coil dependency was added. **The bridge AAR's manifest declares
+  `android.permission.INTERNET`**, which merges into every consuming app. No disk cache, no downsampling,
+  no in-flight dedup — two nodes with the same URL fetch twice before the first caches.
+- **`.Material` is a translucent tint, not a backdrop blur — and this is deliberate.** `Modifier.blur` /
+  `RenderEffect.createBlurEffect` blur a composable's *own content*, whereas `.Material` is a SwiftUI
+  *backdrop* blur. Using them would smear the node's children, which is worse than the tint. Real backdrop
+  blur on Android needs `Window.setBackgroundBlurRadius`, which is window-level and can't be expressed
+  per-node.
+
+### `CameraView` and `Map` are not in the AAR
+
+[`native/camera/CameraRenderer.kt`](../../native/camera/CameraRenderer.kt) and
+[`native/maps/MapRenderer.kt`](../../native/maps/MapRenderer.kt) sit **outside**
+`native/SwiftDotNetComposeBridge/src/main/kotlin/`, the only source root the AAR compiles, and
+`build.gradle.kts` declares neither a `sourceSets` block nor the CameraX / ML Kit / MapLibre dependencies
+their headers require. Both files are authored but **not shipped** — confirmed by their absence from
+`classes.jar`. Pulling them in means adding those dependencies to the bridge AAR that every consumer would
+then carry, which is a design decision, not a build fix.
+
 ## Maps
 
-A Compose/MapLibre renderer lives in [`native/maps`](../../native/maps) (`MapRenderer.kt`); it registers via
-the same native `registerRenderer` seam. See [Maps](../maps.md).
+A Compose/MapLibre renderer is **authored** in [`native/maps`](../../native/maps) (`MapRenderer.kt`) against
+the same native `registerRenderer` seam, but it is not compiled into the bridge AAR — see
+[above](#cameraview-and-map-are-not-in-the-aar). See [Maps](../maps.md).
+
+## Hot reload
+
+🧩 **Expected, not run** (needs an emulator). `dotnet watch run -f net10.0-android` should work with no
+extra setup — the Kotlin shim is not involved, since a reload arrives as an ordinary `replace` patch. See
+[Hot Reload](../hot-reload.md).

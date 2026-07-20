@@ -49,12 +49,14 @@ public sealed class ContentView : View
 
 Full docs live in **[`docs/`](docs/README.md)**. Quick links:
 
-- **[Getting Started](docs/getting-started.md)** · **[Architecture](docs/architecture.md)**
+- **[Getting Started](docs/getting-started.md)** · **[Architecture](docs/architecture.md)** ·
+  **[Hot Reload](docs/hot-reload.md)**
 - **[Hosting & Dependency Injection](docs/hosting-and-di.md)** — `SwiftProgram.CreateSwiftApp()`, `[Inject]`, lifecycle
 - Authoring: **[Views & Controls](docs/views-and-controls.md)** ·
   **[Modifiers, Gestures & Animation](docs/modifiers-gestures-animation.md)** ·
   **[State & Binding](docs/state-and-binding.md)** · **[Collection View](docs/collection-view.md)** ·
-  **[Global Styles](docs/global-styles.md)** · **[Custom Controls](docs/custom-controls.md)**
+  **[Global Styles](docs/global-styles.md)** · **[Custom Controls](docs/custom-controls.md)** ·
+  **[Controls Library](docs/controls-library.md)**
 - Backends: **[Overview](docs/backends/README.md)** · [Apple](docs/backends/apple.md) ·
   [Android](docs/backends/android.md) · [Linux/GTK](docs/backends/linux-gtk.md) ·
   [Windows](docs/backends/windows.md) · [Web](docs/backends/web.md) · [Skia](docs/backends/skia.md)
@@ -103,15 +105,17 @@ Two ways to add your own control:
   release — add one call per direction). Each maps to the platform's native recognizer
   (SwiftUI `onLongPressGesture`/`MagnifyGesture`-family, Compose `detectTapGestures`/`detectDragGestures`,
   WinUI `Holding`/`ManipulationCompleted`, GTK `GestureLongPress`/`GestureSwipe`, Web Pointer Events) and
-  fires back through the same event channel as `.OnTapGesture`. Continuous pan/pinch (a `Transformable`
-  binding) is a later phase — see [the gestures plan](plans/gestures-and-transforms-plan.md).
+  fires back through the same event channel as `.OnTapGesture`. Continuous pan/pinch has since landed as
+  `.OnDrag` / `.OnMagnify` — see
+  [Modifiers, Gestures & Animation](docs/modifiers-gestures-animation.md#continuous-drag-and-pinch).
 - **Animation**: `.Animation(AnimationSpec, on: <value>)` — implicit animation that interpolates a view's
   animatable modifiers (opacity, frame size, …) when the `on:` value changes, mirroring SwiftUI's
   `.animation(_:value:)`. Specs via `Anim.Linear/EaseIn/EaseOut/EaseInOut(duration)` and `Anim.Spring()`.
   Maps to real native animation — SwiftUI `.animation`, Compose `animateContentSize`/`animateFloatAsState`,
   WinUI theme transitions, GTK/Web CSS `transition`; springs are native where available and degrade to a
-  bezier (Web) or ease-in-out (GTK). Explicit `Animate.Run` transactions and enter/leave `.Transition(…)`
-  are later phases — see [the animations plan](plans/animations-plan.md).
+  bezier (Web) or ease-in-out (GTK). `.Repeating()` adds self-playing loops (shimmer/pulse). Explicit
+  `Animate.Run` transactions and enter/leave `.Transition(…)` are later phases — see the
+  [Roadmap](docs/roadmap.md).
 - **Alignment**: `VStack.Alignment(HorizontalAlignment)`, `HStack.Alignment(VerticalAlignment)`,
   `ZStack.Alignment(Alignment)`; colors also via `Color.Hex("#RRGGBB")`
 - **Maps** (opt-in companion library): `new Map(cameraState).Pins(…).Polylines(…).OnTap(…)` renders a
@@ -119,7 +123,7 @@ Two ways to add your own control:
   as separate packages so the SDK weight stays opt-in and Core stays dependency-free: `SwiftDotNet.Maps`
   (the view + data types), `SwiftDotNet.Maps.Web` (MapLibre, built & verified), plus Swift/Kotlin renderers
   in [`native/maps`](native/maps) for Apple/Android. A platform with no map renderer shows the standard
-  `⚠️` placeholder. Phase 1 (static pins/polylines + tap-to-draw) — see [the maps plan](plans/maps-plan.md).
+  `⚠️` placeholder. Phase 1 (static pins/polylines + tap-to-draw) — see [Maps](docs/maps.md).
 
 ## Global styles
 

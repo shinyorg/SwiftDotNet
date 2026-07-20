@@ -8,12 +8,20 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.DurationBasedAnimationSpec
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.repeatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -58,6 +66,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -166,6 +176,50 @@ private fun <T> animSpec(mod: Map<String, Any?>): FiniteAnimationSpec<T> {
     )
 }
 
+// The repeat path needs a *duration-based* spec (`spring` has no duration and can't be repeated), so a
+// spring curve degrades to the equivalent tween here. The per-cycle delay is expressed as the repeatable's
+// `initialStartOffset` instead of a tween delay so it applies once, not on every iteration.
+private fun repeatCycleSpec(mod: Map<String, Any?>): DurationBasedAnimationSpec<Float> = tween(
+    durationMillis = (((numOf(mod["duration"]) ?: 0.3) * 1000).toInt()).coerceAtLeast(1),
+    easing = easingFor(mod["curve"] as? String),
+)
+
+// F4 repeat: a wire `animation` modifier carrying `repeatCount` is self-playing (shimmer/pulse) — it has no
+// external trigger, so it drives its own 0→1 fraction on the composition clock. -1 = forever
+// (`rememberInfiniteTransition`), otherwise a finite `repeatable` run once on first composition.
+// `autoreverse` yo-yos each cycle (RepeatMode.Reverse) instead of snapping back (RepeatMode.Restart).
+@Composable
+private fun repeatFraction(mod: Map<String, Any?>, repeatCount: Double): Float {
+    val mode = if ((mod["autoreverse"] as? String) == "true") RepeatMode.Reverse else RepeatMode.Restart
+    val cycle = repeatCycleSpec(mod)
+    val offset = StartOffset(((numOf(mod["delay"]) ?: 0.0) * 1000).toInt().coerceAtLeast(0))
+    if (repeatCount < 0) {
+        val transition = rememberInfiniteTransition(label = "sdnRepeat")
+        return transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(animation = cycle, repeatMode = mode, initialStartOffset = offset),
+            label = "sdnRepeatFraction",
+        ).value
+    }
+    val anim = remember(mod) { Animatable(0f) }
+    LaunchedEffect(mod) {
+        anim.animateTo(
+            targetValue = 1f,
+            animationSpec = repeatable(
+                iterations = repeatCount.toInt().coerceAtLeast(1),
+                animation = cycle,
+                repeatMode = mode,
+                initialStartOffset = offset,
+            ),
+        )
+    }
+    return anim.value
+}
+
+// The floor of the repeating opacity pulse — mirrors the Web backend's `sdn-pulse` keyframes (1 → .4).
+private const val PulseMinAlpha = 0.4f
+
 private fun VNode.s(key: String): String = props[key]?.toString() ?: ""
 private fun VNode.n(key: String): Double? = numOf(props[key])
 private fun VNode.b(key: String): Boolean = props[key] as? Boolean ?: false
@@ -228,14 +282,37 @@ private fun gradientBrushFor(spec: String): Brush? {
     }
 }
 
-// F3 raster: decode bytes/file into a Bitmap and show it; an SF-Symbol name falls back to an emoji glyph.
-// (Remote URLs need an async image loader like Coil, not a bridge dependency — documented gap on Android.)
+// Process-wide memo of decoded remote images so recomposition (or a list re-scroll) doesn't refetch. Held
+// strongly and never evicted — the bridge only shows the handful of URLs the tree references at once.
+private val remoteImageCache = java.util.Collections.synchronizedMap(HashMap<String, android.graphics.Bitmap>())
+
+/**
+ * Fetches and decodes a remote image off the main thread, keyed by URL. Deliberately dependency-free
+ * (`URLConnection` + `BitmapFactory`) rather than pulling Coil into the bridge AAR. Any failure — bad URL,
+ * offline, non-image payload — resolves to `null` so the caller shows its placeholder instead of throwing.
+ */
+@Composable
+private fun remoteBitmap(url: String): android.graphics.Bitmap? =
+    produceState<android.graphics.Bitmap?>(initialValue = remoteImageCache[url], key1 = url) {
+        if (value != null) return@produceState
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                val conn = java.net.URL(url).openConnection()
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                conn.getInputStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+            }.getOrNull()?.also { remoteImageCache[url] = it }
+        }
+    }.value
+
+// F3 raster: decode bytes/file/url into a Bitmap and show it; an SF-Symbol name falls back to an emoji glyph.
 @Composable
 private fun RasterImage(node: VNode) {
     val scale = if (node.s("contentMode") == "fill") ContentScale.Crop else ContentScale.Fit
     val bytesProp = node.s("bytes")
     val fileProp = node.s("file")
-    val bitmap = remember(bytesProp, fileProp) {
+    val urlProp = node.s("url")
+    val local = remember(bytesProp, fileProp) {
         runCatching {
             when {
                 bytesProp.isNotEmpty() -> {
@@ -247,6 +324,8 @@ private fun RasterImage(node: VNode) {
             }
         }.getOrNull()
     }
+    // Inline sources win; a URL loads asynchronously and shows the placeholder until it lands (or fails).
+    val bitmap = local ?: if (urlProp.isNotEmpty()) remoteBitmap(urlProp) else null
     if (bitmap != null) {
         Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, contentScale = scale)
     } else {
@@ -320,7 +399,9 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
 
     // Phase-1 implicit animation: `animateContentSize` covers frame/layout, and opacity is animated via
     // `animateFloatAsState`. Scale/offset/color animation on Compose is a follow-up (they still snap).
+    // A spec carrying `repeatCount` is a self-playing loop instead — see `repeatFraction`.
     val animMod = node.modifiers.firstOrNull { (it["type"] as? String) == "animation" }
+    val repeatCount = animMod?.let { numOf(it["repeatCount"]) }
     var targetAlpha: Float? = null
 
     for (mod in node.modifiers) {
@@ -343,8 +424,11 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                 else colorFor(mod["value"] as? String)?.let { m = m.background(it) }
             }
             "material" -> {
-                // F6: RenderEffect backdrop blur is API-31+ and awkward to wire generically → translucent
-                // tint fallback (documented degradation).
+                // F6: still a translucent tint (documented degradation). `Modifier.blur` / RenderEffect
+                // (API 31+) blur a composable's *own* content, but `.material()` is a SwiftUI *backdrop*
+                // blur — applying either here would smear the node's children instead of what's behind it.
+                // Real backdrop blur on Android needs Window.setBackgroundBlurRadius (window-level, and
+                // only when the compositor allows cross-window blur), so it can't be done per-node.
                 val tint = when (mod["value"] as? String) {
                     "ultraThin" -> 0.55f; "thin" -> 0.65f; "thick" -> 0.85f; else -> 0.75f
                 }
@@ -452,12 +536,20 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
         }
     }
 
-    if (animMod != null) m = m.animateContentSize(animationSpec = animSpec(animMod))
-    if (targetAlpha != null) {
-        val alpha = if (animMod != null)
-            animateFloatAsState(targetValue = targetAlpha!!, animationSpec = animSpec(animMod), label = "alpha").value
-        else targetAlpha!!
-        m = m.alpha(alpha)
+    if (animMod != null && repeatCount != null) {
+        // Self-playing loop: the wire carries no from/to pair, so the cycle fades opacity down to
+        // `PulseMinAlpha` and back — the same generic pulse the Web backend's `sdn-pulse` keyframes apply.
+        // Any explicit `.opacity()` in the chain scales the pulse rather than being overwritten.
+        val base = targetAlpha ?: 1f
+        m = m.alpha(base * (1f - (1f - PulseMinAlpha) * repeatFraction(animMod, repeatCount)))
+    } else {
+        if (animMod != null) m = m.animateContentSize(animationSpec = animSpec(animMod))
+        if (targetAlpha != null) {
+            val alpha = if (animMod != null)
+                animateFloatAsState(targetValue = targetAlpha!!, animationSpec = animSpec(animMod), label = "alpha").value
+            else targetAlpha!!
+            m = m.alpha(alpha)
+        }
     }
 
     Box(modifier = m, contentAlignment = boxAlignment) {

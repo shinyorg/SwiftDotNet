@@ -195,11 +195,25 @@ sealed partial class SkiaNode
     string? _animCurve;
     float _fromO = 1, _toO = 1, _fromH, _toH;
 
+    // F4 repeating animation (shimmer/pulse): self-playing, no trigger. Matches the Web backend's
+    // `sdn-pulse` keyframes so the effect reads identically everywhere — opacity oscillates between the
+    // resting value and PulseFloor, autoreversing (yo-yo) or restarting each cycle.
+    const float PulseFloor = 0.4f;
+    double _pulsePhase;          // 0..1 position within the current cycle
+    int _pulseDir = 1;           // +1 forward, -1 reversing (autoreverse only)
+    int _pulseCycles;            // completed cycles, for a finite repeatCount
+    bool _pulseDone;
+
+    int? RepeatCount => MNull(Mod("animation"), "repeatCount") is { } rc ? (int)rc : null;
+    bool AutoReverse => Mod("animation")?.GetValueOrDefault("autoreverse") as string == "true";
+    bool Repeating => RepeatCount is not null && !_pulseDone;
+
     // Detect a trigger change and (re)arm interpolation of the animatable props (opacity, frame height).
     void UpdateAnimation()
     {
         var anim = Mod("animation");
         if (anim is null) return;
+        if (RepeatCount is not null) { _animDur = Math.Max(0.05, MNull(anim, "duration") ?? 0.3); _animCurve = anim.GetValueOrDefault("curve") as string; return; }
         var trig = anim.GetValueOrDefault("trigger") as string ?? "";
         var targetO = (float)(MNull(Mod("opacity"), "amount") ?? 1);
         var targetH = (float)(MNull(Mod("frame"), "height") ?? 0);
@@ -228,17 +242,50 @@ sealed partial class SkiaNode
         };
     }
 
-    float AnimO => Mod("animation") is null ? RawOpacity : _fromO + (_toO - _fromO) * Ease(_animT);
+    float AnimO
+    {
+        get
+        {
+            if (Mod("animation") is null) return RawOpacity;
+            if (RepeatCount is not null) return RawOpacity * (1 - (1 - PulseFloor) * Ease(_pulsePhase));
+            return _fromO + (_toO - _fromO) * Ease(_animT);
+        }
+    }
     float AnimH => _fromH + (_toH - _fromH) * Ease(_animT);
-    bool Animating => Mod("animation") is not null && _animT < 1;
+    bool Animating => Mod("animation") is not null && (Repeating || _animT < 1);
 
     /// <summary>Advance this node's animation clock by <paramref name="dt"/>s; returns true while still animating.</summary>
     public bool Tick(double dt)
     {
         var active = false;
-        if (Mod("animation") is not null && _animT < 1) { _animT = Math.Min(1, _animT + dt / _animDur); active = true; }
+        if (Mod("animation") is not null)
+        {
+            if (RepeatCount is { } repeat)
+            {
+                if (!_pulseDone) { AdvancePulse(dt, repeat); active = true; }
+            }
+            else if (_animT < 1) { _animT = Math.Min(1, _animT + dt / _animDur); active = true; }
+        }
         foreach (var c in Children) active |= c.Tick(dt);
         return active;
+    }
+
+    // Free-running oscillator for a repeating animation. autoreverse yo-yos within a cycle; otherwise each
+    // cycle restarts from 0. repeat < 0 runs forever; a finite count settles back to the resting value.
+    void AdvancePulse(double dt, int repeat)
+    {
+        _pulsePhase += _pulseDir * dt / _animDur;
+        if (_pulsePhase is >= 0 and <= 1) return;
+
+        if (AutoReverse)
+        {
+            _pulseDir = -_pulseDir;
+            _pulsePhase = Math.Clamp(_pulsePhase, 0, 1);
+            if (_pulseDir > 0) _pulseCycles++;   // a full there-and-back is one cycle
+        }
+        else { _pulsePhase = 0; _pulseCycles++; }
+
+        if (repeat >= 0 && _pulseCycles >= repeat) { _pulseDone = true; _pulsePhase = 0; _pulseDir = 1; }
     }
 
     public SKSize Measure(SKSize available)
@@ -277,7 +324,11 @@ sealed partial class SkiaNode
             case "Link":
                 return MeasureText(Str("title"), Font());
             case "Image":
-                return MeasureText(SkiaTheme.Icon(Str("system")), IconFont(22));
+                // An SF Symbol measures as its glyph. A raster image carries `contentMode` (set by every
+                // non-system Image factory) and is *greedy* — it fills the space offered, same convention as
+                // shapes, with a .Frame overriding. Measuring it as a glyph collapsed unframed raster images
+                // (e.g. the Controls ImageViewer's full-screen image) to nothing.
+                return HasProp("contentMode") ? inner : MeasureText(SkiaTheme.Icon(Str("system")), IconFont(22));
             case "Label":
                 return MeasureText(SkiaTheme.Icon(Str("systemImage")) + "  " + Str("title"), Font());
             case "Divider":
@@ -1004,10 +1055,14 @@ sealed partial class SkiaNode
     }
 
     // F3 raster: decode once and cache (keyed by the source string) so paint doesn't decode per frame.
+    // bytes/file decode synchronously; url goes through SkiaImageLoader's async cache and paints as soon
+    // as the fetch lands (the loader invalidates the bridge, which schedules the repaint).
     SKImage? _rasterImage;
     string? _rasterKey;
     internal SKImage? RasterImage()
     {
+        if (HasProp("url")) return SkiaImageLoader.Get(Str("url"), _bridge);
+
         var src = HasProp("bytes") ? "b:" + Str("bytes")
                 : HasProp("file") ? "f:" + Str("file")
                 : null;

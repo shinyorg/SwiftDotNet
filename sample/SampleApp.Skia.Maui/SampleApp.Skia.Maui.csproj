@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Mac Catalyst verified locally; iOS/Android/Windows add the same MauiProgram once the repo-wide
-         iOS Swift-bridge import + AndroidX version reconciliation are in place. -->
-    <TargetFrameworks>net10.0-maccatalyst</TargetFrameworks>
+    <!-- iOS + Mac Catalyst verified locally on a simulator/desktop. Android/Windows add the same
+         MauiProgram once the AndroidX version reconciliation is in place. -->
+    <TargetFrameworks>net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <UseMaui>true</UseMaui>
     <SingleProject>true</SingleProject>
@@ -23,6 +23,12 @@
     <ProjectReference Include="..\..\src\SwiftDotNet.Skia.Maui\SwiftDotNet.Skia.Maui.csproj" />
     <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
   </ItemGroup>
+
+  <!-- On the iOS TFM the app's ProjectReference graph resolves SwiftDotNet to its *net10.0-ios* slice,
+       which carries the SwiftUI bridge's P/Invokes (swiftdotnet_render, …). The Skia backend never calls
+       them, but the native linker still has to resolve the symbols, and NativeReference items don't flow
+       transitively — so the app that produces the final binary must declare the xcframework itself. -->
+  <Import Project="..\..\src\SwiftDotNet\SwiftDotNetBridge.targets" />
 
   <!-- Shiny: MAUI hosting + a flagship cross-platform plugin (BluetoothLE) to prove shared DI. -->
   <ItemGroup Condition="'$(NoShiny)' != 'true'">

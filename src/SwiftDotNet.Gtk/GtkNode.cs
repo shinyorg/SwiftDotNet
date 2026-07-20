@@ -13,7 +13,14 @@ sealed class GtkNode
     public Dictionary<string, object?> Props { get; private set; } = new();
     public List<Dictionary<string, object?>> Modifiers { get; private set; } = new();
     public List<GtkNode> Children { get; } = new();
+
+    /// <summary>The widget this node contributes to its parent — normally <see cref="_content"/>, but the
+    /// wrapping <c>Gtk.Fixed</c> once a scale/rotation transform is applied (see <see cref="SyncTransform"/>).</summary>
     public Gtk.Widget Widget { get; private set; } = null!;
+
+    /// <summary>The widget <see cref="CreateWidget"/> produced. Prop-sync casts and child hosting target
+    /// this, not <see cref="Widget"/>, so a transform wrapper stays invisible to the rest of the node.</summary>
+    Gtk.Widget _content = null!;
 
     GtkBridge _bridge = null!;
     Gtk.CssProvider? _cssProvider;
@@ -45,7 +52,7 @@ sealed class GtkNode
 
         if (node.Type == "NavigationStack") bridge.NavStack.Pop();
 
-        node.Widget = node.CreateWidget();
+        node.Widget = node._content = node.CreateWidget();
         node.ApplyModifiers();
         return node;
     }
@@ -157,7 +164,19 @@ sealed class GtkNode
         var overlay = Gtk.Overlay.New();
         if (Children.Count > 0) overlay.SetChild(Children[0].Widget);
         for (var i = 1; i < Children.Count; i++) overlay.AddOverlay(Children[i].Widget);
+        SyncZStackAlignment();
         return overlay;
+    }
+
+    /// <summary>ZStack's <c>alignment</c> prop → per-child Halign/Valign on the Overlay. Gtk.Overlay honours
+    /// each child's own alignment (that's how it positions overlays), so the 2-D token maps directly. Only
+    /// the axes the token names are constrained — see <see cref="GtkStyle.ApplyAlignment"/>. This is what
+    /// makes the Controls library's Overlay/OverlayHost (Toast, Dialog, LoadingOverlay, FloatingPanel,
+    /// ImageViewer, DurationPicker) actually land at OverlayPosition.Bottom/Top instead of centring.</summary>
+    void SyncZStackAlignment()
+    {
+        var token = Props.GetValueOrDefault("alignment") as string;
+        foreach (var c in Children) GtkStyle.ApplyAlignment(c.Widget, token);
     }
 
     Gtk.Widget MakeScroll()
@@ -489,13 +508,55 @@ sealed class GtkNode
         return box;
     }
 
-    // F3 raster: load a real bitmap into a Gtk.Picture from a file path or PNG bytes; an SF-Symbol name
-    // falls back to the emoji glyph. (Remote URLs aren't fetched synchronously here — a documented gap;
-    // pass file/bytes on GTK.)
+    /// <summary>Shared fetcher for <c>Image.FromUrl</c> — one connection pool for the whole app.</summary>
+    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
+
+    /// <summary>Decoded textures keyed by URL. Only ever touched on the GTK main loop (the cache write
+    /// happens inside the idle callback), so it needs no lock.</summary>
+    static readonly Dictionary<string, Gdk.Texture> TextureCache = new();
+
+    /// <summary>
+    /// Fetches <paramref name="url"/> off the UI thread, decodes it to a <c>Gdk.Texture</c>, and hands it to
+    /// <paramref name="target"/> back on the GTK main loop (GTK widgets are not thread-safe). Any failure —
+    /// DNS, HTTP status, timeout, undecodable payload — is swallowed and the Picture simply stays empty, so
+    /// the caller's own placeholder shows through; it never throws and never faults an unobserved task.
+    /// </summary>
+    static void LoadUrlAsync(string url, Gtk.Picture target)
+    {
+        _ = Task.Run(async () =>
+        {
+            byte[] bytes;
+            try { bytes = await Http.GetByteArrayAsync(url).ConfigureAwait(false); }
+            catch { return; }
+            GLib.Functions.IdleAdd(GLib.Constants.PRIORITY_DEFAULT_IDLE, () =>
+            {
+                try
+                {
+                    if (!TextureCache.TryGetValue(url, out var tex))
+                        TextureCache[url] = tex = Gdk.Texture.NewFromBytes(GLib.Bytes.New(bytes));
+                    target.SetPaintable(tex);
+                }
+                catch { /* undecodable payload → leave the Picture empty */ }
+                return false;   // one-shot
+            });
+        });
+    }
+
+    // F3 raster: load a real bitmap into a Gtk.Picture from a URL, a file path, or PNG bytes; an SF-Symbol
+    // name falls back to the emoji glyph. A URL is fetched asynchronously (see LoadUrlAsync) and cached by
+    // URL string, so the widget renders empty for one frame and then fills in.
     Gtk.Widget MakeImage()
     {
         try
         {
+            if (Props.GetValueOrDefault("url") is string url && url.Length > 0)
+            {
+                var pic = Gtk.Picture.New();
+                pic.ContentFit = Str("contentMode") == "fill" ? Gtk.ContentFit.Cover : Gtk.ContentFit.Contain;
+                if (TextureCache.TryGetValue(url, out var cached)) pic.SetPaintable(cached);
+                else LoadUrlAsync(url, pic);
+                return pic;
+            }
             if (Props.GetValueOrDefault("file") is string file && file.Length > 0)
             {
                 var pic = Gtk.Picture.NewForFilename(file);
@@ -554,7 +615,8 @@ sealed class GtkNode
         var box = Gtk.Box.New(Gtk.Orientation.Vertical, 0);
         box.SetSizeRequest(40, 40);
         // Fill + radius are applied via CSS in ApplyModifiers (foregroundColor → background for shapes).
-        AddCss(box, $"border-radius:{cornerRadius.ToString(CultureInfo.InvariantCulture)}px;", shapeFill: true);
+        _cssClass ??= "sdn-" + System.Threading.Interlocked.Increment(ref _cssSeq);
+        AddCss(box, $"border-radius:{cornerRadius.ToString(CultureInfo.InvariantCulture)}px;", keyframes: "");
         return box;
     }
 
@@ -586,8 +648,7 @@ sealed class GtkNode
                     break;
                 case "scaleEffect":
                 case "rotation":
-                    // GTK4 has no generic per-widget scale/rotate transform — documented no-op (F4).
-                    // (`offset` IS supported, via a CSS margin translation applied in GtkStyle.BuildCss.)
+                    // Handled together after the loop — both fold into one Gsk transform. See SyncTransform.
                     break;
                 case "onTapGesture":
                     if (m.GetValueOrDefault("event") is string ev)
@@ -647,24 +708,87 @@ sealed class GtkNode
             }
         }
 
-        var css = GtkStyle.BuildCss(Modifiers, shapeFill: IsShape);
-        if (css.Length > 0) AddCss(w, css, IsShape);
+        SyncTransform();
+        ApplyCss();
     }
+
+    /// <summary>Rebuild this node's CSS (visual modifiers + any repeating-animation keyframes).</summary>
+    void ApplyCss()
+    {
+        _cssClass ??= "sdn-" + System.Threading.Interlocked.Increment(ref _cssSeq);
+        var body = GtkStyle.BuildCss(Modifiers, shapeFill: IsShape, loopName: _cssClass + "-loop");
+        var keyframes = GtkStyle.BuildKeyframes(Modifiers, _cssClass + "-loop");
+        if (body.Length == 0 && keyframes.Length == 0) return;
+        AddCss(_content, body, keyframes);
+    }
+
+    // ---- F4 transforms: .ScaleEffect / .Rotation ------------------------------
+    //
+    // GTK4 widgets carry no transform property, but Gtk.Fixed can apply an arbitrary GskTransform to a
+    // child (gtk_fixed_set_child_transform). So a transformed node wraps its content in a Gtk.Fixed, which
+    // becomes the widget the *parent* sees — everything else in this class keeps talking to `_content`, so
+    // the wrapper stays invisible. This is why prop-sync casts target `_content` rather than `Widget`.
+    Gtk.Fixed? _transformHost;
+
+    void SyncTransform()
+    {
+        var scale = Mod("scaleEffect");
+        var rotation = Mod("rotation");
+        if (scale is null && rotation is null) return;
+
+        if (_transformHost is null)
+        {
+            _transformHost = Gtk.Fixed.New();
+            _transformHost.Put(_content, 0, 0);
+            Widget = _transformHost;
+            // The anchor depends on the allocated size, which isn't known until the first layout pass —
+            // recompute whenever it changes, otherwise a scale/rotate would pivot around a stale centre.
+            _content.OnMap += (_, _) => ApplyTransform();
+            _content.OnNotify += (_, a) => { if (a.Pspec.GetName() is "width-request" or "height-request") ApplyTransform(); };
+        }
+        ApplyTransform();
+    }
+
+    void ApplyTransform()
+    {
+        if (_transformHost is null) return;
+
+        var scale = Mod("scaleEffect");
+        var rotation = Mod("rotation");
+        double w = Math.Max(1, _content.GetWidth());
+        double h = Math.Max(1, _content.GetHeight());
+
+        // Both modifiers carry their pivot as an Alignment token in `value`; scaleEffect wins if they
+        // disagree, matching the order the DSL applies them.
+        var (ax, ay) = GtkStyle.AnchorPoint((scale ?? rotation)?.GetValueOrDefault("value") as string, w, h);
+
+        // translate(anchor) · rotate · scale · translate(-anchor) — pivot about the anchor, not the origin.
+        // Gir.Core types every Gsk.Transform combinator as nullable (the C API returns NULL for the identity
+        // transform); the null-forgiving operators just carry the chain through that.
+        var t = Gsk.Transform.New()!.Translate(new Graphene.Point { X = (float)ax, Y = (float)ay })!;
+        if (rotation is not null) t = t.Rotate((float)(Num(rotation, "degrees") ?? 0))!;
+        if (scale is not null) t = t.Scale((float)(Num(scale, "x") ?? 1), (float)(Num(scale, "y") ?? 1))!;
+        t = t.Translate(new Graphene.Point { X = (float)-ax, Y = (float)-ay })!;
+
+        _transformHost.SetChildTransform(_content, t);
+    }
+
+    Dictionary<string, object?>? Mod(string type) => Modifiers.FirstOrDefault(m => m["type"] as string == type);
 
     bool IsShape => Type is "Rectangle" or "Circle" or "Capsule" or "RoundedRectangle";
 
-    void AddCss(Gtk.Widget w, string body, bool shapeFill)
+    void AddCss(Gtk.Widget w, string body, string keyframes)
     {
-        _cssClass ??= "sdn-" + System.Threading.Interlocked.Increment(ref _cssSeq);
         if (_cssProvider is null)
         {
             _cssProvider = Gtk.CssProvider.New();
             var display = Gdk.Display.GetDefault();
             if (display is not null)
                 Gtk.StyleContext.AddProviderForDisplay(display, _cssProvider, 800);
-            w.AddCssClass(_cssClass);
+            w.AddCssClass(_cssClass!);
         }
-        _cssProvider.LoadFromString($".{_cssClass} {{ {body} }}");
+        // Keyframes must sit alongside the rule, not inside it — one provider carries both for this node.
+        _cssProvider.LoadFromString($"{keyframes} .{_cssClass} {{ {body} }}");
     }
 
     // ---- patch application ---------------------------------------------------
@@ -674,27 +798,30 @@ sealed class GtkNode
         Props = ReadDict(props);
         Modifiers = ReadDictArray(modifiers);
 
+        // Casts target _content, not Widget: a transformed node's Widget is the Gtk.Fixed wrapper.
         switch (Type)
         {
-            case "Text": ((Gtk.Label)Widget).SetText(Str("text")); break;
-            case "Button": ((Gtk.Button)Widget).SetLabel(Str("title")); break;
+            case "Text": ((Gtk.Label)_content).SetText(Str("text")); break;
+            case "Button": ((Gtk.Button)_content).SetLabel(Str("title")); break;
             case "Toggle": SyncToggle(); break;
             case "Slider": SyncSlider(); break;
             case "Sheet": SyncSheet(); break;
             case "Alert": SyncAlert(); break;
-            case "DisclosureGroup": ((Gtk.Expander)Widget).SetExpanded(Bool("expanded")); break;
+            case "DisclosureGroup": ((Gtk.Expander)_content).SetExpanded(Bool("expanded")); break;
             case "TabView": SyncTabView(); break;
-            default: _customRenderer?.Update(Widget, RenderCtx()); break;
+            case "ZStack": SyncZStackAlignment(); break;
+            default: _customRenderer?.Update(_content, RenderCtx()); break;
         }
 
-        // Re-apply CSS-driven modifiers (fill/border/etc. may have changed).
-        var css = GtkStyle.BuildCss(Modifiers, IsShape);
-        if (css.Length > 0) AddCss(Widget, css, IsShape);
+        // Re-apply CSS-driven modifiers (fill/border/etc. may have changed) and any transform, whose
+        // amount is itself animatable (BadgeView pulses .ScaleEffect).
+        SyncTransform();
+        ApplyCss();
     }
 
     void SyncToggle()
     {
-        var sw = (Gtk.Switch)((Gtk.Box)Widget).GetLastChild()!;
+        var sw = (Gtk.Switch)((Gtk.Box)_content).GetLastChild()!;
         if (sw.GetActive() != Bool("value")) sw.SetActive(Bool("value"));
     }
 
