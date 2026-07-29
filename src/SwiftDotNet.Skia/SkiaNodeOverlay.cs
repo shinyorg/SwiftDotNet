@@ -10,13 +10,14 @@ namespace SwiftDotNet;
 /// </summary>
 sealed partial class SkiaNode
 {
-    SKRect _menuRect, _sheetPanel, _alertBox, _alertOk, _navBack;
+    SKRect _menuRect, _sheetPanel, _alertBox, _alertOk, _navBack, _swatchRect;
 
     internal bool HasActiveOverlay => Type switch
     {
         "Sheet" => Bool("presented") && Children.Count > 1,
         "Alert" => Bool("presented"),
         "Menu" => MenuOpen,
+        "ColorPicker" => MenuOpen,
         "NavigationStack" => PushedContent is not null,
         _ => false,
     };
@@ -28,6 +29,7 @@ sealed partial class SkiaNode
             case "Sheet": PaintSheet(canvas, window, dark); break;
             case "Alert": PaintAlert(canvas, window, dark); break;
             case "Menu": PaintMenu(canvas, window, dark); break;
+            case "ColorPicker": PaintSwatches(canvas, window, dark); break;
             case "NavigationStack": PaintPushed(canvas, window, dark); break;
         }
     }
@@ -48,6 +50,20 @@ sealed partial class SkiaNode
                 {
                     var idx = (int)((p.Y - _menuRect.Top - 6) / 40);
                     if (idx >= 0 && idx < Children.Count) { MenuOpen = false; _bridge.Emit(Children[idx].Id, null); }
+                }
+                else MenuOpen = false; // tap outside closes
+                return true;
+            case "ColorPicker":
+                if (_swatchRect.Contains(p))
+                {
+                    var col = (int)((p.X - _swatchRect.Left - SwatchPad) / SwatchStride);
+                    var row = (int)((p.Y - _swatchRect.Top - SwatchPad) / SwatchStride);
+                    var idx = row * SwatchColumns + col;
+                    if (col >= 0 && col < SwatchColumns && idx >= 0 && idx < Palette.Length)
+                    {
+                        MenuOpen = false;
+                        _bridge.Emit(Id, Palette[idx]);
+                    }
                 }
                 else MenuOpen = false; // tap outside closes
                 return true;
@@ -77,6 +93,16 @@ sealed partial class SkiaNode
         // Alert and Menu are engine-drawn chrome with no gesture-bearing content subtree.
         _ => null,
     };
+
+    /// <summary>
+    /// The content subtrees this node presents, for the overlay walk. These hang off the node rather than
+    /// living in <see cref="Children"/>, so anything *they* present needs collecting separately.
+    /// </summary>
+    internal IEnumerable<SkiaNode> OverlayContentRoots()
+    {
+        if (Type == "NavigationStack" && PushedContent is { } pushed) yield return pushed;
+        if (Type == "Sheet" && Bool("presented") && Children.Count > 1) yield return Children[1];
+    }
 
     static void Scrim(SKCanvas canvas, SKRect window)
     {
@@ -144,6 +170,66 @@ sealed partial class SkiaNode
                 canvas.DrawLine(_menuRect.Left + 12, ry, _menuRect.Right - 12, ry, sep);
             SkiaText.DrawLine(canvas, Children[i].Str("title"), _menuRect.Left + 14, ry + 26, font, dark ? SKColors.White : SKColors.Black);
         }
+    }
+
+    // Swatch popover geometry, shared by paint and hit-test so a tap always lands on what was drawn.
+    internal const int SwatchColumns = 4;
+    const float SwatchSize = 44, SwatchGap = 8, SwatchPad = 12;
+    const float SwatchStride = SwatchSize + SwatchGap;
+
+    /// <summary>
+    /// The built-in ColorPicker's popover: the palette as a grid of tappable swatches, with the current
+    /// one ringed. It used to advance blindly to the next palette entry on each tap, which is technically
+    /// "working" and reads as broken — you cannot choose a colour, only cycle past it.
+    /// </summary>
+    void PaintSwatches(SKCanvas canvas, SKRect window, bool dark)
+    {
+        var rows = (Palette.Length + SwatchColumns - 1) / SwatchColumns;
+        var w = SwatchColumns * SwatchStride - SwatchGap + SwatchPad * 2;
+        var h = rows * SwatchStride - SwatchGap + SwatchPad * 2;
+        var top = Math.Min(_content.Bottom + 4, window.Bottom - h - 8);
+        var left = Math.Max(8, Math.Min(_content.Right - w, window.Right - w - 8));
+        _swatchRect = new SKRect(left, top, left + w, top + h);
+
+        using var panel = new SKPaint
+        {
+            Color = SkiaTheme.Surface(dark),
+            IsAntialias = true,
+            ImageFilter = SKImageFilter.CreateDropShadow(0, 4, 8, 8, new SKColor(0, 0, 0, 60)),
+        };
+        canvas.DrawRoundRect(_swatchRect, 12, 12, panel);
+
+        var current = Str("value");
+        for (var i = 0; i < Palette.Length; i++)
+        {
+            var cx = _swatchRect.Left + SwatchPad + i % SwatchColumns * SwatchStride;
+            var cy = _swatchRect.Top + SwatchPad + i / SwatchColumns * SwatchStride;
+            var cell = new SKRect(cx, cy, cx + SwatchSize, cy + SwatchSize);
+
+            using var fill = new SKPaint { Color = SkiaTheme.Color(Palette[i], dark), IsAntialias = true };
+            canvas.DrawRoundRect(cell, 10, 10, fill);
+
+            if (!string.Equals(Palette[i], current, StringComparison.OrdinalIgnoreCase)) continue;
+            using var ring = new SKPaint
+            {
+                Color = dark ? SKColors.White : SKColors.Black,
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 3,
+            };
+            canvas.DrawRoundRect(SKRect.Inflate(cell, 3, 3), 13, 13, ring);
+        }
+    }
+
+    /// <summary>Centre of a laid-out swatch in the open popover. For tests/tooling.</summary>
+    internal bool TryGetSwatchCenter(int index, out SKPoint center)
+    {
+        center = default;
+        if (Type != "ColorPicker" || !MenuOpen || index < 0 || index >= Palette.Length) return false;
+        center = new SKPoint(
+            _swatchRect.Left + SwatchPad + index % SwatchColumns * SwatchStride + SwatchSize / 2,
+            _swatchRect.Top + SwatchPad + index / SwatchColumns * SwatchStride + SwatchSize / 2);
+        return true;
     }
 
     void PaintPushed(SKCanvas canvas, SKRect window, bool dark)

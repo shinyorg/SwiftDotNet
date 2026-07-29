@@ -5,8 +5,8 @@ SkiaSharp, using **no native controls**. It's a from-scratch UI toolkit that own
 scrolling, overlays, input/focus, an animation clock, and an icon font, rendering the *whole* shared
 [`ContentView`](../../sample/SharedUI/ContentView.cs) **identically on every OS**.
 
-- **Shipped & verified** (headless PNG + interactive macOS window): renders all tabs identically to the
-  native backends.
+- **Shipped & verified** (headless PNG, interactive macOS window, iOS simulator and Android emulator via the
+  MAUI host): renders all tabs identically to the native backends.
 
 ## Why it exists
 
@@ -61,6 +61,49 @@ capture stack, so the sample registers an honest viewfinder placeholder rather t
 registered renderer it would paint the generic "⚠️ unknown view" box, which reads as a bug rather than an
 unsupported capability.
 
+#### What a finger needs that a mouse got for free
+
+A self-drawing backend has no toolkit recognizers *and*, on a touch host, no wheel. Three interactions
+therefore have to be resolved from the raw pointer stream, and until they were, they read as dead controls:
+
+| Interaction | How it resolves | Why it was inert |
+|---|---|---|
+| **Scroll** | `SkiaBridge.BeginPan` / `PanScroll` — the innermost scrollable under the press, panned 1:1 once the finger passes `TapSlop` | Scrolling only ever arrived via `Scroll(point, dy)`, which a host raises from a **wheel**. A touch host has none, so a long `Form` could not be scrolled at all. |
+| **Slider drag** | `SkiaBridge.BeginScrub` / `Scrub` — captures a continuous control and tracks the finger, keeping it even once the finger leaves its bounds | The drag path keys off an **`.OnDrag` modifier**, which the Controls library's sliders carry but the built-in `Slider` does not — it was tap-to-set only. Worse than "drag does nothing": passing `TapSlop` also cancels the tap, so dragging a slider left it exactly where it started. |
+| **Text entry** | The host raises a real IME off `SkiaBridge.FocusChanged` (below) | The engine tracked focus and had `InsertText`, but nothing raised a keyboard, so tapping a field only blinked a caret. |
+
+Only *continuous* controls scrub. Stepper / Picker / DatePicker / ColorPicker are discrete and stay
+tap-driven, or a press-and-drag would fire them once per pointer-move event. Covered by
+[`SkiaTouchScrubTests`](../../tests/SwiftDotNet.Tests/SkiaTouchScrubTests.cs).
+
+The **`ColorPicker`** opens a swatch popover (engine-local, like a `Menu`) with the current colour ringed.
+It used to advance blindly to the next palette entry per tap, which is indistinguishable from a broken
+control — you could step past the colour you wanted but never choose it.
+
+Presentations *inside* an overlay's content — a `Menu` or that colour popover on a **pushed nav page**, a
+sheet from within a sheet — are composited too. They were previously dropped: the overlay walk only
+descended through `Children`, and an overlay's content subtree hangs off the node instead.
+
+#### Soft keyboard (MAUI hosts)
+
+A canvas cannot raise a keyboard; only a focused native text input can. So `SwiftDotNetSkiaView` is a
+`ContentView` wrapping the canvas **plus a 1×1 transparent `Entry`**, focused whenever the engine focuses a
+text control:
+
+```csharp
+bridge.FocusChanged += id => { … id is null ? entry.Unfocus() : entry.Focus(); };  // engine → IME
+entry.TextChanged  += (_, e) => bridge.SetFocusedText(e.NewTextValue ?? "");        // IME → engine
+```
+
+Text crosses as the **whole string**, not keystrokes — that is the only form that survives autocorrect,
+dictation, paste and selection edits. `SecureField` sets `IsPassword`; `TextEditor` gets a return key
+instead of Done.
+
+> **Gotcha:** the shadow entry must **not** be `InputTransparent`. On iOS that maps to
+> `UserInteractionEnabled = false`, and a view that cannot be interacted with cannot become first
+> responder — `Focus()` silently returns `false` and no keyboard ever appears. (Android allows the
+> programmatic focus either way, so this fails on exactly one platform.)
+
 #### Gestures: hosts must wire the pointer router
 
 Making the controls **interactive** did need something, and it's easy to miss. The controls that respond to a
@@ -83,6 +126,10 @@ router.Up(point, timeSeconds);
 router.Poll(timeSeconds);
 ```
 
+The router resolves a press in order of specificity: an `.OnDrag` node → a continuous control to scrub →
+a scrollable to pan → tap / long-press / swipe. A host that feeds it gets all of them; a host that
+forwards only taps gets only taps.
+
 Hosts with a real pinch recognizer forward it to `router.Pinch(...)`; hosts without one get ctrl+wheel /
 trackpad zoom from `router.PinchDelta(...)`. All three in-repo hosts are wired. Behaviour is covered by
 [`SkiaPointerRouterTests`](../../tests/SwiftDotNet.Tests/SkiaPointerRouterTests.cs) (the router takes an
@@ -97,16 +144,8 @@ The engine is host-agnostic via `ISkiaHost`. Available hosts:
 | **Headless** | [`sample/SampleApp.Skia`](../../sample/SampleApp.Skia) | Console harness → PNGs; `-- <dir> anim` renders animation frames. Walks the whole flyout, including every controls page. |
 | **macOS / AppKit** | [`sample/SampleApp.Skia.Mac`](../../sample/SampleApp.Skia.Mac) | Interactive `NSView` blits the scene; mouse/scroll/keyboard → router → bridge; `NSTimer(1/60)` drives both the animation clock and `router.Poll`. Real trackpad pinch via `MagnifyWithEvent`; ⌃-scroll zooms on a mouse. |
 | **Silk.NET desktop** | [`sample/SampleApp.Skia.Silk`](../../sample/SampleApp.Skia.Silk) | Silk.NET (GLFW) window + GL context; SkiaSharp draws to a GL-backed surface. Dependency-free cross-platform desktop; base for embedded/framebuffer Linux. GLFW has no pinch event, so zoom is ctrl+wheel. |
-| **MAUI + Shiny** | [`src/SwiftDotNet.Skia.Maui`](../../src/SwiftDotNet.Skia.Maui) + [`sample/SampleApp.Skia.Maui`](../../sample/SampleApp.Skia.Maui) | `SwiftDotNetSkiaView : SKCanvasView`; composes with **Shiny** via `.UseSkiaSharp().UseShiny()` — Skia UI + Shiny plugins share one DI container. Real two-finger pinch via MAUI's `PinchGestureRecognizer`. Targets `net10.0-ios;net10.0-maccatalyst`. ⚠️ **State-driven repaint is broken on this host** — see below. |
+| **MAUI + Shiny** | [`src/SwiftDotNet.Skia.Maui`](../../src/SwiftDotNet.Skia.Maui) + [`sample/SampleApp.Skia.Maui`](../../sample/SampleApp.Skia.Maui) | `SwiftDotNetSkiaView` (a `ContentView` over an `SKCanvasView` + a shadow `Entry` for the soft keyboard); composes with **Shiny** via `.UseSkiaSharp().UseShiny()` — Skia UI + Shiny plugins share one DI container. Real two-finger pinch via MAUI's `PinchGestureRecognizer`. Targets `net10.0-ios;net10.0-maccatalyst;net10.0-android` (+ `net10.0-windows…` when built on Windows). ✅ Verified on the **iOS simulator** and the **Android emulator**: full sample renders; nav push/pop; finger scrolling; slider drag; colour-picker popover; soft keyboard typing into a bound `TextField`; state round-trips repaint. |
 
-> ⚠️ **Known defect — the MAUI host does not repaint on state change.** Run on an iOS simulator, the tree
-> paints and engine-local input works (nav push/pop), but nothing driven by a C# `State<T>` change ever
-> reaches the screen. Touches arrive with correct coordinates, the frame clock runs, and `Emit` reaches
-> Core's handler with a live `UIKitSynchronizationContext` — so the break is after the event and before
-> the canvas. The AppKit and Silk hosts are unaffected. Leading suspect is `SwiftApp`'s static singleton
-> state being rebound by a second `SwiftDotNetSkiaView`. Triage steps and hypotheses:
-> [`plans/skia-maui-host-plan.md`](../../plans/skia-maui-host-plan.md).
->
 > An iOS app hosting this view must also `<Import>` [`SwiftDotNetBridge.targets`](../../src/SwiftDotNet/SwiftDotNetBridge.targets)
 > — the app's ProjectReference graph resolves `SwiftDotNet` to its iOS slice, whose Swift-bridge P/Invokes
 > the native linker must resolve even though the Skia route never calls them.
@@ -134,18 +173,35 @@ The engine is host-agnostic via `ISkiaHost`. Available hosts:
 - `Picker`/`Menu` etc. must **not** paint their non-visual children (options/actions) — they'd land at (0,0).
 - The overlay walk must **respect TabView selection**, or a presentation in a hidden tab bleeds onto the
   visible one.
-- **MAUI + Shiny blocker (not a code defect):** a MAUI workload version gap — Shiny 5.2.3 wants
-  `Microsoft.Maui.Core 10.0.80` but the installed workload is 10.0.20, causing a runtime
-  `TypeLoadException: Page vtable failed to initialize`. Fix: `dotnet workload update`. Meanwhile
-  `-p:NoShiny=true` builds/runs without Shiny.
+- **MAUI's two halves must be pinned to one version.** Since .NET 8, `<UseMaui>true</UseMaui>` no longer
+  implies the package references (warning `MA002`), so the workload supplies `Microsoft.Maui.Controls.Core`
+  at the manifest version while a transitive dependency (Shiny 5.2.3 → `Microsoft.Maui.Core 10.0.80`) floats
+  the *other* half higher. Nothing fails at build time; the app dies at **launch** with
+  `TypeLoadException: VTable setup of type Microsoft.Maui.Controls.Page failed`. Both the host library and
+  the sample head therefore reference `Microsoft.Maui.Controls` explicitly. This was previously mis-recorded
+  here as a workload gap needing `dotnet workload update` — it is a version-pinning problem in the project.
+- **Switching `-p:NoShiny=true` on or off needs a clean.** The `.app` directory is patched incrementally, so
+  assemblies from the previous configuration stay behind and mix with the new ones — which produces exactly
+  the same `Page` vtable `TypeLoadException` and looks like the bug above. `rm -rf bin obj` first.
+- **Android is a three-way AndroidX negotiation.** An app on the Skia MAUI host pulls MAUI's AndroidX graph
+  *and*, through `SwiftDotNet`'s android slice, the Compose backend's — so the Compose pins in
+  [`SwiftDotNet.csproj`](../../src/SwiftDotNet/SwiftDotNet.csproj) are not free to drift (they carry a
+  comment saying so). Two constraints, both discovered the hard way: `Activity.Compose` must be ≥ 1.10.1
+  (older ones pin `Activity.Ktx` below what MAUI's `Fragment.Ktx` needs → `NU1107`), and the Compose set must
+  be ≥ 1.10 (before that, `androidx.compose.runtime.Immutable` lives in the runtime AAR, and MAUI's
+  `NavigationEvent` → `Compose.Runtime.Annotation` ships it too → a **D8 duplicate-class** failure, not a
+  NuGet one). Separately, MAUI 10.0.x's own graph is internally unsatisfiable on Android — `Glide` →
+  `Fragment 1.8.9.3` wants `Lifecycle.LiveData.Core >= 2.11.0.1` while `Microsoft.Maui.Core` pins
+  `LiveData 2.9.2.1` — so the host library takes a direct `LiveData`/`LiveData.Core` reference to break it.
 - **Mac Catalyst launch:** launch via `open` (LaunchServices), not by exec'ing the Mach-O (direct exec fails
   Catalyst env setup). Release builds trim MAUI types → run Debug for dev.
 
 ## Next
 
-Accessibility bridge; `WebView`/`Map` native-overlay punch-through; real keyboard IME + slider-drag polish;
-dirty-rect repaint; iOS/Android MAUI TFMs (after the repo-wide bridge/AndroidX reconciliation). See the
-[Roadmap](../roadmap.md).
+Accessibility bridge; `WebView`/`Map` native-overlay punch-through; caret placement and selection (the IME
+replaces the whole string, so you always edit at the end); keyboard-avoidance (the engine does not know how
+much of the canvas the keyboard covers); fling/inertia and rubber-banding on a pan; dirty-rect repaint; the
+Windows MAUI head (needs a Windows machine to build). See the [Roadmap](../roadmap.md).
 
 ## Hot reload
 

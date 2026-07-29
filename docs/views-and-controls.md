@@ -56,6 +56,11 @@ Every input binds to a `State<T>` and round-trips through the [event channel](ar
 
 See **[State & Data Binding](state-and-binding.md)** for how the two-way sync works.
 
+**Skia note.** The self-drawing backend has no OS pickers, so it draws its own. `Slider` scrubs under a
+finger; `ColorPicker` opens a swatch popover over a fixed 7-colour palette (the system pickers on the
+native backends give you the full spectrum). `Stepper`, `Picker` and `DatePicker` are engine-drawn and
+tap-driven. See [Skia backend](backends/skia.md#what-a-finger-needs-that-a-mouse-got-for-free).
+
 ## Display
 
 | View | Notes |

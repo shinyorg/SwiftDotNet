@@ -58,7 +58,7 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 | Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop |
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded — **never compiled**, no tests |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
-| **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp)** | ✅ Verified (macOS window + headless PNG) |
+| **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp)** | ✅ Verified (macOS window, Silk.NET desktop, headless PNG, and iOS sim + Android emulator via the MAUI host) |
 
 > The top-level [`README.md`](../README.md) is the marketing/overview entry point; these docs are the
 > reference. When they disagree, the docs are authoritative for detail and the README for the pitch.

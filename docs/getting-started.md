@@ -110,7 +110,19 @@ dotnet build sample/SampleApp.Skia.Mac -c Release   # then launch the .app
 
 # Dependency-free desktop (Windows/macOS/Linux) via Silk.NET + OpenGL
 dotnet run --project sample/SampleApp.Skia.Silk
+
+# Mobile, via the MAUI host (iOS simulator / Android emulator)
+dotnet build sample/SampleApp.Skia.Maui -f net10.0-ios -p:RuntimeIdentifier=iossimulator-arm64
+xcrun simctl install booted sample/SampleApp.Skia.Maui/bin/Debug/net10.0-ios/iossimulator-arm64/SampleApp.Skia.Maui.app
+xcrun simctl launch --console-pty booted com.swiftdotnet.skia.maui
+
+dotnet build sample/SampleApp.Skia.Maui -f net10.0-android -t:Install   # then launch from the launcher
 ```
+
+`-p:NoShiny=true` builds the MAUI sample without the Shiny plugins. **Toggling that flag needs a clean**
+(`rm -rf sample/SampleApp.Skia.Maui/bin sample/SampleApp.Skia.Maui/obj`) — the app bundle is patched
+incrementally, so assemblies from the previous configuration linger and the app dies at launch with
+`TypeLoadException: VTable setup of type Microsoft.Maui.Controls.Page failed`.
 
 ## Hot reload
 

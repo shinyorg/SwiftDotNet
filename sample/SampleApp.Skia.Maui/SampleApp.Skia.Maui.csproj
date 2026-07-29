@@ -1,9 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- iOS + Mac Catalyst verified locally on a simulator/desktop. Android/Windows add the same
-         MauiProgram once the AndroidX version reconciliation is in place. -->
-    <TargetFrameworks>net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
+    <!-- One MauiProgram, three heads. Windows needs Windows to build, so it is added conditionally. -->
+    <TargetFrameworks>net10.0-ios;net10.0-maccatalyst;net10.0-android</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <UseMaui>true</UseMaui>
     <SingleProject>true</SingleProject>
@@ -15,8 +14,18 @@
     <ApplicationId>com.swiftdotnet.skia.maui</ApplicationId>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
-    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
     <DefineConstants Condition="'$(NoShiny)' == 'true'">$(DefineConstants);NO_SHINY</DefineConstants>
+    <!-- The one MAUI version this head pins (see the Microsoft.Maui.Controls reference below). Must be
+         >= the highest Microsoft.Maui.Core any dependency asks for, or NuGet floats the halves apart. -->
+    <SwiftDotNetMauiVersion>10.0.80</SwiftDotNetMauiVersion>
+  </PropertyGroup>
+
+  <!-- Per-head minimums: an iOS/Catalyst version string, an Android API level. -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('-ios')) Or $(TargetFramework.Contains('-maccatalyst'))">
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework.Contains('-android'))">
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,6 +43,16 @@
   <ItemGroup Condition="'$(NoShiny)' != 'true'">
     <PackageReference Include="Shiny.Hosting.Maui" Version="5.2.3" />
     <PackageReference Include="Shiny.BluetoothLE" Version="5.2.3" />
+  </ItemGroup>
+
+  <!-- MAUI's two halves must be the SAME version. Since .NET 8, <UseMaui> no longer implies package
+       references (warning MA002): the workload supplies Microsoft.Maui.Controls.Core at the manifest's
+       version, while a transitive dependency (Shiny 5.2.3 → Microsoft.Maui.Core 10.0.80) can float the
+       *other* half higher. The halves then disagree and the app dies at launch with
+       `TypeLoadException: VTable setup of type Microsoft.Maui.Controls.Page failed`. Referencing
+       Microsoft.Maui.Controls explicitly pins both halves together. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="$(SwiftDotNetMauiVersion)" />
   </ItemGroup>
 
 </Project>

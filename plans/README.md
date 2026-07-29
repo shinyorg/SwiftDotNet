@@ -17,7 +17,7 @@ plan, removed 2026-07-19 — see [Skia backend](../docs/backends/skia.md)).
 | [Controls: missing framework features](controls-missing-features-plan.md) | **Partially shipped** | Wave A done; F7 collections, F8 drawing canvas, F10 services, F11 geometry |
 | [Controls library](controls-library-plan.md) | **Partially shipped** | VirtualizedGrid, ~8 cell types, Compose/WinUI camera renderers; camera not device-verified |
 | [Safe area insets](safe-area-insets-plan.md) | **Implemented, unverified** | Device/simulator run (notched iOS sim + Android 15 emulator); RTL reconciliation; a sample that uses it; decide on the `SafeAreaRegions` name collision with MAUI. Docs: [Safe area](../docs/modifiers-gestures-animation.md#safe-area-ios--android-only) |
-| [Skia MAUI host](skia-maui-host-plan.md) | **iOS runs; repaint broken** | 🐞 **Live defect** — no C# state change repaints on the MAUI host. Triage step 1 is one logging run. Docs: [Skia](../docs/backends/skia.md) |
+| [Skia MAUI host](skia-maui-host-plan.md) | **Resolved** — iOS + Android verified, incl. touch scroll / slider / soft keyboard | Caret placement & selection; keyboard avoidance; pan inertia; automated coverage of the MAUI adapter; the Windows head. The "repaint defect" was a *sample* bug (a rebuilt stateful child), not a host bug. Docs: [Skia](../docs/backends/skia.md) |
 | [Navigation service](navigation-service-plan.md) | ⏸ **Paused** | Everything. Would be the first consumer of `ViewScope` (built, no caller) |
 | [View construction seam](view-construction-seam.md) | Draft | Decision 1 — adopt the function form (`Text()` vs `new Text()`)? The `[Inject]` generator it once owned already shipped |
 | [Windows / Scenes (multi-window)](windows-plan.md) | Draft — nothing built | Step 0 is de-singletoning `SwiftApp`; then the Swift shim host-handle refactor |
@@ -41,8 +41,8 @@ Nothing has started on it. It is the single highest-leverage piece of unbuilt fr
 ## Second cross-cutting milestone: de-singletoning `SwiftApp`
 
 `SwiftApp` keeps `_bridge`, `_lastTree` and `_uiContext` in statics, so exactly one view tree can be live
-per process. [Windows / Scenes](windows-plan.md) names this as its Step 0, and it now has a **concrete
-bug driving it** rather than only a hypothetical multi-window requirement: the
-[Skia MAUI host](skia-maui-host-plan.md) defect is best explained by a second host view rebinding those
-statics away from the view that is actually on screen. Fixing that defect properly is the first slice of
-this milestone — and unlike the reconciliation milestone above, it is small and well-scoped.
+per process. [Windows / Scenes](windows-plan.md) names this as its Step 0. It is small and well-scoped, but
+it has **no concrete bug driving it** — the [Skia MAUI host](skia-maui-host-plan.md) defect was once
+attributed to a second host view rebinding those statics, and instrumentation on a simulator disproved that
+(`Run` was called exactly once; the real cause was a rebuilt stateful child in the sample). The motivation
+is multi-window, and multi-window alone.

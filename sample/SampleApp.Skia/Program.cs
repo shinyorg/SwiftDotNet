@@ -57,6 +57,18 @@ Shot("flyout_menu");
 
 // A page from each section (rows visible without scrolling: Controls, Interaction, Layout, Media).
 Page("0.0.0.1", "page_values");     // Controls → Values & Steppers
+
+// The ColorPicker's swatch popover: push Values & Steppers, open the picker, choose a swatch. Worth a
+// shot of its own because the popover is engine-drawn chrome — no node hit-tests it, so a regression
+// here is invisible in the page screenshot above.
+Render();
+TapId("0.0.0.1");                                       // push the page
+Render();
+TapId("0.0.0.1.1.6");                                   // ColorPicker row (ScrollView child 6) → open
+Shot("page_values_colorpicker");
+if (bridge.TryGetSwatchCenter("0.0.0.1.1.6", 4, out var swatch)) host.Tap(swatch.X, swatch.Y);
+Shot("page_values_colorpicked");
+Back();
 Page("0.0.0.2", "page_rating");     // Controls → Rating
 Page("0.0.1.0", "page_gestures");   // Interaction → Gestures
 Page("0.0.2.0", "page_shapes");     // Layout → Shapes & Grid
@@ -89,7 +101,10 @@ Back();                             // pop back to the menu before the next push
 Render();
 TapId("0.0.1.1");                   // Interaction → Animation
 Render();
-TapId("0.0.1.1.1.1");               // tap the Expand/Collapse button (ScrollView → Title(0), Button(1))
+// Tap the Expand/Collapse button. Destination = <link>.1, then the ScrollView's children are
+// Title(0), "Height & opacity"(1), Button(2) — an off-by-one here taps a Text and silently does nothing,
+// which is invisible in a PNG unless you look at the button's own label.
+TapId("0.0.1.1.1.2");
 Shot("page_animation_t0");
 host.Advance(0.12); Render(); Shot("page_animation_t1");
 host.Advance(0.60); Render(); Shot("page_animation_settled");

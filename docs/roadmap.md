@@ -67,8 +67,10 @@ underlying native view (`.Tag` + per-backend `Customize` registries).
 
 - **Windows** — compile + verify the WinUI 3 backend on a Windows host (expect minor API fixes). See
   [Windows backend](backends/windows.md).
-- **Skia** — accessibility bridge; `WebView`/`Map` native-overlay punch-through; real keyboard IME; dirty-rect
-  repaint; iOS/Android MAUI TFMs after the repo-wide bridge/AndroidX reconciliation. See
+- **Skia** — accessibility bridge; `WebView`/`Map` native-overlay punch-through; caret placement and
+  selection (the IME replaces the whole string, so edits always land at the end); keyboard avoidance; pan
+  inertia/rubber-banding; dirty-rect repaint; the Windows MAUI head. The iOS/Android MAUI TFMs, the AndroidX
+  reconciliation, finger scrolling, slider scrubbing and the soft keyboard have landed. See
   [Skia backend](backends/skia.md).
 - **Collection View** — true windowed streaming (WinUI/GTK/Web); Web pull-refresh/load-more/windowing (needs
   JS-interop `scrollTop`); Swift load-more wiring. See [Collection View → Deferred](collection-view.md#deferred).

@@ -59,13 +59,20 @@
   <!-- Apple (iOS/macOS/tvOS): the Swift/SwiftUI bridge NativeReference (internal ItemGroup is TFM-gated). -->
   <Import Project="SwiftDotNetBridge.targets" />
 
-  <!-- Android: the Compose bridge AAR + Compose runtime. -->
+  <!-- Android: the Compose bridge AAR + Compose runtime.
+
+       These versions are not free-floating: they have to agree with what .NET MAUI's AndroidX graph
+       asks for, because the Skia MAUI host (SwiftDotNet.Skia.Maui) puts both in one app. MAUI pulls
+       Xamarin.AndroidX.Activity.Ktx >= 1.10.1.3 (via Navigation.Fragment → Fragment.Ktx), and
+       Activity.Compose pins Activity.Ktx to an exact minor — so an Activity.Compose older than 1.10.1
+       makes the two graphs unsatisfiable (NU1107) and Android can host Compose or MAUI, never both.
+       Keep Activity.Compose >= 1.10.1.x when bumping. -->
   <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'android'">
     <AndroidLibrary Include="$(MSBuildThisFileDirectory)..\..\build\SwiftDotNetComposeBridge.aar" Bind="true" />
-    <PackageReference Include="Xamarin.AndroidX.Compose.Ui" Version="1.7.6.1" />
-    <PackageReference Include="Xamarin.AndroidX.Compose.Foundation" Version="1.7.6.1" />
-    <PackageReference Include="Xamarin.AndroidX.Compose.Material3" Version="1.3.1" />
-    <PackageReference Include="Xamarin.AndroidX.Activity.Compose" Version="1.9.3.2" />
+    <PackageReference Include="Xamarin.AndroidX.Compose.Ui" Version="1.11.4" />
+    <PackageReference Include="Xamarin.AndroidX.Compose.Foundation" Version="1.11.4" />
+    <PackageReference Include="Xamarin.AndroidX.Compose.Material3" Version="1.4.0.3" />
+    <PackageReference Include="Xamarin.AndroidX.Activity.Compose" Version="1.13.0.1" />
   </ItemGroup>
 
   <!-- Windows: WinUI 3 / Windows App SDK. -->

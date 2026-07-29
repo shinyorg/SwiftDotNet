@@ -908,11 +908,10 @@ sealed partial class SkiaNode
                 Emit((Num("value") ?? 0) + 86400);
                 break;
             case "ColorPicker":
-            {
-                var idx = Array.IndexOf(Palette, Str("value"));
-                _bridge.Emit(Id, Palette[(idx + 1 + Palette.Length) % Palette.Length]);
+                // Open the swatch popover (engine-local, like a Menu) rather than blind-cycling the
+                // palette — you have to be able to *choose* a colour, not just step past it.
+                MenuOpen = !MenuOpen;
                 break;
-            }
         }
     }
 
@@ -964,6 +963,26 @@ sealed partial class SkiaNode
     }
 
     internal string? ModEvent(string modType) => Mod(modType)?.GetValueOrDefault("event") as string;
+
+    /// <summary>
+    /// Find the innermost <em>continuously</em> scrubbable control under a point — today just
+    /// <c>Slider</c>, the one built-in whose value is a position rather than a step. Discrete controls
+    /// (Stepper/Picker/DatePicker/ColorPicker) deliberately do not qualify: they advance once per tap, so
+    /// letting a finger drag them would fire them once per pointer-move event.
+    /// </summary>
+    internal SkiaNode? ScrubbableAt(SKPoint p)
+    {
+        if (!Frame.Contains(p)) return null;
+        for (var i = Children.Count - 1; i >= 0; i--)
+        {
+            if (Type == "TabView" && i != _tabIndex) continue;
+            if (Children[i].ScrubbableAt(p) is { } inner) return inner;
+        }
+        return Type is "Slider" && !IsDisabled ? this : null;
+    }
+
+    /// <summary>Set a scrubbable control's value from a pointer position (the same math a tap uses).</summary>
+    internal void ScrubTo(SKPoint p) => ControlTap(p);
 
     /// <summary>Children that are actually on screen (a TabView shows only its selected tab) — for the overlay walk.</summary>
     internal IEnumerable<SkiaNode> VisibleOverlayChildren()

@@ -83,11 +83,41 @@ unchanged report is dropped without scheduling anything. See
 For list data, `List.ForEach(items, id, row)` provides **keyed identity** so reorders/insert/remove diff
 cheaply instead of looking like N in-place updates. See **[Collection View](collection-view.md)**.
 
+## Gotcha: a view that owns state must be *held*, not rebuilt
+
+`Body` runs on **every render pass**, and a `View` written inline inside it is a **new object each pass** —
+so its `State<T>` fields are new too, back at their initial values. A parent must therefore *hold* any child
+that owns state:
+
+```csharp
+public sealed class RootView : View
+{
+    readonly ContentView _content = new();               // ✅ held — its State survives a render
+
+    public override View Body => new OverlayHost(_content);
+}
+
+// ❌ Every render builds a fresh ContentView, so every State<T> on it resets to its initial value.
+public override View Body => new OverlayHost(new ContentView());
+```
+
+The failure is **silent, and it looks like a host bug**: the event reaches C#, the handler runs and assigns
+the state, a render is scheduled and runs — but it builds a fresh child, so the tree it produces is identical
+to the previous one, the diff is empty, and *nothing at all* reaches the screen. Engine-local interactions
+(a nav push, a tab switch) keep working, which makes it read as "the backend stopped repainting".
+
+This is exactly how it was first mis-diagnosed — as a repaint defect in the
+[Skia MAUI host](backends/skia.md#hosts) — when in fact it reproduced on every backend, including the
+headless Skia harness. Views built inline are also why `OnCreated`/`OnAppearing` only fire for retained
+views; see [Custom controls](custom-controls.md).
+
+Stateless composites (`OverlayHost`, layout wrappers) are fine to rebuild. Pinned by
+[`RetainedChildStateTests`](../tests/SwiftDotNet.Tests/RetainedChildStateTests.cs).
+
 ## Current limitations
 
-- **Render batching:** writing `State.Value` currently renders immediately per set (a batching pass is
-  planned — it's a prerequisite for explicit animation transactions).
-- **Per-view local state:** child composite views don't yet retain local state across renders — that waits on
-  the per-view reconciliation milestone.
+- **Per-view local state:** child composite views don't retain local state across renders — a view that owns
+  state must be held by whoever builds it (above). Lifting that restriction is the **view-instance
+  reconciliation** milestone; see [`plans/README.md`](../plans/README.md).
 
-Both are tracked in the **[Roadmap](roadmap.md)**.
+Tracked in the **[Roadmap](roadmap.md)**.

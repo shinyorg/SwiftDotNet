@@ -23,7 +23,36 @@ public sealed class SkiaBridge : IBridge
     internal Stack<SkiaNode> NavStack { get; } = new();
 
     /// <summary>Node id of the control with keyboard focus (a text field/editor), or null.</summary>
-    public string? FocusedId { get; internal set; }
+    public string? FocusedId
+    {
+        get => _focusedId;
+        internal set
+        {
+            if (_focusedId == value) return;
+            _focusedId = value;
+            FocusChanged?.Invoke(value);
+        }
+    }
+    string? _focusedId;
+
+    /// <summary>
+    /// Raised when keyboard focus moves to a text control (its node id) or away from one (null). A host
+    /// with a soft keyboard hangs off this: the engine decides *what* is focused, the host decides how to
+    /// raise an IME for it. Desktop hosts that already own a hardware keyboard can ignore it.
+    /// </summary>
+    public event Action<string?>? FocusChanged;
+
+    /// <summary>The current text of the focused control, or null when nothing is focused.</summary>
+    public string? FocusedText => FocusedId is { } id ? Find(id)?.TextProp() : null;
+
+    /// <summary>True when the focused control masks its content, so a host can match its IME.</summary>
+    public bool FocusedIsSecure => FocusedId is { } id && Find(id)?.Type == "SecureField";
+
+    /// <summary>True when the focused control accepts newlines (a host should offer a return key, not "done").</summary>
+    public bool FocusedIsMultiline => FocusedId is { } id && Find(id)?.Type == "TextEditor";
+
+    /// <summary>Drop keyboard focus (a host calls this when its IME closes).</summary>
+    public void ClearFocus() => FocusedId = null;
 
     /// <summary>Raised whenever the scene changes (a patch was applied); the host should repaint.</summary>
     public event Action? Invalidate;
@@ -103,6 +132,14 @@ public sealed class SkiaBridge : IBridge
             foreach (var o in Overlays(c))
                 yield return o;
         if (n.HasActiveOverlay) yield return n;
+
+        // An overlay's *content* is a separate subtree (a pushed nav destination, a Sheet's body), so it
+        // is not reached by the Children walk above. Anything it presents in turn — a Menu, a colour
+        // popover, a Sheet from inside a pushed page — has to be collected too, and *after* this node so
+        // it paints above the page that owns it. Without this those presentations silently never appeared.
+        foreach (var c in n.OverlayContentRoots())
+            foreach (var o in Overlays(c))
+                yield return o;
     }
 
     static IEnumerable<SkiaNode> OverlaysTopFirst(SkiaNode n) => Overlays(n).Reverse();
@@ -110,8 +147,17 @@ public sealed class SkiaBridge : IBridge
     /// <summary>Scroll the innermost scrollable under <paramref name="point"/> by <paramref name="dy"/> px.</summary>
     public bool Scroll(SKPoint point, float dy)
     {
-        if (_root?.ScrollableAt(point) is not { } node) return false;
+        // Search the presented overlay first, exactly as gestures do — a pushed nav destination's ScrollView
+        // hangs off the overlay node, not off _root's children, so scrolling a pushed page needs this.
+        if (GestureTarget(point)?.ScrollableAt(point) is not { } node) return false;
+        ScrollBy(node, dy);
+        return true;
+    }
 
+    // Shared by the wheel path (Scroll) and the touch path (PanScroll) so pull-to-refresh and
+    // incremental load fire the same way under a finger as under a wheel.
+    void ScrollBy(SkiaNode node, float dy)
+    {
         // Pull-to-refresh: dragging down while already at the top of a refreshable list.
         if (node.ScrollOffset <= 0 && dy < 0 && node.Props.GetValueOrDefault("refreshable") as bool? == true)
             Emit(node.Id, List.RefreshValue);
@@ -124,7 +170,6 @@ public sealed class SkiaBridge : IBridge
             Emit(node.Id, List.LoadMoreValue);
 
         Invalidate?.Invoke();
-        return true;
     }
 
     /// <summary>The laid-out frame of a node by id (valid after a <see cref="Paint"/> pass). For tests/tooling.</summary>
@@ -194,6 +239,75 @@ public sealed class SkiaBridge : IBridge
         return true;
     }
 
+    // A touch host has no wheel and no toolkit recognizers, so two things a mouse got for free have to be
+    // resolved from the raw pointer stream as well: scrubbing a continuous control, and panning a scroll
+    // view. SkiaPointerRouter tries .OnDrag first, then these, in that order.
+    SkiaNode? _scrubTarget;
+    SkiaNode? _panTarget;
+
+    /// <summary>
+    /// Capture a continuous control (a <c>Slider</c>) under <paramref name="point"/> and set it from that
+    /// position. Returns false when there is none, so the caller can try panning instead.
+    /// </summary>
+    public bool BeginScrub(SKPoint point)
+    {
+        _scrubTarget = GestureTarget(point)?.ScrubbableAt(point);
+        if (_scrubTarget is null) return false;
+        _scrubTarget.ScrubTo(point);
+        Invalidate?.Invoke();
+        return true;
+    }
+
+    /// <summary>Track a live scrub. The captured control keeps it even once the finger leaves its bounds.</summary>
+    public void Scrub(SKPoint point)
+    {
+        if (_scrubTarget is null) return;
+        _scrubTarget.ScrubTo(point);
+        Invalidate?.Invoke();
+    }
+
+    /// <summary>End a scrub started by <see cref="BeginScrub"/>.</summary>
+    public void EndScrub() => _scrubTarget = null;
+
+    /// <summary>
+    /// Capture the innermost scrollable under <paramref name="point"/> for finger panning. Returns false
+    /// when nothing there scrolls. Capturing does <em>not</em> consume the press — the router only starts
+    /// panning once the finger passes its tap slop, so a tap on a row still taps that row.
+    /// </summary>
+    public bool BeginPan(SKPoint point)
+    {
+        _panTarget = GestureTarget(point)?.ScrollableAt(point);
+        return _panTarget is not null;
+    }
+
+    /// <summary>
+    /// Pan the captured scrollable by <paramref name="dy"/> px of content travel (positive scrolls toward
+    /// the end). Kept separate from <see cref="Scroll"/> so a pan sticks to the view it started on rather
+    /// than re-hit-testing under a moving finger.
+    /// </summary>
+    public void PanScroll(float dy)
+    {
+        if (_panTarget is not null) ScrollBy(_panTarget, dy);
+    }
+
+    /// <summary>End a pan started by <see cref="BeginPan"/>.</summary>
+    public void EndPan() => _panTarget = null;
+
+    /// <summary>The scroll offset of a node by id (valid after a <see cref="Paint"/> pass). For tests/tooling.</summary>
+    public float ScrollOffsetOf(string id) => Find(id)?.ScrollOffset ?? 0;
+
+    /// <summary>
+    /// Centre of the <paramref name="index"/>th swatch in an open ColorPicker popover (valid after a
+    /// <see cref="Paint"/> pass). For tests/tooling — the popover is engine-drawn chrome, so there is no
+    /// node to hit-test against.
+    /// </summary>
+    public bool TryGetSwatchCenter(string id, int index, out SKPoint center)
+    {
+        center = default;
+        if (Find(id) is not { } node) return false;
+        return node.TryGetSwatchCenter(index, out center);
+    }
+
     /// <summary>Feed a continuous pinch. <paramref name="phase"/>: begin captures the target; scale is cumulative.</summary>
     public bool Magnify(SKPoint point, GesturePhase phase, float scale)
     {
@@ -210,6 +324,18 @@ public sealed class SkiaBridge : IBridge
     {
         if (FocusedId is null || Find(FocusedId) is not { } node) return;
         Emit(FocusedId, node.TextProp() + s);
+    }
+
+    /// <summary>
+    /// Replace the focused control's whole value. This is what a host backed by a real IME uses — a
+    /// system keyboard reports the *resulting* string (including autocorrect, dictation, paste, and
+    /// selection edits), not the individual keystrokes <see cref="InsertText"/> assumes.
+    /// </summary>
+    public void SetFocusedText(string text)
+    {
+        if (FocusedId is null || Find(FocusedId) is not { } node) return;
+        if (node.TextProp() == text) return;      // echo of our own patch — don't loop
+        Emit(FocusedId, text);
     }
 
     /// <summary>Delete the last character of the focused text control.</summary>

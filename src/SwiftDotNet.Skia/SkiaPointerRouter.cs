@@ -39,30 +39,51 @@ public sealed class SkiaPointerRouter
 
     bool _down;
     bool _dragging;         // a node with .OnDrag captured the press
+    bool _scrubbing;        // a continuous control (Slider) captured the press
+    bool _canPan;           // a scrollable is under the press, waiting for the finger to pass TapSlop
+    bool _panning;          // …and it has: the press is now a scroll, not a tap
     bool _longPressed;      // fired for this press; suppresses the tap on release
     bool _moved;            // travelled past TapSlop
     SKPoint _start;
     SKPoint _last;          // position at _lastTime; release velocity is measured from it
+    SKPoint _lastPan;       // position of the previous pan step; panning is incremental
     double _downTime;
     double _lastTime;
 
-    /// <summary>Pointer pressed. Captures a draggable under the point if there is one.</summary>
+    /// <summary>
+    /// Pointer pressed. Resolves what this press is over, most specific first: a node with
+    /// <c>.OnDrag</c>, else a continuous control to scrub, else a scrollable to pan. The pan is only
+    /// *armed* here — it does not start until the finger passes <see cref="TapSlop"/>, so a press that
+    /// stays put is still a tap on whatever is under it.
+    /// </summary>
     public void Down(SKPoint p, double time)
     {
         _down = true;
         _dragging = false;
+        _scrubbing = false;
+        _canPan = false;
+        _panning = false;
         _longPressed = false;
         _moved = false;
-        _start = _last = p;
+        _start = _last = _lastPan = p;
         _downTime = _lastTime = time;
 
         // Begin the drag eagerly so a press directly on a slider track sets it without waiting for movement
         // (SwiftUI's DragGesture(minimumDistance: 0) semantics, which is what the Controls sliders assume).
         // Returns false when nothing under the point handles .OnDrag — then this press is a tap candidate.
         _dragging = _bridge.Drag(p, GesturePhase.Began, 0, 0, 0, 0);
+        if (_dragging) return;
+
+        // Built-in Slider: same minimumDistance-0 semantics, but it carries no .OnDrag modifier, so the
+        // engine has to recognise it by type. Without this a drag moved the thumb nowhere *and* cancelled
+        // the tap, so sliders read as completely dead under a finger.
+        _scrubbing = _bridge.BeginScrub(p);
+        if (_scrubbing) return;
+
+        _canPan = _bridge.BeginPan(p);
     }
 
-    /// <summary>Pointer moved. Feeds the live drag, or disqualifies the press from being a tap.</summary>
+    /// <summary>Pointer moved. Feeds the live drag/scrub/pan, or disqualifies the press from being a tap.</summary>
     public void Move(SKPoint p, double time)
     {
         if (!_down) return;
@@ -70,7 +91,27 @@ public sealed class SkiaPointerRouter
         if (Distance(p, _start) > TapSlop) _moved = true;
 
         if (_dragging)
+        {
             _bridge.Drag(p, GesturePhase.Changed, p.X - _start.X, p.Y - _start.Y, 0, 0);
+            return;
+        }
+
+        if (_scrubbing)
+        {
+            _bridge.Scrub(p);
+            return;
+        }
+
+        if (!_canPan || !_moved) return;
+
+        // The first step past the slop pans from the *press* point, not from here — anchoring at the
+        // current position would silently swallow that first move's travel, and with a coarse touch
+        // stream that is most of a short flick.
+        if (!_panning) { _panning = true; _lastPan = _start; }
+
+        // Natural touch scrolling: dragging the content up moves it toward the end of the list.
+        _bridge.PanScroll(_lastPan.Y - p.Y);
+        _lastPan = p;
     }
 
     /// <summary>
@@ -92,6 +133,27 @@ public sealed class SkiaPointerRouter
             _dragging = false;
             return;
         }
+
+        if (_scrubbing)
+        {
+            _bridge.Scrub(p);
+            _bridge.EndScrub();
+            _scrubbing = false;
+            return;
+        }
+
+        if (_panning)
+        {
+            // The motion was a scroll — it is neither a tap nor a swipe. Resolving it as a swipe as well
+            // would fire an .OnSwipe on a row the user was only scrolling past.
+            _bridge.PanScroll(_lastPan.Y - p.Y);
+            _bridge.EndPan();
+            _canPan = _panning = false;
+            return;
+        }
+
+        _bridge.EndPan();
+        _canPan = false;
 
         if (_longPressed) return;
 
@@ -115,7 +177,9 @@ public sealed class SkiaPointerRouter
     public void Cancel()
     {
         if (_down && _dragging) _bridge.Drag(_last, GesturePhase.Ended, _last.X - _start.X, _last.Y - _start.Y, 0, 0);
-        _down = _dragging = false;
+        if (_scrubbing) _bridge.EndScrub();
+        if (_canPan) _bridge.EndPan();
+        _down = _dragging = _scrubbing = _canPan = _panning = false;
     }
 
     /// <summary>
@@ -124,7 +188,7 @@ public sealed class SkiaPointerRouter
     /// </summary>
     public void Poll(double time)
     {
-        if (!_down || _dragging || _moved || _longPressed) return;
+        if (!_down || _dragging || _scrubbing || _moved || _longPressed) return;
         if (time - _downTime < LongPressSeconds) return;
         _longPressed = true;
         _bridge.LongPress(_start);
