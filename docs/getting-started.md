@@ -133,9 +133,32 @@ running app — keeping the page you pushed and the text you typed:
 dotnet watch run --project sample/SampleApp.Skia.Silk
 ```
 
-No opt-in is needed in your app code. Apple targets are the exception (they need an IDE and the Mono
-interpreter). See **[Hot Reload](hot-reload.md)** for what reloads, what forces a restart, and the
+No opt-in is needed in your app code. iOS and tvOS are the exception — they need the Mono interpreter and
+a reference to the SDK's delta applier, both behind one property:
+
+```bash
+cd sample/SampleApp
+dotnet watch run -f net10.0-ios --property:SwiftDotNetHotReload=true --device <SIMULATOR-UDID>
+```
+
+See **[Hot Reload](hot-reload.md)** for what reloads, what forces a restart, the Apple recipe, and the
 per-backend status.
+
+## Preview and inspect
+
+Render your views inside an IDE tool window, and watch the live node tree:
+
+```bash
+# an interactive Skia preview of a shared UI project, over a socket
+dotnet run --project src/SwiftDotNet.Preview.Host -- \
+    --assembly sample/SharedUI/bin/Debug/net10.0/SharedUI.dll --port 51799
+
+# the Rider plugin (run configurations per head, inspector, preview)
+cd tooling/rider && ./gradlew runIde
+```
+
+Both work without an IDE — the preview host is an ordinary console app. See
+**[Rider Plugin & Dev Tools](rider-plugin.md)**.
 
 ## Consuming the library in your own app
 

@@ -1,12 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0;net10.0-android</TargetFrameworks>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.EndsWith('-android'))">24</SupportedOSPlatformVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <RootNamespace>SwiftDotNet.Sample</RootNamespace>
   </PropertyGroup>
+
+  <!-- The Android TFM's implicit usings pull in Android.App/Android.Widget, whose Dialog/Toast
+       collide with SwiftDotNet.Controls'. The shared UI only ever means ours. -->
+  <ItemGroup Condition="$(TargetFramework.EndsWith('-android'))">
+    <Using Remove="Android.Widget" />
+    <Using Remove="Android.App" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SwiftDotNet\SwiftDotNet.csproj" />

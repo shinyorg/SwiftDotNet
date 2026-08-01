@@ -1,0 +1,20 @@
+<!--
+  SwiftDotNetPlatform — the declared backend of an app head.
+
+  This is the contract the IDE tooling reads (see tooling/rider) so it never has to *infer* a backend
+  from package references. It is deliberately a plain MSBuild property rather than a custom target
+  framework: see plans/msbuild-sdk-plan.md §1, which found the dependency-picking payoff is available
+  from an ordinary property, while custom TFMs are viral.
+
+  Import this pair from a project, a Directory.Build.props/.targets, or (eventually) SwiftDotNet.Sdk.
+  Paired with SwiftDotNet.Platform.targets, which derives a default and validates the result.
+-->
+<Project>
+
+  <PropertyGroup>
+    <!-- The values the tooling understands. Kept here rather than in the .targets so a project can read
+         the list without having reached the end of evaluation. -->
+    <SwiftDotNetKnownPlatforms>apple;android;gtk;windows;web;skia;skia-maui</SwiftDotNetKnownPlatforms>
+  </PropertyGroup>
+
+</Project>

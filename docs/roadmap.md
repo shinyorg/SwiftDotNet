@@ -63,11 +63,19 @@ reconciliation.
 [`plans/native-view-access-plan.md`](../plans/native-view-access-plan.md) — tag-based access to a control's
 underlying native view (`.Tag` + per-backend `Customize` registries).
 
+### Accessibility & screen readers
+[`plans/accessibility-plan.md`](../plans/accessibility-plan.md) — nothing is built. Ten SwiftUI-style
+modifiers (`.AccessibilityLabel`/`Hint`/`Value`/`Hidden`/traits/grouping/actions), an `Accessibility`
+settings channel over a reserved `$a11y` event id (screen-reader-running, reduce motion, text scale, high
+contrast) in the shape of [`SafeArea`](../src/SwiftDotNet/Core/SafeArea.cs), and — the real gap — a Skia
+accessibility tree with `UIAccessibilityContainer` / `ExploreByTouchHelper` host adapters, since the Skia
+canvas is a single unlabelled rectangle to VoiceOver and TalkBack today.
+
 ## Backend-specific next steps
 
 - **Windows** — compile + verify the WinUI 3 backend on a Windows host (expect minor API fixes). See
   [Windows backend](backends/windows.md).
-- **Skia** — accessibility bridge; `WebView`/`Map` native-overlay punch-through; caret placement and
+- **Skia** — [accessibility bridge](../plans/accessibility-plan.md); `WebView`/`Map` native-overlay punch-through; caret placement and
   selection (the IME replaces the whole string, so edits always land at the end); keyboard avoidance; pan
   inertia/rubber-banding; dirty-rect repaint; the Windows MAUI head. The iOS/Android MAUI TFMs, the AndroidX
   reconciliation, finger scrolling, slider scrubbing and the soft keyboard have landed. See

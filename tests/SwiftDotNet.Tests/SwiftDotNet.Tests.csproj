@@ -23,6 +23,10 @@
         <!-- The ported controls library — pure composition over the core, driven headless in tests. -->
         <ProjectReference Include="..\..\src\SwiftDotNet.Controls\SwiftDotNet.Controls.csproj"/>
         <ProjectReference Include="..\..\src\SwiftDotNet.Controls.Camera\SwiftDotNet.Controls.Camera.csproj"/>
+        <!-- The IDE-facing dev-tools channel (patch tap + socket protocol) and the preview host that
+             rides on it. Both are plain net10.0, so they are testable on the same terms as Skia. -->
+        <ProjectReference Include="..\..\src\SwiftDotNet.DevTools\SwiftDotNet.DevTools.csproj"/>
+        <ProjectReference Include="..\..\src\SwiftDotNet.Preview.Host\SwiftDotNet.Preview.Host.csproj"/>
         <!-- The [Inject] source generator, referenced as an analyzer so the generated IInjectable
              implementations are exercised by the DI tests. -->
         <ProjectReference Include="..\..\src\SwiftDotNet.SourceGenerators\SwiftDotNet.SourceGenerators.csproj"

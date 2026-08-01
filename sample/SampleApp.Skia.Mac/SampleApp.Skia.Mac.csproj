@@ -2,6 +2,9 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0-macos</TargetFramework>
+    <!-- net10.0-macos, but Skia draws it - NOT the SwiftUI backend. The explicit
+         declaration is what stops the TFM-derived default from calling this an Apple head. -->
+    <SwiftDotNetPlatform>skia</SwiftDotNetPlatform>
     <OutputType>Exe</OutputType>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

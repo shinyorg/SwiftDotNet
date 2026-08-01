@@ -355,6 +355,20 @@ private fun emojiFor(name: String): String = when (name) {
     "rectangle.stack" -> "🗂️"
     "list.bullet" -> "☰"
     "arrow.forward.circle" -> "➡️"
+    "textformat" -> "🔤"
+    "hand.tap" -> "👆"
+    "wand.and.stars" -> "✨"
+    "rectangle.3.offgrid" -> "▤"
+    "rectangle.portrait" -> "▭"
+    "gauge" -> "🎛️"
+    "globe" -> "🌐"
+    "map" -> "🗺️"
+    "chevron.down.circle" -> "⌄"
+    "paintbrush" -> "🎨"
+    "square.stack" -> "🧱"
+    "calendar" -> "📅"
+    "bubble.left.and.bubble.right" -> "💬"
+    "camera" -> "📷"
     else -> "•"
 }
 
@@ -700,13 +714,14 @@ private fun RawNode(node: VNode) {
 
         "Grid" -> GridNode(node)
         "List" -> ListNode(node)
-        "Form" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            node.children.forEach { NodeView(it) }
-        }
-        "Section" -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            (node.props["header"] as? String)?.let { Text(it, style = textStyleFor("headline")!!) }
-            node.children.forEach { NodeView(it) }
-        }
+        "Form" -> Column(
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) { node.children.forEach { NodeView(it) } }
+        "Section" -> SectionNode(node)
         "Group" -> Column { node.children.forEach { NodeView(it) } }
         "DisclosureGroup" -> DisclosureGroupNode(node)
 
@@ -741,8 +756,13 @@ private fun RawNode(node: VNode) {
 
         "WebView" -> WebViewNode(node)
         "Image" -> RasterImage(node)
-        "Label" -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(emojiFor(node.s("systemImage"))); Text(node.s("title"))
+        "Label" -> Row(verticalAlignment = Alignment.CenterVertically) {
+            // Fixed-width icon slot so titles line up down the column however wide the glyph renders.
+            Box(Modifier.width(32.dp), contentAlignment = Alignment.Center) {
+                Text(emojiFor(node.s("systemImage")), fontSize = 17.sp)
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(node.s("title"), style = textStyleFor("body")!!)
         }
         "ProgressView" -> ProgressNode(node)
         "Gauge" -> Column {
@@ -1001,6 +1021,43 @@ private fun ColorPickerNode(node: VNode) {
     }
 }
 
+// MARK: - Grouped sections ---------------------------------------------------
+
+/**
+ * A `Section` as the inset-grouped card SwiftUI draws inside a `Form`/`List`: a muted header above a
+ * rounded surface holding the rows, hairline-separated. Material has no single "grouped list" widget,
+ * so this is assembled from Surface + HorizontalDivider to match the other backends' shape.
+ */
+@Composable
+private fun SectionNode(node: VNode) {
+    Column {
+        (node.props["header"] as? String)?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 32.dp, end = 16.dp, bottom = 8.dp),
+            )
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        ) {
+            Column {
+                node.children.forEachIndexed { i, child ->
+                    // Separators start past the icon slot, the way inset-grouped lists inset them.
+                    if (i > 0) HorizontalDivider(
+                        Modifier.padding(start = 58.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    NodeView(child)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Navigation & presentation -----------------------------------------
 
 private class NavStack(root: VNode) {
@@ -1034,12 +1091,15 @@ private fun NavigationLinkNode(node: VNode) {
     val label = node.children.getOrNull(0)
     val destination = node.children.getOrNull(1)
     Row(
-        Modifier.fillMaxWidth().clickable { destination?.let { nav?.push(it) } },
+        Modifier.fillMaxWidth()
+            .clickable { destination?.let { nav?.push(it) } }
+            .heightIn(min = 52.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         label?.let { NodeView(it) }
-        Text("›")
+        Text("›", fontSize = 20.sp, color = MaterialTheme.colorScheme.outline)
     }
 }
 

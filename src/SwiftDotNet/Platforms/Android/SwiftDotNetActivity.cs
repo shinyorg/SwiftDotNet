@@ -30,6 +30,11 @@ public abstract class SwiftDotNetActivity : ComponentActivity
         // Content stays clear of the bars via `.SafeAreaPadding(...)` — see docs/backends/android.md.
         EdgeToEdge.Enable(this);
         base.OnCreate(savedInstanceState);
+
+        // A NavigationStack renders its own Compose TopAppBar, so the platform ActionBar that the
+        // default activity theme supplies would draw the app label a second time above it.
+        ActionBar?.Hide();
+
         var app = CreateSwiftApp();
         SetContentView(SwiftDotNetHost.CreateRootView(this, app.CreateRoot(), app.Services));
     }

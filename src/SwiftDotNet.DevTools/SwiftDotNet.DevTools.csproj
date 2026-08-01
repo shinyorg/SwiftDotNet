@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Mirrors Core's TFM set on purpose: the patch tap is backend-agnostic, so it has to be
+         referenceable from an iOS or Android head as readily as from a plain net10.0 Skia one. -->
+    <TargetFrameworks>net10.0;net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(TargetFrameworks);net10.0-ios;net10.0-macos;net10.0-tvos</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet.DevTools</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(TargetFramework.EndsWith('-ios'))"><SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework.EndsWith('-tvos'))"><SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework.EndsWith('-macos'))"><SupportedOSPlatformVersion>14.0</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework.EndsWith('-android'))"><SupportedOSPlatformVersion>24</SupportedOSPlatformVersion></PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))"><SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion></PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

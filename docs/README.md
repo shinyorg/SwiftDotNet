@@ -16,6 +16,8 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
   backend routes (native shim vs. pure-C# interpreter).
 - **[Hot Reload](hot-reload.md)** — edit a `Body` and see it live under `dotnet watch`, with `State<T>`
   preserved across the reload.
+- **[Rider Plugin & Dev Tools](rider-plugin.md)** — one run configuration per head with the
+  host-OS gate, the live patch inspector, and the in-IDE Skia preview.
 
 ### Authoring UI
 - **[Hosting & Dependency Injection](hosting-and-di.md)** — `SwiftProgram.CreateSwiftApp()`, the builder,

@@ -1,0 +1,74 @@
+<!--
+  Derives a default SwiftDotNetPlatform from the target framework, then validates it.
+
+  Two things make this a .targets rather than a .props, and both are the gotcha recorded in
+  plans/msbuild-sdk-plan.md §2.2: $(TargetFramework) is not yet meaningful when Directory.Build.props is
+  evaluated, and $(OutputType) comes from the SDK. Conditions on either belong at the end of evaluation.
+
+  Derivation only ever fills a *blank*. An explicit declaration always wins — which is what makes
+  sample/SampleApp.Skia.Mac correct: it is net10.0-macos but draws with Skia, not SwiftUI, so the
+  TFM-derived answer would be wrong and the project says so itself.
+-->
+<Project>
+
+  <!--
+    Is this project an app head, or a library? A multi-targeted *library* (sample/SharedUI also targets
+    net10.0-android) must not look like an Android app to the tooling.
+
+    OutputType alone cannot answer it, and the two ways it lies were both found by running this against
+    the real samples rather than by reading it:
+
+      * .NET Android builds an app as **OutputType=Library** and marks it with AndroidApplication=true —
+        the APK is packaged from a library. Testing OutputType would have hidden every Android head.
+      * sample/SampleApp.Web reports OutputType as lowercase **"exe"**, so the comparison has to be
+        case-insensitive. MSBuild's '==' is case-insensitive for strings, but this is spelled out rather
+        than relied on.
+
+    Exposed as its own property so the IDE reads the answer instead of re-deriving it.
+  -->
+  <PropertyGroup>
+    <SwiftDotNetIsAppHead>false</SwiftDotNetIsAppHead>
+    <SwiftDotNetIsAppHead Condition="'$(OutputType)' == 'Exe' Or '$(OutputType)' == 'WinExe'">true</SwiftDotNetIsAppHead>
+    <SwiftDotNetIsAppHead Condition="'$(AndroidApplication)' == 'true'">true</SwiftDotNetIsAppHead>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(SwiftDotNetPlatform)' == '' And '$(SwiftDotNetIsAppHead)' == 'true' And '$(TargetFramework)' != ''">
+    <SwiftDotNetPlatform Condition="$(TargetFramework.EndsWith('-ios')) Or $(TargetFramework.EndsWith('-tvos')) Or $(TargetFramework.EndsWith('-macos')) Or $(TargetFramework.EndsWith('-maccatalyst'))">apple</SwiftDotNetPlatform>
+    <SwiftDotNetPlatform Condition="$(TargetFramework.EndsWith('-android'))">android</SwiftDotNetPlatform>
+    <SwiftDotNetPlatform Condition="$(TargetFramework.Contains('-windows'))">windows</SwiftDotNetPlatform>
+  </PropertyGroup>
+
+  <!-- A MAUI head hosts one of the backends inside MAUI rather than being that backend, so the TFM alone
+       can never answer this. Correct the derivation rather than leaving it to say "apple". -->
+  <PropertyGroup Condition="'$(UseMaui)' == 'true' And '$(SwiftDotNetPlatform)' == 'apple'">
+    <SwiftDotNetPlatform>skia-maui</SwiftDotNetPlatform>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(UseMaui)' == 'true' And '$(SwiftDotNetPlatform)' == 'android'">
+    <SwiftDotNetPlatform>skia-maui</SwiftDotNetPlatform>
+  </PropertyGroup>
+
+  <Target Name="_SwiftDotNetValidatePlatform"
+          BeforeTargets="BeforeBuild"
+          Condition="'$(SwiftDotNetPlatform)' != ''">
+    <Error Condition="!$([System.String]::Copy(';$(SwiftDotNetKnownPlatforms);').Contains(';$(SwiftDotNetPlatform);'))"
+           Code="SDN1010"
+           Text="SDN1010: SwiftDotNetPlatform '$(SwiftDotNetPlatform)' is not one of: $(SwiftDotNetKnownPlatforms)." />
+  </Target>
+
+  <!--
+    One call, everything the IDE needs about a head. `dotnet msbuild -getProperty:` can read properties
+    without running a target, which is what the tooling normally does; this target exists for the
+    diagnostic case — run it by hand to see what the IDE sees.
+
+      dotnet msbuild sample/SampleApp.Gtk -t:SwiftDotNetHeadInfo -f net10.0
+  -->
+  <Target Name="SwiftDotNetHeadInfo">
+    <Message Importance="High" Text="SwiftDotNetPlatform=$(SwiftDotNetPlatform)" />
+    <Message Importance="High" Text="TargetFramework=$(TargetFramework)" />
+    <Message Importance="High" Text="TargetFrameworks=$(TargetFrameworks)" />
+    <Message Importance="High" Text="OutputType=$(OutputType)" />
+    <Message Importance="High" Text="AssemblyName=$(AssemblyName)" />
+    <Message Importance="High" Text="TargetPath=$(TargetPath)" />
+  </Target>
+
+</Project>

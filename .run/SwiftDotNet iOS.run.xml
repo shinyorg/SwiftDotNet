@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration name="SwiftDotNet iOS" type="SwiftDotNetApp" factoryName="SwiftDotNet App">
+    <option name="SwiftDotNetHead" value="SampleApp (net10.0-ios)" />
+    <option name="SwiftDotNetConfiguration" value="Debug" />
+    <option name="SwiftDotNetWatch" value="true" />
+    <option name="SwiftDotNetDevTools" value="true" />
+    <option name="SwiftDotNetDevice" value="" />
+    <method v="2" />
+  </configuration>
+</component>

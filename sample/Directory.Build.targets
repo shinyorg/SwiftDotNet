@@ -1,0 +1,5 @@
+<!-- Pairs with Directory.Build.props: derivation and validation run at the end of evaluation, where
+     $(TargetFramework) and $(OutputType) are finally meaningful. -->
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)..\msbuild\SwiftDotNet.Platform.targets" />
+</Project>

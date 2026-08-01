@@ -1,0 +1,6 @@
+<!-- Only wires the sample heads into the SwiftDotNetPlatform contract; nothing else is set here on
+     purpose, so this file can never be blamed for a sample's build behaviour.
+     See msbuild/SwiftDotNet.Platform.props and plans/rider-plugin-plan.md Decision 4. -->
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)..\msbuild\SwiftDotNet.Platform.props" />
+</Project>

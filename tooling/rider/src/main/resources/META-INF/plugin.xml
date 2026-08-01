@@ -1,0 +1,47 @@
+<idea-plugin>
+    <id>com.swiftdotnet.rider</id>
+    <name>SwiftDotNet</name>
+    <vendor>SwiftDotNet</vendor>
+
+    <description><![CDATA[
+        Run, debug and preview <a href="https://github.com/aritchie/SwiftDotNet">SwiftDotNet</a> apps from
+        Rider.
+        <ul>
+            <li>A <b>SwiftDotNet App</b> run configuration that discovers the heads in your solution and
+                offers the ones this operating system can actually build, with hot reload on.</li>
+            <li>A <b>Patch Inspector</b> tool window showing the live node tree and per-render diff —
+                backend-agnostic, because every backend consumes the same patch stream.</li>
+            <li>A <b>Skia Preview</b> tool window that renders and drives your views inside the IDE.</li>
+        </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.rider</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <configurationType
+            implementation="com.swiftdotnet.rider.run.SwiftDotNetConfigurationType"/>
+
+        <toolWindow id="SwiftDotNet Inspector"
+                    anchor="right"
+                    icon="AllIcons.Toolwindows.ToolWindowHierarchy"
+                    factoryClass="com.swiftdotnet.rider.inspector.InspectorToolWindowFactory"/>
+        <toolWindow id="SwiftDotNet Preview"
+                    anchor="right"
+                    icon="AllIcons.Actions.Preview"
+                    factoryClass="com.swiftdotnet.rider.preview.PreviewToolWindowFactory"/>
+
+        <notificationGroup id="SwiftDotNet" displayType="BALLOON"/>
+
+        <!-- Headless diagnosis: `swiftdotnet-doctor <solution-dir>` prints the heads this machine can
+             run and the exact command each one would launch. -->
+        <appStarter id="swiftdotnet-doctor"
+                    implementation="com.swiftdotnet.rider.doctor.SwiftDotNetDoctor"/>
+    </extensions>
+
+    <actions>
+        <action id="SwiftDotNet.RestartPreview"
+                class="com.swiftdotnet.rider.preview.RestartPreviewAction"
+                text="Restart SwiftDotNet Preview"
+                description="Rebuild the view assembly and reload it in the preview host"/>
+    </actions>
+</idea-plugin>

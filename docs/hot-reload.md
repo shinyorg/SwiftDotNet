@@ -80,7 +80,7 @@ and relaunching, so the loop keeps working; you just start from the app's first 
 | **Skia** (macOS window / MAUI) | `dotnet watch run` on the head | none | 🧩 Expected — shares the Skia bridge, not separately run |
 | **Linux / GTK** | `dotnet watch run --project sample/SampleApp.Gtk` | none | 🧩 Expected — plain `net10.0`, same as Skia; not run (needs Linux) |
 | **Web** (Blazor WASM) | `dotnet watch --project sample/SampleApp.Web` | none | 🧩 **Partly verified** — `dotnet watch` compiled and applied the delta ("changes applied in 225 ms"), but no browser was attached to confirm the DOM re-rendered |
-| **Apple** (iOS / tvOS) | An IDE's hot-reload command (VS / VS Code / Rider) | **`UseInterpreter=true`** (see below) | ⚠️ **Not working from the CLI** — `dotnet watch` got the app installed and launched on the simulator, but it aborted at startup: `Socket error while connecting to IDE on 127.0.0.1:10000: Connection refused` |
+| **Apple** (iOS / tvOS) | `dotnet watch run -f net10.0-ios --device <UDID>` | **`-p:SwiftDotNetHotReload=true`** (see below) | ✅ **Verified** on the iOS 26.5 simulator — an edited `Body` applied to the running app in **407 ms**, no restart |
 | **Apple** (macOS) | `dotnet watch run -f net10.0-macos` | none expected | 🧩 Expected; not run |
 | **Android** | `dotnet watch run -f net10.0-android` | none expected | 🧩 Expected; not run (needs an emulator) |
 | **Windows / WinUI** | `dotnet watch run -f net10.0-windows...` | none expected | 🧩 Expected; not run (needs Windows) |
@@ -93,40 +93,64 @@ then asserts the rebuilt tree still lays out and routes taps.
 
 ## Gotchas
 
-**Apple targets: use an IDE, not bare `dotnet watch`.** This is the one place the story does not currently
-work end-to-end, and the blocker is in the Apple SDK rather than in SwiftDotNet.
+**Apple targets need two things, and only one of them is the interpreter.**
 
 First, the SDK hard-errors without the Mono interpreter:
 
 > `error : Can't use Hot Reload or 'dotnet watch' unless the interpreter is enabled. Set 'UseInterpreter=true' in the project file to use the interpreter.`
 
-[`SampleApp.csproj`](../sample/SampleApp/SampleApp.csproj) has this behind an **opt-in** property, so
+Second — and this is the part that used to make iOS hot reload look impossible — `dotnet watch` delivers
+edits by injecting `DOTNET_STARTUP_HOOKS` pointing at the SDK's
+`Microsoft.Extensions.DotNetDeltaApplier.dll`. **On iOS the Xamarin registrar only loads assemblies it
+knew about at build time**, so a hook assembly living outside the app bundle aborts startup:
+
+```
+mono_runtime_run_startup_hooks → xamarin_register_assembly → abort
+```
+
+Copying the file into the `.app` is *not* enough; it has to be a **referenced assembly**.
+[`SampleApp.csproj`](../sample/SampleApp/SampleApp.csproj) does both, behind one opt-in property so
 ordinary debug deploys are not silently switched to the interpreter:
 
 ```xml
 <PropertyGroup Condition="'$(SwiftDotNetHotReload)' == 'true' And ($(TargetFramework.EndsWith('-ios')) Or $(TargetFramework.EndsWith('-tvos')))">
     <UseInterpreter>true</UseInterpreter>
 </PropertyGroup>
+<ItemGroup Condition="'$(SwiftDotNetHotReload)' == 'true' And ($(TargetFramework.EndsWith('-ios')) Or $(TargetFramework.EndsWith('-tvos')))">
+    <_SwiftDotNetDeltaApplier Include="$(NetCoreRoot)sdk/$(NETCoreSdkVersion)/DotnetTools/dotnet-watch/$(NETCoreSdkVersion)/tools/net10.0/any/hotreload/net10.0/Microsoft.Extensions.DotNetDeltaApplier.dll" />
+    <Reference Include="Microsoft.Extensions.DotNetDeltaApplier" HintPath="@(_SwiftDotNetDeltaApplier)"
+               Condition="Exists('@(_SwiftDotNetDeltaApplier)')" />
+</ItemGroup>
 ```
+
+Then, **from the project directory**:
 
 ```bash
-dotnet build sample/SampleApp/SampleApp.csproj -f net10.0-ios -p:SwiftDotNetHotReload=true
+cd sample/SampleApp
+dotnet watch run -f net10.0-ios --property:SwiftDotNetHotReload=true --device <SIMULATOR-UDID>
 ```
 
-With that set, the app builds, installs, and launches on the simulator — and then **aborts during startup**:
+Edit a `Body`, save, and the running simulator app updates in place —
+`🔥 C# and Razor changes applied in 407ms`, measured on the iOS 26.5 simulator.
+
+**The `127.0.0.1:10000` socket error is a red herring.** You will see
 
 ```
 Microsoft.iOS: Socket error while connecting to IDE on 127.0.0.1:10000: Connection refused
-… mono_runtime_run_startup_hooks → xamarin_unhandled_exception_handler → abort
 ```
 
-The interpreter build expects an IDE-side debug/hot-reload tunnel that bare `dotnet watch` does not stand
-up. Drive hot reload from Visual Studio, VS Code, or Rider on Apple targets until that changes.
+on every simulator run, including ones that hot reload perfectly. It is the debug agent looking for an
+IDE and is **non-fatal** — verified by running the same build with a listener on that port (no change) and
+with nothing listening (no change). Earlier versions of this page blamed the abort on that socket; the
+abort was the startup hook, above.
 
-Two further CLI quirks worth knowing if you retry this: `dotnet watch` needs `--device <UDID>` when more
-than one device or simulator is visible, and it resolves the `.app` path relative to the *current
-directory*, so run it from the project folder rather than the repo root or you get
-`error MT0069: The app directory ... does not exist`.
+Three CLI quirks worth knowing:
+
+- `dotnet watch` needs **`--device <UDID>`** when more than one device or simulator is visible.
+- It resolves the `.app` path relative to the *current directory*, so run it from the project folder or
+  you get `error MT0069: The app directory ... does not exist`.
+- Use **`--property:Foo=Bar`**, not `-p:Foo=Bar` — `dotnet watch` reads `-p` as `--project` and will
+  complain that the project file `Foo=Bar` does not exist.
 
 **Your host needs a `SynchronizationContext`.** The runtime applies the update on its own thread, so
 `Invalidate()` is raised off the UI thread. `SwiftApp` marshals the render onto whichever context was
@@ -155,11 +179,12 @@ picking up the new method bodies anyway. Clearing them would break the
 state preserved; a signature change correctly fell back to a `dotnet watch` restart. Covered by five tests
 in [`HotReloadTests.cs`](../tests/SwiftDotNet.Tests/HotReloadTests.cs).
 
-🧩 **Expected but unverified** on GTK, Web (delta applied, DOM not observed), macOS, Android, and Windows —
-the mechanism is backend-agnostic, but the status table above stays honest until each one is actually run.
+✅ **Verified on iOS** (iOS 26.5 simulator, Xcode 26.6, .NET SDK 10.0.302): an edited `Body` applied to the
+running app in 407 ms with the two-part opt-in above. This page previously called it blocked; it isn't.
 
-⚠️ **Blocked on iOS/tvOS from the CLI** — see the gotcha above. Not a SwiftDotNet defect: the app never
-reaches `SwiftApp.Run`, so none of the code on this page is even involved.
+🧩 **Expected but unverified** on GTK, Web (delta applied, DOM not observed), macOS, tvOS, Android, and
+Windows — the mechanism is backend-agnostic, but the status table above stays honest until each one is
+actually run. tvOS shares the iOS opt-in and should behave the same; it was not run.
 
 ## See also
 

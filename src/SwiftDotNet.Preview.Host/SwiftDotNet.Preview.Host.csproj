@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Plain net10.0: the preview always renders with Skia, whatever the head under development
+         targets. A net10.0 host can load a net10.0 view assembly, which is what sample/SharedUI and
+         every shared UI project is. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet.Preview</RootNamespace>
+    <AssemblyName>SwiftDotNet.Preview.Host</AssemblyName>
+
+    <!-- The load context is collectible so a rebuild can replace the app's assemblies; that only works
+         when the host itself is not published with a trimmer that removed what it reflects over. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The host is an executable, so its types are internal by default; the tests drive the pieces that
+         can fail on their own (root discovery, the command line) rather than the process as a whole. -->
+    <InternalsVisibleTo Include="SwiftDotNet.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.DevTools\SwiftDotNet.DevTools.csproj" />
+  </ItemGroup>
+
+</Project>

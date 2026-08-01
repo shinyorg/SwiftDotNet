@@ -24,6 +24,8 @@
     <Project Path="src/SwiftDotNet.Web/SwiftDotNet.Web.csproj"/>
     <Project Path="src/SwiftDotNet/SwiftDotNet.csproj"/>
     <Project Path="src/SwiftDotNet.SourceGenerators/SwiftDotNet.SourceGenerators.csproj"/>
+    <Project Path="src/SwiftDotNet.DevTools/SwiftDotNet.DevTools.csproj"/>
+    <Project Path="src/SwiftDotNet.Preview.Host/SwiftDotNet.Preview.Host.csproj"/>
     <Folder Name="/Tests/">
         <Project Path="tests/SwiftDotNet.Tests/SwiftDotNet.Tests.csproj"/>
     </Folder>

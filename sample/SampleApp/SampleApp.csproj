@@ -32,13 +32,31 @@
 
     <!-- Hot reload on Apple platforms requires the Mono interpreter — the iOS/tvOS SDK hard-errors with
          "Can't use Hot Reload or 'dotnet watch' unless the interpreter is enabled" otherwise.
-         Opt-in rather than always-on for Debug: the interpreter changes how every Debug build runs, and
-         hot reload on Apple targets is IDE-driven in practice (bare `dotnet watch` leaves the app's debug
-         agent with no IDE to connect to), so ordinary debug deploys shouldn't pay for it. Build with
-         -p:SwiftDotNetHotReload=true when you want it. See docs/hot-reload.md. -->
+         Opt-in rather than always-on for Debug: the interpreter changes how every Debug build runs, so
+         ordinary debug deploys shouldn't pay for it. Build with -p:SwiftDotNetHotReload=true when you
+         want it. See docs/hot-reload.md. -->
     <PropertyGroup Condition="'$(SwiftDotNetHotReload)' == 'true' And ($(TargetFramework.EndsWith('-ios')) Or $(TargetFramework.EndsWith('-tvos')))">
         <UseInterpreter>true</UseInterpreter>
     </PropertyGroup>
+
+    <!-- …and it requires this reference, which is what actually makes `dotnet watch` work on a simulator.
+
+         `dotnet watch` delivers deltas by injecting DOTNET_STARTUP_HOOKS pointing at the SDK's
+         Microsoft.Extensions.DotNetDeltaApplier.dll. On iOS the Xamarin registrar will only load an
+         assembly it knows about at build time, so a hook assembly that lives outside the app aborts
+         startup in mono_runtime_run_startup_hooks → xamarin_register_assembly → abort. Copying the file
+         into the .app is *not* enough — it has to be a referenced assembly of the app.
+
+         With this reference, an edit to a Body applied to a running simulator app in 407 ms. Without it,
+         the app aborts the moment `dotnet watch` launches it. The "Socket error while connecting to IDE
+         on 127.0.0.1:10000" logged either way is a red herring: it is non-fatal, and the app runs fine
+         with nothing listening on that port. -->
+    <ItemGroup Condition="'$(SwiftDotNetHotReload)' == 'true' And ($(TargetFramework.EndsWith('-ios')) Or $(TargetFramework.EndsWith('-tvos')))">
+        <_SwiftDotNetDeltaApplier Include="$(NetCoreRoot)sdk/$(NETCoreSdkVersion)/DotnetTools/dotnet-watch/$(NETCoreSdkVersion)/tools/net10.0/any/hotreload/net10.0/Microsoft.Extensions.DotNetDeltaApplier.dll" />
+        <Reference Include="Microsoft.Extensions.DotNetDeltaApplier"
+                   HintPath="@(_SwiftDotNetDeltaApplier)"
+                   Condition="Exists('@(_SwiftDotNetDeltaApplier)')" />
+    </ItemGroup>
     <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
         <OutputType>WinExe</OutputType>
         <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
