@@ -59,6 +59,11 @@ struct ModifierData: Decodable, Equatable {
     let repeatCount: Double?   // F4: looping animation (-1 = forever)
     let autoreverse: String?   // F4: "true"/"false"
     let regions: String?       // safe area: "container" / "keyboard" / "all"
+    let column: Double?        // gridCell: explicit column / row, and the spans
+    let row: Double?
+    let columnSpan: Double?
+    let rowSpan: Double?
+    let flags: String?         // layoutBounds: which of "xywh" are proportional
 }
 
 final class WireNode: Decodable {
@@ -507,6 +512,8 @@ struct NodeView: View {
             scrollView
         case "Grid":
             gridView
+        case "AbsoluteLayout":
+            absoluteLayoutView
         case "List":
             listContainer
         case "Form":
@@ -656,10 +663,52 @@ struct NodeView: View {
         }
     }
 
+    /// Grid lowers to SDNGridLayout, not LazyVGrid: the DSL's tracks, cell spans and explicit
+    /// `.GridCell` pins have no LazyVGrid equivalent. Placement is resolved here (where the whole child
+    /// list is in hand) and handed to each subview as a layout value.
     private var gridView: some View {
-        let cols = Int(num("columns") ?? 2)
-        let items = Array(repeating: GridItem(.flexible(), spacing: spacing), count: max(1, cols))
-        return SwiftUI.LazyVGrid(columns: items, spacing: spacing) { childViews }
+        let tracks = SDNTrack.parse(node.props["columnTracks"]?.string, fallback: Int(num("columns") ?? 2))
+        let requests = node.children.map { child -> (column: Int?, row: Int?, columnSpan: Int, rowSpan: Int) in
+            guard let m = child.modifiers.first(where: { $0.type == "gridCell" }) else {
+                return (nil, nil, 1, 1)
+            }
+            return (m.column.map(Int.init), m.row.map(Int.init),
+                    max(1, Int(m.columnSpan ?? 1)), max(1, Int(m.rowSpan ?? 1)))
+        }
+        let placed = sdnPlaceGrid(columns: tracks.count, requests: requests)
+        let rowSpec = node.props["rowTracks"]?.string.map {
+            SDNTrack.parse($0, fallback: placed.rowCount)
+        }
+
+        return SDNGridLayout(
+            columnTracks: tracks,
+            rowSpec: rowSpec,
+            rowCount: placed.rowCount,
+            columnSpacing: CGFloat(num("columnSpacing") ?? num("spacing") ?? 8),
+            rowSpacing: CGFloat(num("rowSpacing") ?? num("spacing") ?? 8),
+            alignment: alignmentFor(node.props["alignment"]?.string)
+        ) {
+            ForEach(Array(node.children.enumerated()), id: \.element.identity) { index, child in
+                NodeView(node: child)
+                    .layoutValue(key: SDNGridPlacementKey.self, value: placed.placements[index])
+            }
+        }
+    }
+
+    /// AbsoluteLayout lowers to SDNAbsoluteLayout; each child's declared rect rides along as a layout value.
+    private var absoluteLayoutView: some View {
+        SDNAbsoluteLayout {
+            ForEach(node.children, id: \.identity) { child in
+                NodeView(node: child)
+                    .layoutValue(key: SDNAbsoluteBoundsKey.self, value: child.modifiers
+                        .first { $0.type == "layoutBounds" }
+                        .map { m in
+                            SDNAbsoluteBounds(x: m.x ?? 0, y: m.y ?? 0,
+                                              width: m.width, height: m.height,
+                                              flags: m.flags ?? "")
+                        })
+            }
+        }
     }
 
     @ViewBuilder
@@ -1192,6 +1241,323 @@ private extension UIWindow {
 /// Reserved event id for safe-area inset reports — mirrors `SwiftDotNet.SafeArea.EventId`. Node ids are
 /// structural paths rooted at "0", so a `$` prefix can never collide with one.
 let SAFE_AREA_EVENT_ID = "$safeArea"
+
+
+// MARK: - Grid & AbsoluteLayout engines
+//
+// These mirror SwiftDotNet.GridEngine / SwiftDotNet.AbsoluteLayoutBounds on the C# side, because
+// neither container maps onto anything SwiftUI ships. LazyVGrid can size columns but has no concept of
+// a cell span or an explicit cell; SwiftUI's own Grid has gridCellColumns but no row span and no
+// per-column sizing; and there is no absolute-positioning container at all. The `Layout` protocol
+// (iOS 16 / macOS 13 / tvOS 16, all below this bridge's deployment targets) gives us the measure and
+// place passes needed to implement both properly instead of approximating them.
+
+/// One column/row definition, parsed from the wire's compact track token.
+struct SDNTrack {
+    enum Kind { case auto, fixed, star, flexible }
+    var kind: Kind
+    var value: Double        // points (fixed) · weight (star) · minimum (flexible)
+    var maximum: Double?     // flexible only; nil is unbounded
+
+    /// Parses `"fixed:80,star:1,auto,flex:40:inf"`. An absent or unparseable spec yields `fallback`
+    /// equal star tracks, which is the plain `new Grid(n, …)` shape.
+    static func parse(_ spec: String?, fallback: Int) -> [SDNTrack] {
+        guard let spec, !spec.isEmpty else {
+            return Array(repeating: SDNTrack(kind: .star, value: 1, maximum: nil), count: max(1, fallback))
+        }
+        return spec.split(separator: ",").map { token in
+            let parts = token.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+            func part(_ i: Int) -> Double? { parts.count > i ? Double(parts[i]) : nil }
+            switch parts.first ?? "auto" {
+            case "fixed": return SDNTrack(kind: .fixed, value: part(1) ?? 0, maximum: nil)
+            case "star": return SDNTrack(kind: .star, value: part(1) ?? 1, maximum: nil)
+            case "flex":
+                let upper = parts.count > 2 ? parts[2] : "inf"
+                return SDNTrack(kind: .flexible, value: part(1) ?? 0, maximum: upper == "inf" ? nil : Double(upper))
+            default: return SDNTrack(kind: .auto, value: 0, maximum: nil)
+            }
+        }
+    }
+}
+
+struct SDNGridPlacement: Equatable {
+    var column = 0
+    var row = 0
+    var columnSpan = 1
+    var rowSpan = 1
+}
+
+/// Mirror of `GridEngine.Place`: pinned children claim their cell first, then the rest flow into the
+/// first free cell their whole span fits in.
+func sdnPlaceGrid(columns: Int, requests: [(column: Int?, row: Int?, columnSpan: Int, rowSpan: Int)])
+    -> (placements: [SDNGridPlacement], rowCount: Int) {
+    let columns = max(1, columns)
+    var result = [SDNGridPlacement](repeating: SDNGridPlacement(), count: requests.count)
+    var pinned = [Bool](repeating: false, count: requests.count)
+    var occupied: [[Bool]] = []
+
+    func ensureRows(through row: Int) {
+        while occupied.count <= row { occupied.append([Bool](repeating: false, count: columns)) }
+    }
+    func isFree(_ col: Int, _ row: Int, _ colSpan: Int, _ rowSpan: Int) -> Bool {
+        for r in row..<(row + rowSpan) where r < occupied.count {
+            for c in col..<min(col + colSpan, columns) where occupied[r][c] { return false }
+        }
+        return true
+    }
+    func occupy(_ col: Int, _ row: Int, _ colSpan: Int, _ rowSpan: Int) {
+        ensureRows(through: row + rowSpan - 1)
+        for r in row..<(row + rowSpan) {
+            for c in col..<min(col + colSpan, columns) { occupied[r][c] = true }
+        }
+    }
+
+    for (i, r) in requests.enumerated() {
+        guard let c = r.column, let row = r.row else { continue }
+        let col = min(max(c, 0), columns - 1)
+        let cs = min(max(r.columnSpan, 1), columns - col)
+        let rs = max(r.rowSpan, 1)
+        occupy(col, max(row, 0), cs, rs)
+        result[i] = SDNGridPlacement(column: col, row: max(row, 0), columnSpan: cs, rowSpan: rs)
+        pinned[i] = true
+    }
+
+    var cursorRow = 0
+    var cursorCol = 0
+    for (i, r) in requests.enumerated() where !pinned[i] {
+        let cs = min(max(r.columnSpan, 1), columns)
+        let rs = max(r.rowSpan, 1)
+        while true {
+            if cursorCol + cs > columns { cursorCol = 0; cursorRow += 1; continue }
+            if !isFree(cursorCol, cursorRow, cs, rs) { cursorCol += 1; continue }
+            break
+        }
+        occupy(cursorCol, cursorRow, cs, rs)
+        result[i] = SDNGridPlacement(column: cursorCol, row: cursorRow, columnSpan: cs, rowSpan: rs)
+        cursorCol += cs
+    }
+
+    return (result, occupied.count)
+}
+
+/// Mirror of `SkiaNode.ResolveTracks`: Fixed takes its points, Auto/Flexible take the largest
+/// single-track child, Star splits the remainder by weight, and a spanning child's shortfall grows the
+/// last content-sized track it covers.
+func sdnResolveTracks(_ tracks: [SDNTrack], available: CGFloat, gap: CGFloat,
+                      spans: [(start: Int, span: Int)], sizes: [CGFloat]) -> [CGFloat] {
+    let n = tracks.count
+    var resolved = [CGFloat](repeating: 0, count: n)
+
+    for (i, s) in spans.enumerated() where s.span == 1 && s.start < n && i < sizes.count {
+        if tracks[s.start].kind == .auto || tracks[s.start].kind == .flexible {
+            resolved[s.start] = max(resolved[s.start], sizes[i])
+        }
+    }
+
+    var starWeight: CGFloat = 0
+    for t in 0..<n {
+        switch tracks[t].kind {
+        case .fixed:
+            resolved[t] = CGFloat(tracks[t].value)
+        case .flexible:
+            resolved[t] = max(resolved[t], CGFloat(tracks[t].value))
+            if let m = tracks[t].maximum { resolved[t] = min(resolved[t], CGFloat(m)) }
+        case .star:
+            starWeight += CGFloat(tracks[t].value)
+            resolved[t] = 0
+        case .auto:
+            break
+        }
+    }
+
+    func extent(_ sizes: [CGFloat], _ start: Int, _ count: Int) -> CGFloat {
+        var total: CGFloat = 0
+        for i in start..<min(start + count, sizes.count) { total += sizes[i] }
+        return total + gap * CGFloat(max(0, min(count, sizes.count - start) - 1))
+    }
+
+    for (i, s) in spans.enumerated() where s.span > 1 && s.start < n && i < sizes.count {
+        // A span crossing a Star track needs no help — the star pass below already hands it the leftover.
+        // Growing a content-sized track here instead would *steal* that leftover, which is what a greedy
+        // spanning child (a shape, a raster image) would otherwise do to every star column.
+        var hasStar = false
+        for t in s.start..<min(s.start + s.span, n) where tracks[t].kind == .star { hasStar = true }
+        guard !hasStar else { continue }
+
+        let want = sizes[i]
+        let have = extent(resolved, s.start, s.span)
+        guard want > have else { continue }
+        var target = -1
+        for t in s.start..<min(s.start + s.span, n)
+        where tracks[t].kind == .auto || tracks[t].kind == .flexible { target = t }
+        guard target >= 0 else { continue }
+        var grown = resolved[target] + (want - have)
+        if let cap = tracks[target].maximum { grown = min(grown, CGFloat(cap)) }
+        resolved[target] = grown
+    }
+
+    if starWeight > 0 {
+        var used = gap * CGFloat(max(0, n - 1))
+        for t in 0..<n where tracks[t].kind != .star { used += resolved[t] }
+        let leftover = max(0, available - used)
+        for t in 0..<n where tracks[t].kind == .star {
+            resolved[t] = leftover * CGFloat(tracks[t].value) / starWeight
+        }
+    }
+
+    return resolved
+}
+
+private struct SDNGridPlacementKey: LayoutValueKey {
+    static let defaultValue = SDNGridPlacement()
+}
+
+private struct SDNAbsoluteBoundsKey: LayoutValueKey {
+    static let defaultValue: SDNAbsoluteBounds? = nil
+}
+
+struct SDNAbsoluteBounds {
+    var x: Double = 0
+    var y: Double = 0
+    var width: Double?
+    var height: Double?
+    var flags: String = ""
+
+    var xProportional: Bool { flags.contains("x") }
+    var yProportional: Bool { flags.contains("y") }
+    var widthProportional: Bool { flags.contains("w") }
+    var heightProportional: Bool { flags.contains("h") }
+}
+
+/// The `Grid` node's layout. Two measure passes: natural sizes size the content-driven columns, then
+/// every child is re-proposed at its final cell width so wrapping text reports the height it will
+/// actually draw at.
+struct SDNGridLayout: Layout {
+    var columnTracks: [SDNTrack]
+    var rowSpec: [SDNTrack]?
+    var rowCount: Int
+    var columnSpacing: CGFloat
+    var rowSpacing: CGFloat
+    var alignment: Alignment
+
+    private func rowTracks() -> [SDNTrack] {
+        // Rows default to Auto — a grid should be as tall as it needs, not as tall as it is offered.
+        (0..<max(1, rowCount)).map { i in
+            if let spec = rowSpec, i < spec.count { return spec[i] }
+            return SDNTrack(kind: .auto, value: 0, maximum: nil)
+        }
+    }
+
+    private func extent(_ sizes: [CGFloat], _ start: Int, _ count: Int, _ gap: CGFloat) -> CGFloat {
+        var total: CGFloat = 0
+        for i in start..<min(start + count, sizes.count) { total += sizes[i] }
+        return total + gap * CGFloat(max(0, min(count, sizes.count - start) - 1))
+    }
+
+    private func resolve(_ subviews: Subviews, proposal: ProposedViewSize)
+        -> (columns: [CGFloat], rows: [CGFloat], cells: [CGSize], placements: [SDNGridPlacement]) {
+        let placements = subviews.map { $0[SDNGridPlacementKey.self] }
+        let colSpans = placements.map { (start: $0.column, span: $0.columnSpan) }
+        let rowSpans = placements.map { (start: $0.row, span: $0.rowSpan) }
+
+        let natural = subviews.map { $0.sizeThatFits(.unspecified) }
+        let availableWidth = proposal.width ?? natural.reduce(0) { $0 + $1.width }
+        let columns = sdnResolveTracks(columnTracks, available: availableWidth, gap: columnSpacing,
+                                       spans: colSpans, sizes: natural.map(\.width))
+
+        var cells: [CGSize] = []
+        for (i, subview) in subviews.enumerated() {
+            let w = extent(columns, placements[i].column, placements[i].columnSpan, columnSpacing)
+            cells.append(subview.sizeThatFits(ProposedViewSize(width: w, height: nil)))
+        }
+
+        let rows = sdnResolveTracks(rowTracks(), available: proposal.height ?? .infinity, gap: rowSpacing,
+                                    spans: rowSpans, sizes: cells.map(\.height))
+        return (columns, rows, cells, placements)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let r = resolve(subviews, proposal: proposal)
+        return CGSize(
+            width: r.columns.reduce(0, +) + columnSpacing * CGFloat(max(0, r.columns.count - 1)),
+            height: r.rows.reduce(0, +) + rowSpacing * CGFloat(max(0, r.rows.count - 1)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let r = resolve(subviews, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+        for (i, subview) in subviews.enumerated() {
+            let p = r.placements[i]
+            let cellX = bounds.minX + extent(r.columns, 0, p.column, columnSpacing)
+                + (p.column > 0 ? columnSpacing : 0)
+            let cellY = bounds.minY + extent(r.rows, 0, p.row, rowSpacing)
+                + (p.row > 0 ? rowSpacing : 0)
+            let cellW = extent(r.columns, p.column, p.columnSpan, columnSpacing)
+            let cellH = extent(r.rows, p.row, p.rowSpan, rowSpacing)
+
+            let w = min(r.cells[i].width, cellW)
+            let h = min(r.cells[i].height, cellH)
+            let x = cellX + (cellW - w) * unit(alignment.horizontal)
+            let y = cellY + (cellH - h) * unit(alignment.vertical)
+            subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading,
+                          proposal: ProposedViewSize(width: w, height: h))
+        }
+    }
+
+    private func unit(_ a: HorizontalAlignment) -> CGFloat {
+        a == .leading ? 0 : a == .trailing ? 1 : 0.5
+    }
+
+    private func unit(_ a: VerticalAlignment) -> CGFloat {
+        a == .top ? 0 : a == .bottom ? 1 : 0.5
+    }
+}
+
+/// The `AbsoluteLayout` node's layout: a canvas that claims what it is offered (fractions need
+/// something to be a fraction of) and places each child at the rect its `.LayoutBounds` declared.
+struct SDNAbsoluteLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        // Unbounded on an axis: fall back to the far edge of the children placed in points, so an
+        // AbsoluteLayout inside a scrolling stack isn't measured away to nothing.
+        var extentW: CGFloat = 0
+        var extentH: CGFloat = 0
+        for subview in subviews {
+            guard let b = subview[SDNAbsoluteBoundsKey.self] else { continue }
+            let natural = subview.sizeThatFits(.unspecified)
+            if !b.xProportional && !b.widthProportional {
+                extentW = max(extentW, CGFloat(b.x) + CGFloat(b.width ?? Double(natural.width)))
+            }
+            if !b.yProportional && !b.heightProportional {
+                extentH = max(extentH, CGFloat(b.y) + CGFloat(b.height ?? Double(natural.height)))
+            }
+        }
+        return CGSize(width: proposal.width ?? extentW, height: proposal.height ?? extentH)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for subview in subviews {
+            let natural = subview.sizeThatFits(.unspecified)
+            guard let b = subview[SDNAbsoluteBoundsKey.self] else {
+                // No declared bounds: park it at the origin at its natural size, so a forgotten
+                // .LayoutBounds shows up rather than vanishing.
+                subview.place(at: CGPoint(x: bounds.minX, y: bounds.minY), anchor: .topLeading,
+                              proposal: ProposedViewSize(natural))
+                continue
+            }
+
+            let w: CGFloat = b.width.map { b.widthProportional ? bounds.width * CGFloat($0) : CGFloat($0) }
+                ?? natural.width
+            let h: CGFloat = b.height.map { b.heightProportional ? bounds.height * CGFloat($0) : CGFloat($0) }
+                ?? natural.height
+            // A proportional position is an anchor across the free space: 0 flush leading, 1 flush
+            // trailing, 0.5 centred. Matches AbsoluteLayoutBounds.Resolve on the C# side.
+            let x = b.xProportional ? (bounds.width - w) * CGFloat(b.x) : CGFloat(b.x)
+            let y = b.yProportional ? (bounds.height - h) * CGFloat(b.y) : CGFloat(b.y)
+
+            subview.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y), anchor: .topLeading,
+                          proposal: ProposedViewSize(width: w, height: h))
+        }
+    }
+}
 
 // MARK: - C ABI bridge (P/Invoke target from C#)
 

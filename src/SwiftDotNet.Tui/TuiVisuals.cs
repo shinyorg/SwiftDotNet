@@ -202,3 +202,108 @@ sealed class TuiShape : Visual
         }
     }
 }
+
+/// <summary>
+/// The <see cref="AbsoluteLayout"/> panel: children are placed at the coordinates their
+/// <c>layoutBounds</c> declares, in cells, rather than flowed. Written as a <see cref="Visual"/> rather
+/// than assembled out of a ZStack plus margins because proportional bounds need the panel's *final*
+/// rect, which only <see cref="ArrangeCore"/> knows — a margin computed at build time would be stale
+/// the moment the terminal is resized.
+/// </summary>
+sealed class TuiAbsolute : Visual
+{
+    /// <summary>One child and the bounds it asked for. Null width/height means "size yourself".</summary>
+    public sealed class Item
+    {
+        public required Visual Visual { get; init; }
+        public double X, Y;
+        public double? Width, Height;
+        public LayoutFlags Flags;
+    }
+
+    public List<Item> Items { get; } = new();
+
+    public void Add(Item item)
+    {
+        Items.Add(item);
+        AttachChild(item.Visual);
+    }
+
+    public void Clear()
+    {
+        foreach (var i in Items) DetachChild(i.Visual);
+        Items.Clear();
+    }
+
+    protected override int ChildrenCount => Items.Count;
+
+    protected override Visual GetChild(int index) => Items[index].Visual;
+
+    /// <summary>
+    /// A canvas claims whatever it is offered — the fractions have to resolve against something. When the
+    /// offer is unbounded (a scrolling column, say) there is nothing to be a fraction *of*, so the natural
+    /// size falls back to the far edge of the children placed in points. Without that fallback an
+    /// unbounded parent would measure the panel as empty and then arrange it to nothing.
+    /// </summary>
+    protected override SizeHints MeasureCore(in LayoutConstraints constraints)
+    {
+        var hostW = constraints.IsWidthBounded ? constraints.MaxWidth : 0;
+        var hostH = constraints.IsHeightBounded ? constraints.MaxHeight : 0;
+
+        int extentW = 0, extentH = 0;
+        foreach (var item in Items)
+        {
+            var cw = item.Width is { } dw
+                ? Cells((item.Flags & LayoutFlags.WidthProportional) != 0 ? dw * hostW : TuiStyle.Cols(dw))
+                : (int?)null;
+            var ch = item.Height is { } dh
+                ? Cells((item.Flags & LayoutFlags.HeightProportional) != 0 ? dh * hostH : TuiStyle.Rows(dh))
+                : (int?)null;
+
+            var hints = item.Visual.Measure(new LayoutConstraints(
+                0, cw ?? (constraints.IsWidthBounded ? constraints.MaxWidth : int.MaxValue),
+                0, ch ?? (constraints.IsHeightBounded ? constraints.MaxHeight : int.MaxValue)));
+
+            if ((item.Flags & LayoutFlags.XProportional) == 0)
+                extentW = Math.Max(extentW, TuiStyle.Cols(item.X) + (cw ?? hints.Natural.Width));
+            if ((item.Flags & LayoutFlags.YProportional) == 0)
+                extentH = Math.Max(extentH, TuiStyle.Rows(item.Y) + (ch ?? hints.Natural.Height));
+        }
+
+        return SizeHints.Flex(
+            Size.Zero,
+            new Size(Math.Max(hostW, extentW), Math.Max(hostH, extentH)),
+            new Size(int.MaxValue, int.MaxValue),
+            1, 1, 0, 0);
+    }
+
+    protected override void ArrangeCore(in TRect finalRect)
+    {
+        foreach (var item in Items)
+        {
+            // Proportional values are fractions of the panel; point values are converted to cells first,
+            // so the same C# reads as roughly the same shape on a terminal as it does on a real toolkit.
+            var natural = item.Visual.DesiredSize;
+            var declaredW = item.Width is { } dw
+                ? ((item.Flags & LayoutFlags.WidthProportional) != 0 ? dw * finalRect.Width : TuiStyle.Cols(dw))
+                : (double?)null;
+            var declaredH = item.Height is { } dh
+                ? ((item.Flags & LayoutFlags.HeightProportional) != 0 ? dh * finalRect.Height : TuiStyle.Rows(dh))
+                : (double?)null;
+            var x = (item.Flags & LayoutFlags.XProportional) != 0 ? item.X : TuiStyle.Cols(item.X);
+            var y = (item.Flags & LayoutFlags.YProportional) != 0 ? item.Y : TuiStyle.Rows(item.Y);
+
+            var (rx, ry, rw, rh) = AbsoluteLayoutBounds.Resolve(
+                x, y, declaredW, declaredH,
+                // Sizes are already in cells by this point, so only the position flags still apply.
+                item.Flags & LayoutFlags.PositionProportional,
+                finalRect.Width, finalRect.Height, natural.Width, natural.Height);
+
+            item.Visual.Arrange(new TRect(
+                finalRect.X + Cells(rx), finalRect.Y + Cells(ry),
+                Math.Max(0, Cells(rw)), Math.Max(0, Cells(rh))));
+        }
+    }
+
+    static int Cells(double v) => (int)Math.Round(v);
+}

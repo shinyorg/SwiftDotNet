@@ -32,7 +32,8 @@ net10.0, `RootNamespace SwiftDotNet`, references `SwiftDotNet` + `SkiaSharp` + `
 
 ## Coverage
 
-Layout (VStack/HStack/ZStack/Grid/Group/Form/Section/List/ScrollView/Tab/Nav + padding/frame/align/spacing);
+Layout (VStack/HStack/ZStack/Grid/AbsoluteLayout/Group/Form/Section/List/ScrollView/Tab/Nav + padding/frame/
+align/spacing);
 paint (Text/Label/Image/Button/Link/Divider/shapes/ProgressView/Gauge + background/border/shadow/cornerRadius/
 opacity/scaleEffect); text (HarfBuzz wrap + fallback + icon font + dark mode); scrolling (offset/clip/
 scrollbar); **all inputs** tap-interactive (+ keyboard/drag from the window); nav + overlays (nav bar, push,
@@ -40,6 +41,12 @@ Sheet bottom-sheet, Alert modal, Menu popover); the custom-renderer registry; th
 long-press, swipe, continuous drag, pinch — see [the router](#gestures-hosts-must-wire-the-pointer-router));
 and an implicit animation clock (one-shot opacity + height interpolation, plus self-playing
 `.Repeating()` loops). The [Collection View](../collection-view.md) is fully test-verified on Skia.
+
+Skia is the **reference implementation** for [`Grid`](../views-and-controls.md#grid) and
+[`AbsoluteLayout`](../views-and-controls.md#absolutelayout): it owns the only from-scratch track-sizing
+algorithm (`MeasureGrid`/`ResolveTracks`/`ArrangeGrid`), which the Swift and Compose shims port line for
+line. Grid measures twice on purpose — natural sizes drive the content-sized columns, then every child is
+re-measured at its final cell width so wrapping `Text` reports the height it will actually paint at.
 
 Two paint-side notes: raster images (`Image.FromFile/FromBytes`, and `Image.FromUrl` via the async
 [`SkiaImageLoader`](../../src/SwiftDotNet.Skia/SkiaImageLoader.cs)) are **greedy** — they fill the space

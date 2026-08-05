@@ -45,6 +45,9 @@ And **two routes** to get there (see [Architecture → the two backend routes](.
 ## What's shared vs. per-backend
 
 Everything in [`Core`](../../src/SwiftDotNet/Core) — DSL, `State<T>`, `Node`, `TreeDiffer`, patch protocol,
-`SwiftApp` — is shared verbatim. A backend implements exactly one interface,
+`SwiftApp` — is shared verbatim. A few pure-math helpers are shared *into* the backends too, so they can't
+drift apart: [`GridEngine`](../../src/SwiftDotNet/Core/GridEngine.cs) (track parsing + grid cell placement)
+and [`AbsoluteLayoutBounds`](../../src/SwiftDotNet/Core/GridLayout.cs) (proportional-bounds resolution) are
+called by every C# backend and ported line-for-line into the Swift and Kotlin shims. A backend implements exactly one interface,
 [`IBridge`](../../src/SwiftDotNet/Core/IBridge.cs), plus a host. The same
 [`SharedUI.ContentView`](../../sample/SharedUI/ContentView.cs) renders on all of them.

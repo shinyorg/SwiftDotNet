@@ -66,6 +66,7 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
             case "ZStack": ZStack(b, n); break;
             case "ScrollView": Container(b, n, "display:flex;flex-direction:column;gap:12px;align-items:center;overflow:auto;"); break;
             case "Grid": Grid(b, n); break;
+            case "AbsoluteLayout": AbsoluteLayoutNode(b, n); break;
             case "List": ListBox(b, n); break;
             case "Form": Container(b, n, "display:flex;flex-direction:column;gap:16px;"); break;
             case "Section": Section(b, n); break;
@@ -194,9 +195,96 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
 
     void Grid(RenderTreeBuilder b, WebNode n)
     {
-        var cols = (int)(n.N("columns") ?? 2);
-        var gap = n.N("spacing") ?? 8;
-        Container(b, n, $"display:grid;grid-template-columns:repeat({cols},1fr);gap:{gap.ToString(CultureInfo.InvariantCulture)}px;justify-items:center;");
+        var colTracks = GridEngine.ParseTracks(n.SN("columnTracks"), (int)(n.N("columns") ?? 2));
+        var colGap = n.N("columnSpacing") ?? n.N("spacing") ?? 8;
+        var rowGap = n.N("rowSpacing") ?? n.N("spacing") ?? 8;
+
+        // Placement is resolved in C# rather than left to CSS auto-placement, so a `.GridCell(...)` pin
+        // lands in the same cell here as it does on every other backend.
+        var requested = new (int?, int?, int, int)[n.Children.Count];
+        for (var i = 0; i < n.Children.Count; i++) requested[i] = n.Children[i].GridCellSpec();
+        var spans = GridEngine.Place(colTracks.Length, requested, out var rowCount);
+
+        var rows = n.SN("rowTracks") is { } rowSpec
+            ? string.Join(" ", GridEngine.ParseTracks(rowSpec, rowCount).Select(Css))
+            : null;
+        var (justify, align) = ZAlign(n.S("alignment"));
+
+        var style = $"display:grid;grid-template-columns:{string.Join(" ", colTracks.Select(Css))};"
+            + (rows is null ? "" : $"grid-template-rows:{rows};")
+            + $"column-gap:{Num(colGap)}px;row-gap:{Num(rowGap)}px;"
+            + $"justify-items:{JustifyItem(justify)};align-items:{JustifyItem(align)};";
+
+        b.OpenElement(_seq++, "div");
+        Style(b, n, style);
+        for (var i = 0; i < n.Children.Count; i++)
+        {
+            var s = spans[i];
+            b.OpenElement(_seq++, "div");
+            b.AddAttribute(_seq++, "style",
+                $"grid-column:{s.Column + 1}/span {s.ColumnSpan};grid-row:{s.Row + 1}/span {s.RowSpan};"
+                + "display:flex;justify-content:inherit;align-items:inherit;min-width:0;");
+            RenderNode(b, n.Children[i]);
+            b.CloseElement();
+        }
+        b.CloseElement();
+    }
+
+    /// <summary>A <see cref="GridTrack"/> as a CSS grid track: <c>80px</c>, <c>1fr</c>, <c>auto</c>, <c>minmax(…)</c>.</summary>
+    static string Css(GridTrack t) => t.Kind switch
+    {
+        GridTrackKind.Fixed => Num(t.Value) + "px",
+        GridTrackKind.Star => Num(t.Value) + "fr",
+        GridTrackKind.Flexible => $"minmax({Num(t.Value)}px,{(t.Max is { } m ? Num(m) + "px" : "1fr")})",
+        _ => "auto",
+    };
+
+    static string Num(double d) => d.ToString(CultureInfo.InvariantCulture);
+
+    // ZAlign yields flex keywords; grid's *-items wants the box-alignment spelling.
+    static string JustifyItem(string flex) => flex switch
+    {
+        "flex-start" => "start",
+        "flex-end" => "end",
+        _ => "center",
+    };
+
+    /// <summary>
+    /// An <see cref="AbsoluteLayout"/> is a <c>position:relative</c> box whose children are absolutely
+    /// positioned. A proportional coordinate lands as <c>left: x%</c> paired with
+    /// <c>translateX(-x * 100%)</c> — a percentage translate resolves against the *child's* own width, so
+    /// the pair works out to <c>x * (host - child)</c>, which is the anchor rule the other backends compute
+    /// arithmetically. Percentage heights need a definite height, so give the layout a <c>.Frame(height:)</c>.
+    /// </summary>
+    void AbsoluteLayoutNode(RenderTreeBuilder b, WebNode n)
+    {
+        b.OpenElement(_seq++, "div");
+        Style(b, n, "position:relative;width:100%;");
+        foreach (var c in n.Children)
+        {
+            var m = c.Mod("layoutBounds");
+            var flags = AbsoluteLayoutBounds.Parse(m?.GetValueOrDefault("flags") as string);
+            var x = WebNode.MN(m, "x") ?? 0;
+            var y = WebNode.MN(m, "y") ?? 0;
+            var w = WebNode.MN(m, "width");
+            var h = WebNode.MN(m, "height");
+
+            var xProp = (flags & LayoutFlags.XProportional) != 0;
+            var yProp = (flags & LayoutFlags.YProportional) != 0;
+            var css = "position:absolute;"
+                + $"left:{Num(xProp ? x * 100 : x)}{(xProp ? "%" : "px")};"
+                + $"top:{Num(yProp ? y * 100 : y)}{(yProp ? "%" : "px")};";
+            if (w is { } dw) css += $"width:{Num((flags & LayoutFlags.WidthProportional) != 0 ? dw * 100 : dw)}{((flags & LayoutFlags.WidthProportional) != 0 ? "%" : "px")};";
+            if (h is { } dh) css += $"height:{Num((flags & LayoutFlags.HeightProportional) != 0 ? dh * 100 : dh)}{((flags & LayoutFlags.HeightProportional) != 0 ? "%" : "px")};";
+            if (xProp || yProp)
+                css += $"transform:translate({Num(xProp ? -x * 100 : 0)}%,{Num(yProp ? -y * 100 : 0)}%);";
+
+            b.OpenElement(_seq++, "div");
+            b.AddAttribute(_seq++, "style", css);
+            RenderNode(b, c);
+            b.CloseElement();
+        }
+        b.CloseElement();
     }
 
     void ListBox(RenderTreeBuilder b, WebNode n)

@@ -26,7 +26,8 @@ manipulation).
 
 ## Node → HTML
 
-`VStack`/`HStack`→flex `div`, `ZStack`→grid overlap, `ScrollView`→flex+overflow, `Grid`→CSS grid, `List`→
+`VStack`/`HStack`→flex `div`, `ZStack`→grid overlap, `ScrollView`→flex+overflow, `Grid`→CSS grid, `AbsoluteLayout`→`position:absolute`
+in a `position:relative` box, `List`→
 bordered rows, `DisclosureGroup`→button + conditional, `TabView`→tab-bar buttons + content (local selection),
 `Menu`→`details`/`summary`, `TextField`/`SecureField`→`<input type=text/password>`, `TextEditor`→`textarea`,
 `Toggle`→`<input type=checkbox>`, `Slider`→`<input type=range>`, `Stepper`→`<input type=number>`,
@@ -43,6 +44,16 @@ matters: `OverlayHost` lowers to a ZStack nested inside another ZStack, so a shr
 would have no cell to align within and `OverlayPosition.Bottom`/`Top` would silently render centred (which
 is what used to happen). Because `BuildRenderTree` re-reads props every render, a changing alignment
 repositions with no extra patch path.
+
+`Grid` maps onto CSS Grid about as directly as anything does: tracks become `grid-template-columns`
+(`80px` / `1fr` / `auto` / `minmax(...)`) and each child gets an explicit `grid-column`/`grid-row`. The
+placement is still resolved in C# by [`GridEngine`](../../src/SwiftDotNet/Core/GridEngine.cs) rather than
+left to CSS auto-placement, so a `.GridCell` pin lands in the same cell here as on every other backend.
+
+`AbsoluteLayout` children are `position:absolute`. A proportional position lands as `left:x%` paired with
+`transform:translateX(-x*100%)` — a percentage translate resolves against the *child's* own width, so the
+pair works out to `x * (host - child)`, the same anchor rule the other backends compute arithmetically.
+**Gotcha:** a percentage height needs a definite parent height, so give the layout a `.Frame(height:)`.
 
 ### Gestures
 

@@ -35,8 +35,19 @@ Everything platform-neutral lives in [`src/SwiftDotNet/Core`](../src/SwiftDotNet
 | Bridge contract | `IBridge.cs` | The one interface each backend implements |
 | Runtime | `SwiftApp.cs` | Drives render, applies patches through `IBridge`, routes events |
 | Styling | `EnvironmentValues.cs`, `Styles.cs`, `Theme.cs`, `Modifier.cs` | See [Global Styles](global-styles.md) |
+| Layout math | `GridLayout.cs`, `GridEngine.cs` | `GridTrack`/`LayoutFlags` and the shared grid-placement + proportional-bounds math — see below |
 
 The Core is **dependency-free**. Each backend pulls in only its own toolkit.
+
+**Core normally describes; `GridEngine` decides.** Almost everything above is declarative — the Core lowers
+a view to a node and each backend interprets it however its toolkit prefers. [`Grid`](views-and-controls.md#grid)
+and [`AbsoluteLayout`](views-and-controls.md#absolutelayout) are the exception: which cell a child lands in,
+and what a proportional bound resolves to, are answered *once* in Core
+([`GridEngine`](../src/SwiftDotNet/Core/GridEngine.cs), [`AbsoluteLayoutBounds`](../src/SwiftDotNet/Core/GridLayout.cs))
+and consumed by every C# backend, because seven independent implementations of "where does a pinned child go"
+would silently disagree. Track *sizing* stays per-backend, since GTK/WinUI/TUI/Web all hand it to a native
+grid that already does it; only Skia computes it from scratch, and the Swift and Kotlin shims — which can't
+call into Core — port both halves line for line.
 
 ## Diff engine
 

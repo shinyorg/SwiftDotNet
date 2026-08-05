@@ -124,6 +124,57 @@ sealed class OffsetModifier : Modifier
         => new() { ["type"] = "offset", ["x"] = _x, ["y"] = _y };
 }
 
+/// <summary>
+/// Where a child sits in its enclosing <see cref="Grid"/>. Mutable and merged in place by the fluent
+/// helpers, so <c>.GridCell(1, 2).GridSpan(2)</c> produces one wire modifier rather than two competing
+/// ones (every backend reads the first <c>gridCell</c> it finds).
+/// </summary>
+sealed class GridCellModifier : Modifier
+{
+    public int? Column, Row;
+    public int ColumnSpan = 1, RowSpan = 1;
+
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+    {
+        var d = new Dictionary<string, object> { ["type"] = "gridCell" };
+        if (Column is { } c) d["column"] = (double)c;
+        if (Row is { } r) d["row"] = (double)r;
+        if (ColumnSpan != 1) d["columnSpan"] = (double)ColumnSpan;
+        if (RowSpan != 1) d["rowSpan"] = (double)RowSpan;
+        return d;
+    }
+}
+
+/// <summary>
+/// A child's rect inside an <see cref="AbsoluteLayout"/>. <c>width</c>/<c>height</c> are omitted when the
+/// child should size itself; <c>flags</c> names which of x/y/width/height are fractions of the layout.
+/// </summary>
+sealed class LayoutBoundsModifier : Modifier
+{
+    readonly double _x, _y;
+    readonly double? _width, _height;
+    readonly LayoutFlags _flags;
+
+    public LayoutBoundsModifier(double x, double y, double? width, double? height, LayoutFlags flags)
+    {
+        _x = x;
+        _y = y;
+        _width = width;
+        _height = height;
+        _flags = flags;
+    }
+
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+    {
+        var d = new Dictionary<string, object> { ["type"] = "layoutBounds", ["x"] = _x, ["y"] = _y };
+        if (_width.HasValue) d["width"] = _width.Value;
+        if (_height.HasValue) d["height"] = _height.Value;
+        var flags = _flags.Token();
+        if (flags.Length > 0) d["flags"] = flags;
+        return d;
+    }
+}
+
 /// <summary>Rotates a view around its center by <c>degrees</c> (mirrors SwiftUI's <c>.rotationEffect(.degrees)</c>).</summary>
 sealed class RotationModifier : Modifier
 {

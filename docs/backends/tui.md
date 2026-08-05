@@ -50,7 +50,8 @@ three desktop RIDs**, which no terminal app should pay for unless it asks. See
 | `Link` / `WebView` | `Link` (an OSC-8 hyperlink) |
 | `VStack` `HStack` `ZStack` `Group` | `VStack` / `HStack` / `ZStack` |
 | `ScrollView` `Form` | `ScrollViewer` over a stack |
-| `Grid` | `Grid` with star columns + `GridCell` |
+| `Grid` | `Grid` with real Column/RowDefinitions + `GridCell` spans |
+| `AbsoluteLayout` | `TuiAbsolute` — a purpose-written `Visual` |
 | `List` | `ScrollViewer` over a stack of rows (grid and horizontal variants supported) |
 | `Section` | `Group` — a captioned box |
 | `DisclosureGroup` | `Collapsible` |
@@ -72,6 +73,17 @@ three desktop RIDs**, which no terminal app should pay for unless it asks. See
 | `Rectangle` `Circle` `Capsule` `RoundedRectangle` | `TuiShape`, filled from `.ForegroundColor` |
 | `Image` | Character art, or a real image with [Tui.Graphics](#images--character-art) |
 | *unknown* | [`TuiRenderers`](../custom-controls.md) registry, else `⚠ {type}` |
+
+**`Grid` is a near-complete fit.** Terminal.UI's own `Grid` already models column/row definitions and cell
+spans, so tracks, `.GridSpan` and `.GridCell` map almost directly — `Auto`/`Fixed`/`Star` become
+`GridLength.Auto`/`Fixed`/`Star` and `Flexible`'s bounds land on the definition's Min/Max. The lossy step is
+the unit: sizes go through `TuiStyle.Cols`/`Rows` and land on whole cells.
+
+**`AbsoluteLayout` is `TuiAbsolute`**, written as a `Visual` rather than assembled from a ZStack plus
+margins: proportional bounds need the panel's *final* rect, which only `ArrangeCore` knows, and a margin
+computed at build time would be stale the moment the terminal is resized. When an axis is offered unbounded
+constraints the panel falls back to the far edge of its point-placed children, so it isn't measured away to
+nothing inside a scrolling column.
 
 ## Modifiers
 

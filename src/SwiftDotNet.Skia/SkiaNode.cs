@@ -31,7 +31,9 @@ sealed partial class SkiaNode
     SKRect _content;                 // Frame minus padding insets
     SKSize _measured;                // outer measured size
     readonly List<SKSize> _childMeasured = new();
-    float _gridCellW, _gridCellH;    // Grid only
+    float _gridCellW, _gridCellH;    // grid List only (uniform cells)
+    float[]? _gridColW, _gridRowH;   // Grid: resolved track sizes
+    GridSpan[]? _gridSpans;          // Grid: each child's resolved cell
 
     // ---- per-node local (backend-owned) state -------------------------------
     int _tabIndex;                   // TabView: selected tab / page
@@ -369,6 +371,8 @@ sealed partial class SkiaNode
                 return MeasureZ(inner);
             case "Grid":
                 return MeasureGrid(inner);
+            case "AbsoluteLayout":
+                return MeasureAbsolute(inner);
             case "Tab":
                 return MeasureFill(inner);
             case "NavigationStack":
@@ -501,24 +505,201 @@ sealed partial class SkiaNode
         return new SKSize(w, h);
     }
 
+    // ---- Grid ---------------------------------------------------------------
+    // Two measure passes, because a cell's width decides how its content wraps: pass 1 takes each child's
+    // natural size to size the content-driven (auto/flexible) columns, then pass 2 re-measures every child
+    // at its final cell width so Text reports the height it will actually paint at.
+
+    float ColumnGap => (float)(Num("columnSpacing") ?? Num("spacing") ?? 8);
+    float RowGap => (float)(Num("rowSpacing") ?? Num("spacing") ?? 8);
+
     SKSize MeasureGrid(SKSize inner)
     {
-        var cols = Math.Max(1, (int)(Num("columns") ?? 2));
-        var spacing = (float)(Num("spacing") ?? 8);
-        float cellW = 0, cellH = 0;
+        var colTracks = GridEngine.ParseTracks(StrOrNull("columnTracks"), (int)(Num("columns") ?? 2));
+        var cols = colTracks.Length;
+
+        var requested = new (int?, int?, int, int)[Children.Count];
+        for (var i = 0; i < Children.Count; i++) requested[i] = Children[i].GridCellSpec();
+        var spans = GridEngine.Place(cols, requested, out var rowCount);
+        _gridSpans = spans;
+
+        var colGap = ColumnGap;
+        var rowGap = RowGap;
+
+        // pass 1 — natural sizes
+        var natural = new SKSize[Children.Count];
+        for (var i = 0; i < Children.Count; i++) natural[i] = Children[i].Measure(inner);
+        _gridColW = ResolveTracks(colTracks, inner.Width, colGap, spans, natural, horizontal: true);
+
+        // pass 2 — re-measure inside the resolved cell
+        for (var i = 0; i < Children.Count; i++)
+        {
+            var s = spans[i];
+            var cellW = TrackExtent(_gridColW, s.Column, s.ColumnSpan, colGap);
+            _childMeasured.Add(Children[i].Measure(new SKSize(cellW, inner.Height)));
+        }
+
+        var rowSpec = StrOrNull("rowTracks");
+        // Rows default to Auto (hug their content) rather than Star — a grid should be as tall as it needs.
+        var rowTracks = new GridTrack[Math.Max(1, rowCount)];
+        var parsedRows = rowSpec is null ? null : GridEngine.ParseTracks(rowSpec, rowCount);
+        for (var i = 0; i < rowTracks.Length; i++)
+            rowTracks[i] = parsedRows is not null && i < parsedRows.Length ? parsedRows[i] : GridTrack.Auto;
+
+        _gridRowH = ResolveTracks(rowTracks, inner.Height, rowGap, spans, _childMeasured.ToArray(), horizontal: false);
+
+        return new SKSize(
+            Total(_gridColW, colGap),
+            Total(_gridRowH, rowGap));
+    }
+
+    static float Total(float[] sizes, float gap)
+    {
+        float total = 0;
+        foreach (var s in sizes) total += s;
+        return total + gap * Math.Max(0, sizes.Length - 1);
+    }
+
+    /// <summary>The span of tracks <c>[start, start+count)</c> including the gaps swallowed between them.</summary>
+    static float TrackExtent(float[] sizes, int start, int count, float gap)
+    {
+        float total = 0;
+        for (var i = start; i < start + count && i < sizes.Length; i++) total += sizes[i];
+        return total + gap * Math.Max(0, Math.Min(count, sizes.Length - start) - 1);
+    }
+
+    /// <summary>
+    /// Sizes one axis of tracks: Fixed takes its points, Auto/Flexible take the largest single-track child
+    /// in them (Flexible then clamped to its bounds), and Star splits what's left by weight. A child
+    /// spanning several tracks doesn't drive Auto sizing directly — instead any shortfall across its span
+    /// is added to the last content-sized track it covers, which is what keeps a wide header from
+    /// stretching only column 0.
+    /// </summary>
+    static float[] ResolveTracks(GridTrack[] tracks, float available, float gap, GridSpan[] spans, SKSize[] sizes, bool horizontal)
+    {
+        var n = tracks.Length;
+        var resolved = new float[n];
+
+        for (var i = 0; i < spans.Length && i < sizes.Length; i++)
+        {
+            var start = horizontal ? spans[i].Column : spans[i].Row;
+            var span = horizontal ? spans[i].ColumnSpan : spans[i].RowSpan;
+            if (span != 1 || start >= n) continue;
+            if (tracks[start].Kind is GridTrackKind.Auto or GridTrackKind.Flexible)
+                resolved[start] = Math.Max(resolved[start], horizontal ? sizes[i].Width : sizes[i].Height);
+        }
+
+        float starWeight = 0;
+        for (var t = 0; t < n; t++)
+        {
+            switch (tracks[t].Kind)
+            {
+                case GridTrackKind.Fixed:
+                    resolved[t] = (float)tracks[t].Value;
+                    break;
+                case GridTrackKind.Flexible:
+                    resolved[t] = Math.Max(resolved[t], (float)tracks[t].Value);
+                    if (tracks[t].Max is { } max) resolved[t] = Math.Min(resolved[t], (float)max);
+                    break;
+                case GridTrackKind.Star:
+                    starWeight += (float)tracks[t].Value;
+                    resolved[t] = 0;
+                    break;
+            }
+        }
+
+        // Spanning children: push any deficit into the last content-sized track they cover.
+        for (var i = 0; i < spans.Length && i < sizes.Length; i++)
+        {
+            var start = horizontal ? spans[i].Column : spans[i].Row;
+            var span = horizontal ? spans[i].ColumnSpan : spans[i].RowSpan;
+            if (span <= 1 || start >= n) continue;
+
+            // A span that crosses a Star track needs no help — the star pass below already hands it the
+            // leftover. Growing a content-sized track here instead would *steal* that leftover, which is
+            // exactly what a greedy spanning child (a shape, a raster image) would do to every star column.
+            var hasStar = false;
+            for (var t = start; t < start + span && t < n; t++)
+                if (tracks[t].Kind == GridTrackKind.Star) hasStar = true;
+            if (hasStar) continue;
+
+            var want = horizontal ? sizes[i].Width : sizes[i].Height;
+            var have = TrackExtent(resolved, start, span, gap);
+            if (want <= have) continue;
+
+            var target = -1;
+            for (var t = start; t < start + span && t < n; t++)
+                if (tracks[t].Kind is GridTrackKind.Auto or GridTrackKind.Flexible) target = t;
+            if (target < 0) continue;   // an all-Fixed span is the author's call — don't fight it
+
+            var grown = resolved[target] + (want - have);
+            if (tracks[target].Max is { } cap) grown = Math.Min(grown, (float)cap);
+            resolved[target] = grown;
+        }
+
+        if (starWeight > 0)
+        {
+            float used = gap * Math.Max(0, n - 1);
+            for (var t = 0; t < n; t++)
+                if (tracks[t].Kind != GridTrackKind.Star) used += resolved[t];
+            var leftover = Math.Max(0, available - used);
+            for (var t = 0; t < n; t++)
+                if (tracks[t].Kind == GridTrackKind.Star)
+                    resolved[t] = leftover * (float)tracks[t].Value / starWeight;
+        }
+
+        return resolved;
+    }
+
+    // ---- AbsoluteLayout -----------------------------------------------------
+
+    /// <summary>
+    /// A canvas: it claims the box it is offered (proportional child bounds have to resolve against
+    /// *something*), and each child is measured at whatever size its <c>.LayoutBounds</c> declares —
+    /// falling back to its natural size on the axes left auto.
+    /// </summary>
+    SKSize MeasureAbsolute(SKSize inner)
+    {
+        // Resolve fractions against the box this layout will actually get. A `.Frame(height:)` is applied
+        // to the *outer* size after MeasureContent returns, so read it here too — otherwise a child
+        // measured at 0.5 of the available height and then arranged at 0.5 of the framed height would
+        // wrap its text against the wrong width.
+        var (fw, fh) = FrameSize();
+        var host = new SKSize((float)(fw ?? inner.Width), (float)(fh ?? inner.Height));
+
         foreach (var c in Children)
         {
-            var s = c.Measure(inner);
-            _childMeasured.Add(s);
-            cellW = Math.Max(cellW, s.Width);
-            cellH = Math.Max(cellH, s.Height);
+            var b = c.LayoutBoundsSpec();
+            var w = b?.Width is { } dw
+                ? (float)((b!.Value.Flags & LayoutFlags.WidthProportional) != 0 ? dw * host.Width : dw)
+                : (float?)null;
+            var h = b?.Height is { } dh
+                ? (float)((b!.Value.Flags & LayoutFlags.HeightProportional) != 0 ? dh * host.Height : dh)
+                : (float?)null;
+
+            var natural = c.Measure(new SKSize(w ?? host.Width, h ?? host.Height));
+            _childMeasured.Add(new SKSize(w ?? natural.Width, h ?? natural.Height));
         }
-        _gridCellW = cellW;
-        _gridCellH = cellH;
-        var rows = (int)Math.Ceiling(Children.Count / (double)cols);
-        var w = cols * cellW + (cols - 1) * spacing;
-        var h = rows * cellH + Math.Max(0, rows - 1) * spacing;
-        return new SKSize(w, h);
+        return host;
+    }
+
+    void ArrangeAbsolute()
+    {
+        for (var i = 0; i < Children.Count; i++)
+        {
+            var m = _childMeasured[i];
+            var b = Children[i].LayoutBoundsSpec();
+            // A child that never declared bounds sits at the origin at its natural size, so a forgotten
+            // .LayoutBounds is visible rather than invisible.
+            var (x, y, w, h) = b is { } spec
+                ? AbsoluteLayoutBounds.Resolve(spec.X, spec.Y, spec.Width, spec.Height, spec.Flags,
+                    _content.Width, _content.Height, m.Width, m.Height)
+                : (0, 0, m.Width, m.Height);
+
+            var left = _content.Left + (float)x;
+            var top = _content.Top + (float)y;
+            Children[i].Arrange(new SKRect(left, top, left + (float)w, top + (float)h));
+        }
     }
 
     SKSize MeasureFill(SKSize inner)
@@ -578,6 +759,9 @@ sealed partial class SkiaNode
                 break;
             case "Grid":
                 ArrangeGrid();
+                break;
+            case "AbsoluteLayout":
+                ArrangeAbsolute();
                 break;
             case "Tab":
                 if (Children.Count > 0) Children[0].Arrange(_content);
@@ -724,20 +908,53 @@ sealed partial class SkiaNode
 
     void ArrangeGrid()
     {
-        var cols = Math.Max(1, (int)(Num("columns") ?? 2));
-        var spacing = (float)(Num("spacing") ?? 8);
-        for (var i = 0; i < Children.Count; i++)
+        if (_gridSpans is null || _gridColW is null || _gridRowH is null) return;
+
+        var colGap = ColumnGap;
+        var rowGap = RowGap;
+        // The Grid's `alignment` prop places each child inside its cell; null centers, as SwiftUI does.
+        var token = Props.GetValueOrDefault("alignment") as string;
+
+        for (var i = 0; i < Children.Count && i < _gridSpans.Length; i++)
         {
-            var col = i % cols;
-            var row = i / cols;
-            var cellX = _content.Left + col * (_gridCellW + spacing);
-            var cellY = _content.Top + row * (_gridCellH + spacing);
+            var s = _gridSpans[i];
+            var cellX = _content.Left + TrackExtent(_gridColW, 0, s.Column, colGap) + (s.Column > 0 ? colGap : 0);
+            var cellY = _content.Top + TrackExtent(_gridRowH, 0, s.Row, rowGap) + (s.Row > 0 ? rowGap : 0);
+            var cellW = TrackExtent(_gridColW, s.Column, s.ColumnSpan, colGap);
+            var cellH = TrackExtent(_gridRowH, s.Row, s.RowSpan, rowGap);
+
             var m = _childMeasured[i];
-            // center the child within its cell
-            var x = cellX + (_gridCellW - m.Width) / 2;
-            var y = cellY + (_gridCellH - m.Height) / 2;
-            Children[i].Arrange(new SKRect(x, y, x + m.Width, y + m.Height));
+            var w = Math.Min(m.Width, cellW);
+            var h = Math.Min(m.Height, cellH);
+            var x = CrossPos(cellX, cellW, w, token, vertical: false);
+            var y = CrossPos(cellY, cellH, h, token, vertical: true);
+            Children[i].Arrange(new SKRect(x, y, x + w, y + h));
         }
+    }
+
+    /// <summary>This node's <c>gridCell</c> modifier, as the tuple <see cref="GridEngine.Place"/> wants.</summary>
+    (int? Column, int? Row, int ColumnSpan, int RowSpan) GridCellSpec()
+    {
+        var m = Mod("gridCell");
+        if (m is null) return (null, null, 1, 1);
+        return (
+            MNull(m, "column") is { } c ? (int)c : null,
+            MNull(m, "row") is { } r ? (int)r : null,
+            MNull(m, "columnSpan") is { } cs ? Math.Max(1, (int)cs) : 1,
+            MNull(m, "rowSpan") is { } rs ? Math.Max(1, (int)rs) : 1);
+    }
+
+    /// <summary>This node's <c>layoutBounds</c> modifier, or null when it never declared one.</summary>
+    (double X, double Y, double? Width, double? Height, LayoutFlags Flags)? LayoutBoundsSpec()
+    {
+        var m = Mod("layoutBounds");
+        if (m is null) return null;
+        return (
+            MNull(m, "x") ?? 0,
+            MNull(m, "y") ?? 0,
+            MNull(m, "width"),
+            MNull(m, "height"),
+            AbsoluteLayoutBounds.Parse(m.GetValueOrDefault("flags") as string));
     }
 
     void ArrangeTabView()
@@ -1016,7 +1233,8 @@ sealed partial class SkiaNode
     /// </summary>
     internal bool GreedyWidth => Mod("align") is not null || FillsWidth;
 
-    bool FillsWidth => Type is "Divider" or "ProgressView" or "Gauge" or "WebView"
+    bool FillsWidth => Type is "AbsoluteLayout"
+        or "Divider" or "ProgressView" or "Gauge" or "WebView"
         or "TextField" or "SecureField" or "TextEditor"
         or "Toggle" or "Slider" or "Stepper" or "Picker" or "DatePicker" or "ColorPicker" or "Menu"
         or "DisclosureGroup" or "NavigationLink";
@@ -1028,7 +1246,7 @@ sealed partial class SkiaNode
         or "TextField" or "SecureField" or "TextEditor"
         or "Toggle" or "Slider" or "Stepper" or "Picker" or "DatePicker" or "ColorPicker" or "Menu"
         or "DisclosureGroup" or "HStack" or "VStack" or "Group"
-        or "ScrollView" or "List" or "Form" or "Section" or "ZStack" or "Grid"
+        or "ScrollView" or "List" or "Form" or "Section" or "ZStack" or "Grid" or "AbsoluteLayout"
         or "Tab" or "TabView" or "NavigationStack" or "NavigationLink" or "Sheet" or "Alert";
 
     SKFont Font() => SkiaTheme.MakeFont(Mod("font")?.GetValueOrDefault("value") as string);
@@ -1168,6 +1386,7 @@ sealed partial class SkiaNode
     internal string TextProp() => Str("text");
     bool HasProp(string key) => Props.ContainsKey(key);
     string Str(string key) => Props.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
+    string? StrOrNull(string key) => Props.TryGetValue(key, out var v) ? v as string : null;
     double? Num(string key) => Props.TryGetValue(key, out var v) && v is double d ? d : null;
     bool Bool(string key) => Props.TryGetValue(key, out var v) && v is bool b && b;
 

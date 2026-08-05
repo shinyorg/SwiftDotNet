@@ -12,8 +12,33 @@ sealed class WebNode
     public List<WebNode> Children { get; set; } = new();
 
     public string S(string key) => Props.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
+    public string? SN(string key) => Props.TryGetValue(key, out var v) ? v as string : null;
     public double? N(string key) => Props.TryGetValue(key, out var v) && v is double d ? d : null;
     public bool B(string key) => Props.TryGetValue(key, out var v) && v is bool b && b;
+
+    /// <summary>The first modifier of <paramref name="type"/>, or null. Matches the "first wins" rule the
+    /// other backends use, so a doubled modifier degrades the same way everywhere.</summary>
+    public Dictionary<string, object?>? Mod(string type)
+    {
+        foreach (var m in Modifiers)
+            if (m.GetValueOrDefault("type") as string == type) return m;
+        return null;
+    }
+
+    public static double? MN(Dictionary<string, object?>? m, string key) =>
+        m is not null && m.TryGetValue(key, out var v) && v is double d ? d : null;
+
+    /// <summary>This node's <c>gridCell</c> placement request (nulls mean "flow me").</summary>
+    public (int? Column, int? Row, int ColumnSpan, int RowSpan) GridCellSpec()
+    {
+        var m = Mod("gridCell");
+        if (m is null) return (null, null, 1, 1);
+        return (
+            MN(m, "column") is { } c ? (int)c : null,
+            MN(m, "row") is { } r ? (int)r : null,
+            MN(m, "columnSpan") is { } cs ? Math.Max(1, (int)cs) : 1,
+            MN(m, "rowSpan") is { } rs ? Math.Max(1, (int)rs) : 1);
+    }
 
     public static WebNode Parse(JsonElement e)
     {

@@ -26,11 +26,23 @@ Gir.Core/GTK onto every neutral consumer.
 ## Widget map (selection)
 
 `Text`→`Label`, `Button`→`Button`, `V/HStack`→`Box`, `ZStack`→`Overlay`, `ScrollView`→`ScrolledWindow`,
-`Grid`→`Grid`, `List`→`ListBox`, `TabView`→`Notebook`, `DisclosureGroup`→`Expander`, `Menu`→`MenuButton`+
+`Grid`→`Grid`, `AbsoluteLayout`→`Fixed`, `List`→`ListBox`, `TabView`→`Notebook`, `DisclosureGroup`→`Expander`, `Menu`→`MenuButton`+
 `Popover`, `TextField`/`SecureField`→`Entry`, `TextEditor`→`TextView`, `Toggle`→`Switch`, `Slider`→`Scale`,
 `Stepper`→`SpinButton`, `Picker`→`DropDown`, `DatePicker`→`Calendar` (in a popover), `ColorPicker`→
 `ColorDialogButton`, `ProgressView`→`ProgressBar`/`Spinner`, `Gauge`→`LevelBar`, `Link`→`LinkButton`,
 shapes→`Box` + size + CSS.
+
+**`Grid` tracks are approximated.** Spans and explicit `.GridCell` pins map exactly onto
+`Gtk.Grid.Attach(child, col, row, colSpan, rowSpan)`, but GTK has no column *definition* — it sizes columns
+from their children and hands leftover space to whoever sets `Hexpand`. So `GridTrack.Fixed`/`Flexible`
+become width requests, `Star` becomes `Hexpand`, `Flexible`'s **maximum is dropped**, and an all-equal-star
+grid additionally sets `ColumnHomogeneous` (the only way to get truly equal columns out of GTK). See
+[Grid](../views-and-controls.md#grid).
+
+**`AbsoluteLayout` is a `Gtk.Fixed`.** Point bounds are exact. Proportional bounds need the layout's own
+allocation, and GTK4 removed the size-allocate signal for non-subclassed widgets — so a frame tick callback
+re-places the children whenever the allocation actually changes. It is installed **only** when some child
+declares a proportional flag, and early-outs on an unchanged size. Unverified: there is no GTK runtime in CI.
 
 **Modifiers via a GTK CSS provider:** each node gets a per-node `Gtk.CssProvider` with a unique class
 (`sdn-N`, via `AddProviderForDisplay`) for padding/background/border/corner-radius/shadow/foregroundColor/font.

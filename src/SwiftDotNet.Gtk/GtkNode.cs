@@ -70,6 +70,7 @@ sealed class GtkNode
         "ZStack" => MakeZStack(),
         "ScrollView" => MakeScroll(),
         "Grid" => MakeGrid(),
+        "AbsoluteLayout" => MakeAbsoluteLayout(),
         "List" => MakeList(),
         "Form" => MakeForm(),
         "Section" => MakeSection(),
@@ -192,16 +193,132 @@ sealed class GtkNode
         return scroll;
     }
 
+    /// <summary>
+    /// <c>Gtk.Grid</c> attaches children at (column, row, colSpan, rowSpan), so spans and explicit
+    /// <c>.GridCell</c> pins map straight across. What it has no concept of is a column *definition*: it
+    /// sizes columns from their children and hands leftover space to whoever sets <c>Hexpand</c>. So the
+    /// tracks lower to per-child hints — Fixed becomes a width request, Star becomes Hexpand, Flexible
+    /// becomes a minimum (GTK has no maximum, so <c>GridTrack.Flexible</c>'s upper bound is dropped) —
+    /// and an all-equal-Star grid additionally goes homogeneous, which is the only way to get truly
+    /// equal columns out of GTK.
+    /// </summary>
     Gtk.Widget MakeGrid()
     {
-        var cols = (int)(Num("columns") ?? 2);
-        var sp = (int)(Num("spacing") ?? 8);
+        var colTracks = GridEngine.ParseTracks(StrOrNull("columnTracks"), (int)(Num("columns") ?? 2));
+        var rowSpec = StrOrNull("rowTracks");
+
         var grid = Gtk.Grid.New();
-        grid.RowSpacing = sp;
-        grid.ColumnSpacing = sp;
+        grid.ColumnSpacing = (int)(Num("columnSpacing") ?? Num("spacing") ?? 8);
+        grid.RowSpacing = (int)(Num("rowSpacing") ?? Num("spacing") ?? 8);
+
+        var requested = new (int?, int?, int, int)[Children.Count];
+        for (var i = 0; i < Children.Count; i++) requested[i] = Children[i].GridCellSpec();
+        var spans = GridEngine.Place(colTracks.Length, requested, out var rowCount);
+
+        var rowTracks = rowSpec is null ? null : GridEngine.ParseTracks(rowSpec, rowCount);
+        grid.ColumnHomogeneous = AllEqualStars(colTracks);
+        if (rowTracks is not null) grid.RowHomogeneous = AllEqualStars(rowTracks);
+
+        var token = Props.GetValueOrDefault("alignment") as string;
         for (var i = 0; i < Children.Count; i++)
-            grid.Attach(Children[i].Widget, i % cols, i / cols, 1, 1);
+        {
+            var w = Children[i].Widget;
+            var s = spans[i];
+            ApplyTrack(w, colTracks, s.Column, horizontal: true);
+            if (rowTracks is not null) ApplyTrack(w, rowTracks, s.Row, horizontal: false);
+            if (token is not null) GtkStyle.ApplyAlignment(w, token);
+            grid.Attach(w, s.Column, s.Row, s.ColumnSpan, s.RowSpan);
+        }
         return grid;
+    }
+
+    static bool AllEqualStars(GridTrack[] tracks)
+    {
+        if (tracks.Length == 0) return false;
+        foreach (var t in tracks)
+            if (t.Kind != GridTrackKind.Star || Math.Abs(t.Value - tracks[0].Value) > 0.0001) return false;
+        return true;
+    }
+
+    static void ApplyTrack(Gtk.Widget w, GridTrack[] tracks, int index, bool horizontal)
+    {
+        if (index < 0 || index >= tracks.Length) return;
+        var t = tracks[index];
+        var size = t.Kind switch
+        {
+            GridTrackKind.Fixed => (int)t.Value,
+            GridTrackKind.Flexible => (int)t.Value,   // minimum only — GTK tracks have no maximum
+            _ => -1,
+        };
+        if (horizontal)
+        {
+            if (size >= 0) w.WidthRequest = size;
+            w.Hexpand = t.Kind == GridTrackKind.Star;
+        }
+        else
+        {
+            if (size >= 0) w.HeightRequest = size;
+            w.Vexpand = t.Kind == GridTrackKind.Star;
+        }
+    }
+
+    // ---- AbsoluteLayout ------------------------------------------------------
+
+    Gtk.Fixed? _absHost;
+    int _absW = -1, _absH = -1;
+
+    /// <summary>
+    /// <c>Gtk.Fixed</c> places children at explicit coordinates, which covers point bounds outright.
+    /// Proportional bounds need the layout's own allocation, and GTK4 has no size-allocate signal for
+    /// non-subclassed widgets — so when (and only when) a child asks for a proportional bound, a frame
+    /// tick callback re-places the children whenever the allocation actually changes.
+    /// </summary>
+    Gtk.Widget MakeAbsoluteLayout()
+    {
+        var host = Gtk.Fixed.New();
+        host.Hexpand = true;
+        host.Vexpand = true;
+        _absHost = host;
+        foreach (var c in Children) host.Put(c.Widget, 0, 0);
+        SyncAbsoluteBounds();
+
+        if (AnyProportionalChild())
+            host.AddTickCallback((_, _) => { SyncAbsoluteBounds(); return true; });
+        return host;
+    }
+
+    bool AnyProportionalChild()
+    {
+        foreach (var c in Children)
+            if (AbsoluteLayoutBounds.Parse(c.Mod("layoutBounds")?.GetValueOrDefault("flags") as string) != LayoutFlags.None)
+                return true;
+        return false;
+    }
+
+    void SyncAbsoluteBounds()
+    {
+        if (_absHost is not { } host) return;
+        var hostW = host.GetWidth();
+        var hostH = host.GetHeight();
+        if (hostW == _absW && hostH == _absH) return;   // the tick fires every frame; only act on a resize
+        _absW = hostW;
+        _absH = hostH;
+
+        foreach (var c in Children)
+        {
+            var m = c.Mod("layoutBounds");
+            if (m is null) continue;
+            var flags = AbsoluteLayoutBounds.Parse(m.GetValueOrDefault("flags") as string);
+            // A GTK child has no measured size to hand back here, so an auto axis keeps its own natural
+            // request (0 below is only used as the "natural size" input to the anchor math).
+            var (x, y, w, h) = AbsoluteLayoutBounds.Resolve(
+                Num(m, "x") ?? 0, Num(m, "y") ?? 0, Num(m, "width"), Num(m, "height"), flags,
+                hostW, hostH, 0, 0);
+
+            if (Num(m, "width").HasValue) c.Widget.WidthRequest = (int)w;
+            if (Num(m, "height").HasValue) c.Widget.HeightRequest = (int)h;
+            host.Move(c.Widget, x, y);
+        }
     }
 
     /// <summary>The widget that directly holds child rows when it isn't a plain <c>Gtk.Box</c> (List's
@@ -941,6 +1058,19 @@ sealed class GtkNode
     // ---- helpers -------------------------------------------------------------
 
     string Str(string key) => Props.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
+    string? StrOrNull(string key) => Props.TryGetValue(key, out var v) ? v as string : null;
+
+    /// <summary>This node's <c>gridCell</c> placement request (nulls mean "flow me").</summary>
+    (int? Column, int? Row, int ColumnSpan, int RowSpan) GridCellSpec()
+    {
+        var m = Mod("gridCell");
+        if (m is null) return (null, null, 1, 1);
+        return (
+            Num(m, "column") is { } c ? (int)c : null,
+            Num(m, "row") is { } r ? (int)r : null,
+            Num(m, "columnSpan") is { } cs ? Math.Max(1, (int)cs) : 1,
+            Num(m, "rowSpan") is { } rs ? Math.Max(1, (int)rs) : 1);
+    }
 
     static string F(double v) => v.ToString(CultureInfo.InvariantCulture);
     double? Num(string key) => Props.TryGetValue(key, out var v) && v is double d ? d : null;

@@ -50,7 +50,8 @@ Reusable host base: `SwiftDotNetApplication : Application`.
 ## Widget map (selection)
 
 `Text`→`TextBlock`, `Button`→`Button`, `V/HStack`→`StackPanel`, `ZStack`→`Grid`, `ScrollView`→`ScrollViewer`,
-`Grid`→`Grid` (star columns), `List`→`Border`+`StackPanel`, `DisclosureGroup`→`Expander`, `TabView`→`TabView`,
+`Grid`→`Grid` (Column/RowDefinitions + `SetColumnSpan`/`SetRowSpan`), `AbsoluteLayout`→`Canvas`,
+`List`→`Border`+`StackPanel`, `DisclosureGroup`→`Expander`, `TabView`→`TabView`,
 `Menu`→`Button`+`MenuFlyout`, `TextField`→`TextBox`, `SecureField`→`PasswordBox`, `TextEditor`→`TextBox`
 (AcceptsReturn), `Toggle`→`ToggleSwitch`, `Slider`→`Slider`, `Stepper`→`NumberBox`, `Picker`→`ComboBox`,
 `DatePicker`→`CalendarDatePicker`, `ColorPicker`→`Button`+Flyout(`ColorPicker`), `NavigationStack`→a
@@ -67,6 +68,13 @@ Controls library's `Overlay`/`OverlayHost`, and therefore `Toast`, `Dialog`, `Lo
 `FloatingPanel`, `ImageViewer` and `DurationPicker`, lower to a ZStack carrying that token. It
 unconditionally overrides a child's own alignment, which is deliberate: VStack/HStack children default to
 `Center`, so a conditional override would leave the toast case still centred.
+
+`Grid` is the closest native fit of any backend: `GridTrack` maps onto Column/RowDefinitions
+(`Pixel`/`Star`/`Auto`) with `Flexible`'s bounds on `MinWidth`/`MaxWidth`, and spans onto
+`Grid.SetColumnSpan`/`SetRowSpan`. `AbsoluteLayout` is a `Canvas`: point bounds land on
+`Canvas.SetLeft`/`SetTop`, and because a Canvas never sizes its children, declared sizes are pushed onto
+the elements and proportional bounds are recomputed on `SizeChanged`. Both are **uncompiled** like the
+rest of this backend.
 
 ### Modifier gaps and degradations
 

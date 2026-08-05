@@ -79,6 +79,7 @@ sealed class WinNode
         "ZStack" => MakeZStack(),
         "ScrollView" => MakeScroll(),
         "Grid" => MakeGrid(),
+        "AbsoluteLayout" => MakeAbsoluteLayout(),
         "List" => MakeList(),
         "Form" => MakeForm(),
         "Section" => MakeSection(),
@@ -197,23 +198,119 @@ sealed class WinNode
         return new ScrollViewer { Content = inner };
     }
 
+    /// <summary>
+    /// WinUI's Grid is the closest native match there is: Column/RowDefinitions take Pixel/Star/Auto
+    /// straight across, and Grid.SetColumnSpan/SetRowSpan cover both span axes. The only DSL concept
+    /// without a direct equivalent is <see cref="GridTrackKind.Flexible"/>'s upper bound, which lands on
+    /// the definition's MinWidth/MaxWidth instead.
+    /// </summary>
     WinGrid MakeGrid()
     {
-        var cols = (int)(Num("columns") ?? 2);
-        var sp = Num("spacing") ?? 8;
-        var grid = new WinGrid { ColumnSpacing = sp, RowSpacing = sp };
-        for (var i = 0; i < cols; i++)
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var colTracks = GridEngine.ParseTracks(StrOrNull("columnTracks"), (int)(Num("columns") ?? 2));
+        var grid = new WinGrid
+        {
+            ColumnSpacing = Num("columnSpacing") ?? Num("spacing") ?? 8,
+            RowSpacing = Num("rowSpacing") ?? Num("spacing") ?? 8,
+        };
+
+        foreach (var t in colTracks)
+        {
+            var def = new ColumnDefinition { Width = Length(t) };
+            if (t.Kind == GridTrackKind.Flexible)
+            {
+                def.MinWidth = t.Value;
+                if (t.Max is { } max) def.MaxWidth = max;
+            }
+            grid.ColumnDefinitions.Add(def);
+        }
+
+        var requested = new (int?, int?, int, int)[Children.Count];
+        for (var i = 0; i < Children.Count; i++) requested[i] = Children[i].GridCellSpec();
+        var spans = GridEngine.Place(colTracks.Length, requested, out var rowCount);
+
+        var rowTracks = StrOrNull("rowTracks") is { } rowSpec ? GridEngine.ParseTracks(rowSpec, rowCount) : null;
+        for (var r = 0; r < rowCount; r++)
+        {
+            var t = rowTracks is not null && r < rowTracks.Length ? rowTracks[r] : GridTrack.Auto;
+            var def = new RowDefinition { Height = Length(t) };
+            if (t.Kind == GridTrackKind.Flexible)
+            {
+                def.MinHeight = t.Value;
+                if (t.Max is { } max) def.MaxHeight = max;
+            }
+            grid.RowDefinitions.Add(def);
+        }
+
+        var token = Props.GetValueOrDefault("alignment") as string;
         for (var i = 0; i < Children.Count; i++)
         {
-            var row = i / cols;
-            if (grid.RowDefinitions.Count <= row) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var el = Children[i].Element;
-            WinGrid.SetColumn(el, i % cols);
-            WinGrid.SetRow(el, row);
+            var s = spans[i];
+            WinGrid.SetColumn(el, s.Column);
+            WinGrid.SetRow(el, s.Row);
+            if (s.ColumnSpan > 1) WinGrid.SetColumnSpan(el, s.ColumnSpan);
+            if (s.RowSpan > 1) WinGrid.SetRowSpan(el, s.RowSpan);
+            if (token is not null)
+            {
+                el.HorizontalAlignment = AlignH(token);
+                el.VerticalAlignment = AlignV(token);
+            }
             grid.Children.Add(el);
         }
         return grid;
+    }
+
+    static GridLength Length(GridTrack t) => t.Kind switch
+    {
+        GridTrackKind.Fixed => new GridLength(t.Value, GridUnitType.Pixel),
+        GridTrackKind.Star => new GridLength(t.Value, GridUnitType.Star),
+        _ => GridLength.Auto,   // Flexible is Auto plus the Min/Max bounds set on the definition
+    };
+
+    /// <summary>
+    /// A WinUI <c>Canvas</c> positions children at explicit Left/Top, which covers point bounds. Canvas
+    /// never resizes its children, so declared sizes are pushed onto the elements, and proportional
+    /// bounds are recomputed on <c>SizeChanged</c> — the Canvas itself has no layout-time size to
+    /// resolve fractions against until it has been measured once.
+    /// </summary>
+    Canvas MakeAbsoluteLayout()
+    {
+        var canvas = new Canvas { HorizontalAlignment = WinHorizontalAlignment.Stretch };
+        foreach (var c in Children) canvas.Children.Add(c.Element);
+        canvas.SizeChanged += (_, e) => SyncAbsoluteBounds(canvas, e.NewSize.Width, e.NewSize.Height);
+        SyncAbsoluteBounds(canvas, canvas.ActualWidth, canvas.ActualHeight);
+        return canvas;
+    }
+
+    void SyncAbsoluteBounds(Canvas canvas, double hostWidth, double hostHeight)
+    {
+        foreach (var c in Children)
+        {
+            var m = c.Modifiers.FirstOrDefault(x => x["type"] as string == "layoutBounds");
+            if (m is null) continue;
+            var flags = AbsoluteLayoutBounds.Parse(m.GetValueOrDefault("flags") as string);
+            var el = c.Element;
+            var (x, y, w, h) = AbsoluteLayoutBounds.Resolve(
+                N(m, "x"), N(m, "y"), Num(m, "width"), Num(m, "height"), flags,
+                hostWidth, hostHeight, el.ActualWidth, el.ActualHeight);
+
+            if (Num(m, "width").HasValue) el.Width = w;
+            if (Num(m, "height").HasValue) el.Height = h;
+            Canvas.SetLeft(el, x);
+            Canvas.SetTop(el, y);
+        }
+    }
+
+    /// <summary>This node's <c>gridCell</c> placement request (nulls mean "flow me").</summary>
+    (int? Column, int? Row, int ColumnSpan, int RowSpan) GridCellSpec()
+    {
+        var m = Modifiers.FirstOrDefault(x => x["type"] as string == "gridCell");
+        if (m is null) return (null, null, 1, 1);
+        return (
+            Num(m, "column") is { } c ? (int)c : null,
+            Num(m, "row") is { } r ? (int)r : null,
+            Num(m, "columnSpan") is { } cs ? Math.Max(1, (int)cs) : 1,
+            Num(m, "rowSpan") is { } rs ? Math.Max(1, (int)rs) : 1);
     }
 
     /// <summary>The panel that directly hosts a container's child rows, when the container wraps them in
@@ -871,6 +968,7 @@ sealed class WinNode
     };
 
     string Str(string key) => Props.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
+    string? StrOrNull(string key) => Props.TryGetValue(key, out var v) ? v as string : null;
     double? Num(string key) => Props.TryGetValue(key, out var v) && v is double d ? d : null;
     bool Bool(string key) => Props.TryGetValue(key, out var v) && v is bool b && b;
     static double? Num(Dictionary<string, object?> m, string key) => m.TryGetValue(key, out var v) && v is double d ? d : null;

@@ -19,6 +19,11 @@ Alert, Image/Label, ProgressView/Gauge, Link, shapes — plus the modifier set.
 - **SF Symbols** → an emoji map (avoids a material-icons dependency).
 - **Modifiers** apply via a `Modified()` wrapper (box modifiers + `CompositionLocalProvider` for font/color);
   shapes fill from the `foregroundColor` modifier.
+- **`Grid` and `AbsoluteLayout` are custom `Layout`s.** `LazyVerticalGrid` sizes columns but has no row
+  span or explicit cell, and Compose has no absolute-positioning container — so both are written as
+  `Layout` composables whose measure/place passes port `SkiaNode.ResolveTracks` and
+  [`GridEngine`](../../src/SwiftDotNet/Core/GridEngine.cs) line for line. Fixed/Flexible track sizes and
+  point bounds are converted `dp → px` before sizing. See [Grid](../views-and-controls.md#grid).
 
 ## Building & wiring
 

@@ -120,6 +120,7 @@ sealed class TuiNode
         "ZStack" => MakeZStack(),
         "ScrollView" => MakeScroll(),
         "Grid" => MakeGrid(),
+        "AbsoluteLayout" => MakeAbsoluteLayout(),
         "List" => MakeList(),
         "Form" => MakeForm(),
         "Section" => MakeSection(),
@@ -245,16 +246,93 @@ sealed class TuiNode
         };
     }
 
+    /// <summary>
+    /// Terminal.UI's own <c>Grid</c> already models column/row definitions and cell spans, so the tracks
+    /// and <c>.GridCell</c>/<c>.GridSpan</c> placement map across almost directly. The one lossy step is
+    /// the unit: a terminal has no points, so Fixed/Flexible sizes go through
+    /// <see cref="TuiStyle.Cols"/>/<see cref="TuiStyle.Rows"/> and land on whole cells.
+    /// </summary>
     Visual MakeGrid()
     {
-        var cols = Math.Max(1, (int)(Num("columns") ?? 2));
-        var gap = TuiStyle.Cols(Num("spacing") ?? 8);
-        var grid = new TGrid { ColumnGap = gap, RowGap = Math.Max(0, gap / 2), AutoGrowRows = true };
-        for (var i = 0; i < cols; i++)
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Star(1) });
+        var colTracks = GridEngine.ParseTracks(StrOrNull("columnTracks"), (int)(Num("columns") ?? 2));
+        var grid = new TGrid
+        {
+            ColumnGap = TuiStyle.Cols(Num("columnSpacing") ?? Num("spacing") ?? 8),
+            RowGap = TuiStyle.Rows(Num("rowSpacing") ?? Num("spacing") ?? 4),
+            AutoGrowRows = true,
+        };
+
+        foreach (var t in colTracks)
+        {
+            var def = new ColumnDefinition { Width = Length(t, horizontal: true) };
+            if (t.Kind == GridTrackKind.Flexible)
+            {
+                def.MinWidth = TuiStyle.Cols(t.Value);
+                if (t.Max is { } max) def.MaxWidth = TuiStyle.Cols(max);
+            }
+            grid.ColumnDefinitions.Add(def);
+        }
+
+        var requested = new (int?, int?, int, int)[Children.Count];
+        for (var i = 0; i < Children.Count; i++) requested[i] = Children[i].GridCellSpec();
+        var spans = GridEngine.Place(colTracks.Length, requested, out var rowCount);
+
+        if (StrOrNull("rowTracks") is { } rowSpec)
+            foreach (var t in GridEngine.ParseTracks(rowSpec, rowCount))
+            {
+                var def = new RowDefinition { Height = Length(t, horizontal: false) };
+                if (t.Kind == GridTrackKind.Flexible)
+                {
+                    def.MinHeight = TuiStyle.Rows(t.Value);
+                    if (t.Max is { } max) def.MaxHeight = TuiStyle.Rows(max);
+                }
+                grid.RowDefinitions.Add(def);
+            }
+
+        var token = Props.GetValueOrDefault("alignment") as string;
         for (var i = 0; i < Children.Count; i++)
-            grid.Cells.Add(new GridCell(Children[i].Visual) { Row = i / cols, Column = i % cols });
+        {
+            var s = spans[i];
+            if (token is not null) TuiStyle.ApplyAlignment(Children[i].Visual, token);
+            grid.Cells.Add(new GridCell(Children[i].Visual)
+            {
+                Row = s.Row,
+                Column = s.Column,
+                ColumnSpan = s.ColumnSpan,
+                RowSpan = s.RowSpan,
+            });
+        }
         return grid;
+    }
+
+    static GridLength Length(GridTrack t, bool horizontal) => t.Kind switch
+    {
+        GridTrackKind.Fixed => GridLength.Fixed(horizontal ? TuiStyle.Cols(t.Value) : TuiStyle.Rows(t.Value)),
+        GridTrackKind.Star => GridLength.Star(t.Value),
+        // A Flexible track is content-sized between bounds; the bounds ride on the definition itself.
+        _ => GridLength.Auto,
+    };
+
+    Visual MakeAbsoluteLayout()
+    {
+        var panel = new TuiAbsolute();
+        foreach (var c in Children) panel.Add(c.AbsoluteItem());
+        return panel;
+    }
+
+    /// <summary>This node as an <see cref="TuiAbsolute.Item"/>, reading its own <c>layoutBounds</c>.</summary>
+    TuiAbsolute.Item AbsoluteItem()
+    {
+        var m = Mod("layoutBounds");
+        return new TuiAbsolute.Item
+        {
+            Visual = Visual,
+            X = m is null ? 0 : TuiStyle.Num(m, "x"),
+            Y = m is null ? 0 : TuiStyle.Num(m, "y"),
+            Width = m is not null && m.ContainsKey("width") ? TuiStyle.Num(m, "width") : null,
+            Height = m is not null && m.ContainsKey("height") ? TuiStyle.Num(m, "height") : null,
+            Flags = AbsoluteLayoutBounds.Parse(m?.GetValueOrDefault("flags") as string),
+        };
     }
 
     Visual MakeList()
@@ -1000,8 +1078,28 @@ sealed class TuiNode
     // ---- helpers -------------------------------------------------------------
 
     internal string Str(string key) => Props.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
+    internal string? StrOrNull(string key) => Props.TryGetValue(key, out var v) ? v as string : null;
     internal double? Num(string key) => Props.TryGetValue(key, out var v) && v is double d ? d : null;
     internal bool Bool(string key) => Props.TryGetValue(key, out var v) && v is bool b && b;
+
+    Dictionary<string, object?>? Mod(string type)
+    {
+        foreach (var m in Modifiers)
+            if (m.GetValueOrDefault("type") as string == type) return m;
+        return null;
+    }
+
+    /// <summary>This node's <c>gridCell</c> placement request (nulls mean "flow me").</summary>
+    (int? Column, int? Row, int ColumnSpan, int RowSpan) GridCellSpec()
+    {
+        var m = Mod("gridCell");
+        if (m is null) return (null, null, 1, 1);
+        return (
+            m.ContainsKey("column") ? (int)TuiStyle.Num(m, "column") : null,
+            m.ContainsKey("row") ? (int)TuiStyle.Num(m, "row") : null,
+            Math.Max(1, (int)TuiStyle.Num(m, "columnSpan", 1)),
+            Math.Max(1, (int)TuiStyle.Num(m, "rowSpan", 1)));
+    }
 
     static Dictionary<string, object?> ReadDict(JsonElement e)
     {

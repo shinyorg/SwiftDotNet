@@ -90,7 +90,8 @@ Two ways to add your own control:
 
 ## Views & controls
 
-- **Layout**: `VStack`, `HStack`, `ZStack`, `ScrollView`, `Grid`, `List` (+ `List.ForEach`),
+- **Layout**: `VStack`, `HStack`, `ZStack`, `ScrollView`, `Grid` (per-track sizing + cell spans),
+  `AbsoluteLayout` (point or proportional bounds), `List` (+ `List.ForEach`),
   `Form`, `Section`, `Group`, `Spacer`, `Divider`
 - **Navigation & presentation**: `NavigationStack`, `NavigationLink`, `TabView` (+ `.Paged()` carousel),
   `Tab`, `Sheet`, `Alert`, `DisclosureGroup`, `Menu`

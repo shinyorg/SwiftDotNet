@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
@@ -65,6 +66,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
@@ -713,6 +718,7 @@ private fun RawNode(node: VNode) {
             ) { node.children.forEach { NodeView(it) } }
 
         "Grid" -> GridNode(node)
+        "AbsoluteLayout" -> AbsoluteLayoutNode(node)
         "List" -> ListNode(node)
         "Form" -> Column(
             Modifier.fillMaxSize()
@@ -819,15 +825,306 @@ private fun WebViewNode(node: VNode) {
 
 // MARK: - Layout nodes -------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+//  Grid & AbsoluteLayout engines
+//
+//  Mirrors SwiftDotNet.GridEngine / AbsoluteLayoutBounds on the C# side. Neither container maps onto
+//  a stock composable: LazyVerticalGrid sizes columns but has no row span or explicit cell, and Compose
+//  has no absolute-positioning container. Both are therefore written as custom `Layout`s, which is
+//  where the measure and place passes the DSL needs actually live.
+// ---------------------------------------------------------------------------
+
+private enum class TrackKind { AUTO, FIXED, STAR, FLEXIBLE }
+
+/** One column/row definition: points for FIXED, weight for STAR, minimum (+ optional max) for FLEXIBLE. */
+private data class Track(val kind: TrackKind, val value: Double, val max: Double? = null)
+
+/**
+ * Parses `"fixed:80,star:1,auto,flex:40:inf"`. An absent or unparseable spec yields [fallback] equal
+ * star tracks, which is the plain `new Grid(n, …)` shape.
+ */
+private fun parseTracks(spec: String?, fallback: Int): List<Track> {
+    if (spec.isNullOrEmpty()) return List(maxOf(1, fallback)) { Track(TrackKind.STAR, 1.0) }
+    return spec.split(",").map { token ->
+        val parts = token.split(":")
+        when (parts[0]) {
+            "fixed" -> Track(TrackKind.FIXED, parts.getOrNull(1)?.toDoubleOrNull() ?: 0.0)
+            "star" -> Track(TrackKind.STAR, parts.getOrNull(1)?.toDoubleOrNull() ?: 1.0)
+            "flex" -> {
+                val upper = parts.getOrNull(2) ?: "inf"
+                Track(TrackKind.FLEXIBLE, parts.getOrNull(1)?.toDoubleOrNull() ?: 0.0,
+                    if (upper == "inf") null else upper.toDoubleOrNull())
+            }
+            else -> Track(TrackKind.AUTO, 0.0)
+        }
+    }
+}
+
+private data class Placement(val column: Int, val row: Int, val columnSpan: Int, val rowSpan: Int)
+
+/** Mirror of `GridEngine.Place`: pins claim their cell first, then the rest flow into the first free fit. */
+private fun placeGrid(
+    columns: Int,
+    requests: List<Placement?>,
+): Pair<List<Placement>, Int> {
+    val cols = maxOf(1, columns)
+    val result = arrayOfNulls<Placement>(requests.size)
+    val occupied = mutableListOf<BooleanArray>()
+
+    fun ensureRows(through: Int) { while (occupied.size <= through) occupied.add(BooleanArray(cols)) }
+    fun isFree(col: Int, row: Int, cs: Int, rs: Int): Boolean {
+        for (r in row until row + rs) {
+            if (r >= occupied.size) continue
+            for (c in col until minOf(col + cs, cols)) if (occupied[r][c]) return false
+        }
+        return true
+    }
+    fun occupy(col: Int, row: Int, cs: Int, rs: Int) {
+        ensureRows(row + rs - 1)
+        for (r in row until row + rs) for (c in col until minOf(col + cs, cols)) occupied[r][c] = true
+    }
+
+    requests.forEachIndexed { i, r ->
+        // Only a request carrying BOTH an explicit column and row is a pin; span-only requests flow.
+        if (r == null || r.column < 0 || r.row < 0) return@forEachIndexed
+        val col = r.column.coerceIn(0, cols - 1)
+        val cs = r.columnSpan.coerceIn(1, cols - col)
+        val rs = maxOf(1, r.rowSpan)
+        occupy(col, r.row, cs, rs)
+        result[i] = Placement(col, r.row, cs, rs)
+    }
+
+    var cursorRow = 0
+    var cursorCol = 0
+    requests.forEachIndexed { i, r ->
+        if (result[i] != null) return@forEachIndexed
+        val cs = (r?.columnSpan ?: 1).coerceIn(1, cols)
+        val rs = maxOf(1, r?.rowSpan ?: 1)
+        while (true) {
+            if (cursorCol + cs > cols) { cursorCol = 0; cursorRow++; continue }
+            if (!isFree(cursorCol, cursorRow, cs, rs)) { cursorCol++; continue }
+            break
+        }
+        occupy(cursorCol, cursorRow, cs, rs)
+        result[i] = Placement(cursorCol, cursorRow, cs, rs)
+        cursorCol += cs
+    }
+
+    return result.map { it ?: Placement(0, 0, 1, 1) } to occupied.size
+}
+
+/**
+ * Mirror of `SkiaNode.ResolveTracks`: FIXED takes its points, AUTO/FLEXIBLE take the largest
+ * single-track child, STAR splits the remainder by weight, and a spanning child's shortfall grows the
+ * last content-sized track it covers.
+ */
+private fun resolveTracks(
+    tracks: List<Track>,
+    available: Float,
+    gap: Float,
+    spans: List<Pair<Int, Int>>,   // (start, span) per child
+    sizes: List<Float>,
+): FloatArray {
+    val n = tracks.size
+    val resolved = FloatArray(n)
+
+    fun extent(sizes: FloatArray, start: Int, count: Int): Float {
+        var total = 0f
+        for (i in start until minOf(start + count, sizes.size)) total += sizes[i]
+        return total + gap * maxOf(0, minOf(count, sizes.size - start) - 1)
+    }
+
+    spans.forEachIndexed { i, (start, span) ->
+        if (span != 1 || start >= n || i >= sizes.size) return@forEachIndexed
+        if (tracks[start].kind == TrackKind.AUTO || tracks[start].kind == TrackKind.FLEXIBLE)
+            resolved[start] = maxOf(resolved[start], sizes[i])
+    }
+
+    var starWeight = 0f
+    for (t in 0 until n) when (tracks[t].kind) {
+        TrackKind.FIXED -> resolved[t] = tracks[t].value.toFloat()
+        TrackKind.FLEXIBLE -> {
+            resolved[t] = maxOf(resolved[t], tracks[t].value.toFloat())
+            tracks[t].max?.let { resolved[t] = minOf(resolved[t], it.toFloat()) }
+        }
+        TrackKind.STAR -> { starWeight += tracks[t].value.toFloat(); resolved[t] = 0f }
+        TrackKind.AUTO -> {}
+    }
+
+    spans.forEachIndexed { i, (start, span) ->
+        if (span <= 1 || start >= n || i >= sizes.size) return@forEachIndexed
+        // A span crossing a STAR track needs no help — the star pass below already hands it the leftover.
+        // Growing a content-sized track here instead would *steal* that leftover, which is what a greedy
+        // spanning child (a shape, a raster image) would otherwise do to every star column.
+        for (t in start until minOf(start + span, n))
+            if (tracks[t].kind == TrackKind.STAR) return@forEachIndexed
+        val want = sizes[i]
+        val have = extent(resolved, start, span)
+        if (want <= have) return@forEachIndexed
+        var target = -1
+        for (t in start until minOf(start + span, n))
+            if (tracks[t].kind == TrackKind.AUTO || tracks[t].kind == TrackKind.FLEXIBLE) target = t
+        if (target < 0) return@forEachIndexed
+        var grown = resolved[target] + (want - have)
+        tracks[target].max?.let { grown = minOf(grown, it.toFloat()) }
+        resolved[target] = grown
+    }
+
+    if (starWeight > 0f) {
+        var used = gap * maxOf(0, n - 1)
+        for (t in 0 until n) if (tracks[t].kind != TrackKind.STAR) used += resolved[t]
+        val leftover = maxOf(0f, available - used)
+        for (t in 0 until n) if (tracks[t].kind == TrackKind.STAR)
+            resolved[t] = leftover * tracks[t].value.toFloat() / starWeight
+    }
+
+    return resolved
+}
+
+/** A child's `gridCell` request; -1 column/row means "flow me". */
+private fun VNode.gridCellRequest(): Placement {
+    val m = modifiers.firstOrNull { it["type"] == "gridCell" } ?: return Placement(-1, -1, 1, 1)
+    return Placement(
+        (numOf(m["column"]) ?: -1.0).toInt(),
+        (numOf(m["row"]) ?: -1.0).toInt(),
+        maxOf(1, (numOf(m["columnSpan"]) ?: 1.0).toInt()),
+        maxOf(1, (numOf(m["rowSpan"]) ?: 1.0).toInt()),
+    )
+}
+
 @Composable
 private fun GridNode(node: VNode) {
-    val cols = (node.n("columns") ?: 2.0).toInt().coerceAtLeast(1)
-    val sp = (node.n("spacing") ?: 8.0).dp
-    Column(verticalArrangement = Arrangement.spacedBy(sp)) {
-        node.children.chunked(cols).forEach { rowItems ->
-            Row(horizontalArrangement = Arrangement.spacedBy(sp)) {
-                rowItems.forEach { Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { NodeView(it) } }
-                repeat(cols - rowItems.size) { Spacer(Modifier.weight(1f)) }
+    val colTracks = parseTracks(node.s("columnTracks").ifEmpty { null }, (node.n("columns") ?: 2.0).toInt())
+    val (placements, rowCount) = placeGrid(colTracks.size, node.children.map { it.gridCellRequest() })
+    val rowSpec = node.s("rowTracks").ifEmpty { null }?.let { parseTracks(it, rowCount) }
+    // Rows default to AUTO — a grid should be as tall as it needs, not as tall as it is offered.
+    val rowTracks = List(maxOf(1, rowCount)) { rowSpec?.getOrNull(it) ?: Track(TrackKind.AUTO, 0.0) }
+
+    val density = LocalDensity.current
+    val colGapPx = with(density) { (node.n("columnSpacing") ?: node.n("spacing") ?: 8.0).dp.toPx() }
+    val rowGapPx = with(density) { (node.n("rowSpacing") ?: node.n("spacing") ?: 8.0).dp.toPx() }
+    val align = boxAlignmentFor(node.props["alignment"] as? String)
+
+    // Fixed/Flexible track sizes are declared in DSL points, so convert them to pixels before sizing.
+    fun toPx(t: Track) = when (t.kind) {
+        TrackKind.FIXED -> Track(t.kind, with(density) { t.value.dp.toPx() }.toDouble())
+        TrackKind.FLEXIBLE -> Track(t.kind, with(density) { t.value.dp.toPx() }.toDouble(),
+            t.max?.let { with(density) { it.dp.toPx() }.toDouble() })
+        else -> t
+    }
+    val cols = colTracks.map(::toPx)
+    val rows = rowTracks.map(::toPx)
+
+    Layout(content = { node.children.forEach { NodeView(it) } }) { measurables, constraints ->
+        val colSpans = placements.map { it.column to it.columnSpan }
+        val rowSpans = placements.map { it.row to it.rowSpan }
+
+        // Pass 1: natural sizes drive the content-sized columns.
+        val natural = measurables.map { it.measure(Constraints()) }
+        val availableW = if (constraints.hasBoundedWidth) constraints.maxWidth.toFloat()
+                         else natural.sumOf { it.width }.toFloat()
+        val colW = resolveTracks(cols, availableW, colGapPx, colSpans, natural.map { it.width.toFloat() })
+
+        fun extent(sizes: FloatArray, start: Int, count: Int, gap: Float): Float {
+            var total = 0f
+            for (i in start until minOf(start + count, sizes.size)) total += sizes[i]
+            return total + gap * maxOf(0, minOf(count, sizes.size - start) - 1)
+        }
+
+        // Pass 2: re-measure inside the resolved cell so wrapping text reports its real height.
+        val cells = measurables.mapIndexed { i, m ->
+            val w = extent(colW, placements[i].column, placements[i].columnSpan, colGapPx).toInt()
+            m.measure(Constraints(maxWidth = maxOf(0, w)))
+        }
+        val availableH = if (constraints.hasBoundedHeight) constraints.maxHeight.toFloat() else Float.MAX_VALUE
+        val rowH = resolveTracks(rows, availableH, rowGapPx, rowSpans, cells.map { it.height.toFloat() })
+
+        val totalW = (colW.sum() + colGapPx * maxOf(0, colW.size - 1)).toInt()
+        val totalH = (rowH.sum() + rowGapPx * maxOf(0, rowH.size - 1)).toInt()
+
+        layout(constraints.constrainWidth(totalW), constraints.constrainHeight(totalH)) {
+            cells.forEachIndexed { i, placeable ->
+                val p = placements[i]
+                val cellX = extent(colW, 0, p.column, colGapPx) + if (p.column > 0) colGapPx else 0f
+                val cellY = extent(rowH, 0, p.row, rowGapPx) + if (p.row > 0) rowGapPx else 0f
+                val cellW = extent(colW, p.column, p.columnSpan, colGapPx)
+                val cellH = extent(rowH, p.row, p.rowSpan, rowGapPx)
+                val offset = align.align(
+                    IntSize(placeable.width, placeable.height),
+                    IntSize(cellW.toInt(), cellH.toInt()),
+                    layoutDirection)
+                placeable.place(cellX.toInt() + offset.x, cellY.toInt() + offset.y)
+            }
+        }
+    }
+}
+
+/** A child's `layoutBounds`, already converted from DSL points to pixels where it isn't proportional. */
+private data class AbsBounds(
+    val x: Float, val y: Float,
+    val width: Float?, val height: Float?,
+    val flags: String,
+) {
+    val xProportional get() = flags.contains('x')
+    val yProportional get() = flags.contains('y')
+    val widthProportional get() = flags.contains('w')
+    val heightProportional get() = flags.contains('h')
+}
+
+@Composable
+private fun AbsoluteLayoutNode(node: VNode) {
+    val density = LocalDensity.current
+    val bounds = node.children.map { child ->
+        val m = child.modifiers.firstOrNull { it["type"] == "layoutBounds" }
+        if (m == null) null
+        else {
+            val flags = m["flags"] as? String ?: ""
+            fun conv(v: Double?, proportional: Boolean) =
+                v?.let { if (proportional) it.toFloat() else with(density) { it.dp.toPx() } }
+            AbsBounds(
+                conv(numOf(m["x"]) ?: 0.0, flags.contains('x')) ?: 0f,
+                conv(numOf(m["y"]) ?: 0.0, flags.contains('y')) ?: 0f,
+                conv(numOf(m["width"]), flags.contains('w')),
+                conv(numOf(m["height"]), flags.contains('h')),
+                flags)
+        }
+    }
+
+    Layout(content = { node.children.forEach { NodeView(it) } }) { measurables, constraints ->
+        // A canvas claims what it is offered — the fractions need something to be a fraction of. When an
+        // axis is unbounded, fall back to the far edge of the point-placed children.
+        val hostW = if (constraints.hasBoundedWidth) constraints.maxWidth else 0
+        val hostH = if (constraints.hasBoundedHeight) constraints.maxHeight else 0
+
+        val placeables = measurables.mapIndexed { i, m ->
+            val b = bounds.getOrNull(i)
+            val w = b?.width?.let { if (b.widthProportional) it * hostW else it }?.toInt()
+            val h = b?.height?.let { if (b.heightProportional) it * hostH else it }?.toInt()
+            m.measure(Constraints(
+                minWidth = w ?: 0, maxWidth = w ?: Constraints.Infinity,
+                minHeight = h ?: 0, maxHeight = h ?: Constraints.Infinity))
+        }
+
+        var extentW = 0
+        var extentH = 0
+        placeables.forEachIndexed { i, p ->
+            val b = bounds.getOrNull(i)
+            if (b == null || (!b.xProportional && !b.widthProportional)) extentW = maxOf(extentW, ((b?.x ?: 0f).toInt()) + p.width)
+            if (b == null || (!b.yProportional && !b.heightProportional)) extentH = maxOf(extentH, ((b?.y ?: 0f).toInt()) + p.height)
+        }
+        val width = if (constraints.hasBoundedWidth) constraints.maxWidth else extentW
+        val height = if (constraints.hasBoundedHeight) constraints.maxHeight else extentH
+
+        layout(width, height) {
+            placeables.forEachIndexed { i, p ->
+                // No declared bounds: park it at the origin, so a forgotten .LayoutBounds shows up
+                // rather than vanishing.
+                val b = bounds.getOrNull(i) ?: run { p.place(0, 0); return@forEachIndexed }
+                // A proportional position is an anchor across the free space: 0 flush leading, 1 flush
+                // trailing, 0.5 centred — the same rule AbsoluteLayoutBounds.Resolve applies in C#.
+                val x = if (b.xProportional) (width - p.width) * b.x else b.x
+                val y = if (b.yProportional) (height - p.height) * b.y else b.y
+                p.place(x.toInt(), y.toInt())
             }
         }
     }

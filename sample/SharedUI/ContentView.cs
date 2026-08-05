@@ -244,7 +244,36 @@ public sealed class ContentView : View
             new ZStack(
                 new RoundedRectangle(20).Frame(200, 100).ForegroundColor(Color.Blue),
                 new Text("ZStack").Font(Font.Title).ForegroundColor(Color.Primary)
-            )
+            ),
+            new Divider(),
+
+            // Sized tracks + spans: a fixed gutter, a greedy middle, and a content-sized tail.
+            new Text("Grid tracks & spans").Font(Font.Headline),
+            new Grid(
+                    new Rectangle().Frame(height: 24).ForegroundColor(Color.Accent).GridSpan(columns: 3),
+                    new Text("Fixed 60"),
+                    new Rectangle().Frame(height: 24).ForegroundColor(Color.Blue),
+                    new Text("Auto"),
+                    new Text("Tall").GridSpan(rows: 2),
+                    new Rectangle().Frame(height: 24).ForegroundColor(Color.Green),
+                    new Text("→"),
+                    new Rectangle().Frame(height: 24).ForegroundColor(Color.Red),
+                    new Text("↓"))
+                .Columns(GridTrack.Fixed(60), GridTrack.Star(), GridTrack.Auto)
+                .ColumnSpacing(10)
+                .RowSpacing(6)
+                .Alignment(Alignment.Leading),
+            new Divider(),
+
+            // AbsoluteLayout: a proportional backdrop with two children pinned to opposite corners.
+            new Text("AbsoluteLayout").Font(Font.Headline),
+            new AbsoluteLayout(
+                    new RoundedRectangle(12).ForegroundColor(Color.Secondary).Opacity(0.25)
+                        .LayoutBounds(0, 0, 1, 1, LayoutFlags.SizeProportional),
+                    new Text("top-left").LayoutBounds(12, 12),
+                    new Capsule().Frame(60, 24).ForegroundColor(Color.Accent)
+                        .LayoutBounds(1, 1, 60, 24, LayoutFlags.PositionProportional))
+                .Frame(height: 120)
         ).Padding(20).NavigationTitle("Shapes & Grid");
 
     View AlignmentPage() =>

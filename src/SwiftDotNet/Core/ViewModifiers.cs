@@ -168,6 +168,73 @@ public static class ViewModifiers
         return view;
     }
 
+    // ---- Grid placement -------------------------------------------------------------------------
+    // Both helpers merge into a single `gridCell` wire modifier so they can be chained in either order.
+
+    /// <summary>
+    /// Makes this child cover <paramref name="columns"/> columns and <paramref name="rows"/> rows of its
+    /// enclosing <see cref="Grid"/>. Row spans are honored on Skia/GTK/WinUI/TUI/Web/Compose/SwiftUI;
+    /// see the docs for the per-backend table.
+    /// </summary>
+    public static T GridSpan<T>(this T view, int columns = 1, int rows = 1) where T : View
+    {
+        var m = view.EnsureGridCell();
+        m.ColumnSpan = Math.Max(1, columns);
+        m.RowSpan = Math.Max(1, rows);
+        return view;
+    }
+
+    /// <summary>
+    /// Pins this child to an explicit zero-based cell of its enclosing <see cref="Grid"/>, instead of
+    /// letting it flow into the next free one. Children without an explicit cell flow around pinned ones.
+    /// </summary>
+    public static T GridCell<T>(this T view, int column, int row, int columnSpan = 1, int rowSpan = 1) where T : View
+    {
+        var m = view.EnsureGridCell();
+        m.Column = Math.Max(0, column);
+        m.Row = Math.Max(0, row);
+        m.ColumnSpan = Math.Max(1, columnSpan);
+        m.RowSpan = Math.Max(1, rowSpan);
+        return view;
+    }
+
+    static GridCellModifier EnsureGridCell(this View view)
+    {
+        foreach (var m in view.Modifiers)
+            if (m is GridCellModifier g) return g;
+        var added = new GridCellModifier();
+        view.Modifiers.Add(added);
+        return added;
+    }
+
+    // ---- AbsoluteLayout placement ---------------------------------------------------------------
+
+    /// <summary>
+    /// Positions this child's top-left corner inside its enclosing <see cref="AbsoluteLayout"/>, leaving
+    /// it to size itself. Ignored by every other container.
+    /// </summary>
+    public static T LayoutBounds<T>(this T view, double x, double y) where T : View
+    {
+        view.Modifiers.Add(new LayoutBoundsModifier(x, y, null, null, LayoutFlags.None));
+        return view;
+    }
+
+    /// <summary>
+    /// Positions and sizes this child inside its enclosing <see cref="AbsoluteLayout"/>. Pass
+    /// <see cref="AbsoluteLayout.AutoSize"/> for a width/height the child should decide for itself, and
+    /// <paramref name="flags"/> to read any of x/y/width/height as a fraction of the layout's own size.
+    /// </summary>
+    public static T LayoutBounds<T>(this T view, double x, double y, double width, double height,
+        LayoutFlags flags = LayoutFlags.None) where T : View
+    {
+        view.Modifiers.Add(new LayoutBoundsModifier(
+            x, y,
+            width < 0 ? null : width,
+            height < 0 ? null : height,
+            flags));
+        return view;
+    }
+
     /// <summary>Rotates the view by <paramref name="degrees"/> around <paramref name="anchor"/> (mirrors <c>.rotationEffect(.degrees(_:))</c>).</summary>
     public static T Rotation<T>(this T view, double degrees, Alignment anchor = Alignment.Center) where T : View
     {

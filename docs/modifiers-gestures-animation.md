@@ -34,6 +34,8 @@ new Text("Hi")
 | `.Disabled` | Dim + block interaction. |
 | `.ScaleEffect` | Native scale transform, around an anchor. |
 | `.Align` | Fill width + align. |
+| `.GridSpan` / `.GridCell` | Cell placement inside a `Grid` — see [below](#grid-and-absolute-placement). |
+| `.LayoutBounds` | Rect inside an `AbsoluteLayout` — see [below](#grid-and-absolute-placement). |
 | `.NavigationTitle` | Nav bar title. |
 | `.SafeAreaPadding` / `.IgnoresSafeArea` | System-chrome insets — **iOS/Android only**, see [below](#safe-area-ios--android-only). |
 
@@ -54,6 +56,41 @@ Because modifiers are a universal wrapper, `.Opacity` / `.Disabled` / `.ScaleEff
 >   glyph size), and `.Opacity` is blended into the colour because a cell has no alpha. `.CornerRadius`,
 >   `.Offset`, `.ScaleEffect`, `.Rotation`, `.Shadow` and `.Animation` are honest no-ops; `.Material`
 >   renders a flat tint. A gradient collapses to its first stop.
+
+## Grid and absolute placement
+
+Three modifiers mean nothing on their own — they tell an enclosing
+[`Grid`](views-and-controls.md#grid) or [`AbsoluteLayout`](views-and-controls.md#absolutelayout) where to
+put the view. Any other container ignores them.
+
+```csharp
+new Grid(3,
+    new Text("Header").GridSpan(columns: 3),        // covers all three columns
+    new Text("pinned").GridCell(column: 2, row: 1), // an explicit cell; others flow around it
+    new Text("tall").GridSpan(columns: 1, rows: 2));
+
+new AbsoluteLayout(
+    new Text("badge").LayoutBounds(12, 12),                                  // points, self-sized
+    new Rectangle().LayoutBounds(0, 0, 1, 0.5, LayoutFlags.SizeProportional),// half the height
+    new Button("Close", Close)
+        .LayoutBounds(1, 0, 80, 32, LayoutFlags.XProportional));             // flush right
+```
+
+| Modifier | Effect |
+|---|---|
+| `.GridSpan(columns: n, rows: m)` | Cover *n* columns and *m* rows; the child still flows. |
+| `.GridCell(column: c, row: r, …)` | Pin to a zero-based cell (spans optional). |
+| `.LayoutBounds(x, y)` | Top-left corner in points; the child sizes itself. |
+| `.LayoutBounds(x, y, w, h, flags)` | Full rect. `AbsoluteLayout.AutoSize` leaves an axis to the child; `LayoutFlags` makes any of x/y/width/height a fraction of the layout. |
+
+> **Gotchas.**
+> - `.GridSpan` and `.GridCell` **merge into one** wire modifier, so `.GridCell(1, 2).GridSpan(2)` is a
+>   single placement rather than two competing ones — chain them in either order.
+> - A proportional **position** anchors across the free space (`0` flush leading, `1` flush trailing,
+>   `0.5` centered), so `x: 1` stays on screen. A proportional **size** is a plain fraction.
+> - Row spans reach every backend, but see the
+>   [per-backend table](views-and-controls.md#per-backend-behavior) — GTK approximates track *sizing*
+>   (not placement), and the terminal rounds everything to character cells.
 
 ## Safe area (iOS & Android only)
 

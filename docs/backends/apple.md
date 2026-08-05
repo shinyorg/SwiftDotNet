@@ -41,6 +41,19 @@ directions via `onChange`. `@Observable` requires **iOS 17+ / macOS 14+ / tvOS 1
   | `TextEditor` | `TextField` |
   | paged `TabView` | standard `TabView` |
 
+## Grid and AbsoluteLayout are custom `Layout`s
+
+Neither container maps onto anything SwiftUI ships. `LazyVGrid` sizes columns but has no concept of a cell
+span or an explicit cell; SwiftUI's own `Grid` has `gridCellColumns` but no row span and no per-column
+sizing; and there is no absolute-positioning container at all. So the bridge implements both against the
+`Layout` protocol — `SDNGridLayout` and `SDNAbsoluteLayout` — which is available from iOS 16 / macOS 13 /
+tvOS 16, all below this bridge's deployment targets (17.0 / 14.0 / 17.0).
+
+Placement is resolved **before** the layout runs, in `gridView`, where the whole child list is in hand; each
+subview then carries its cell as a `LayoutValueKey`. The track-sizing algorithm is a line-for-line port of
+`SkiaNode.ResolveTracks`, so the same C# lays out identically on Skia and SwiftUI. `List.Columns(n)` is
+unaffected — it still lowers to a virtualizing `LazyVGrid`. See [Grid](../views-and-controls.md#grid).
+
 ## Building the xcframework
 
 ```bash
