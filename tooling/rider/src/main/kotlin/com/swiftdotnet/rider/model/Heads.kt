@@ -12,7 +12,8 @@ enum class Backend(val propertyValue: String, val displayName: String) {
     WINDOWS("windows", "Windows (WinUI 3)"),
     WEB("web", "Web (Blazor WebAssembly)"),
     SKIA("skia", "Skia (self-drawing)"),
-    SKIA_MAUI("skia-maui", "Skia in a MAUI host");
+    SKIA_MAUI("skia-maui", "Skia in a MAUI host"),
+    TUI("tui", "Terminal (XenoAtom.Terminal.UI)");
 
     companion object {
         fun fromPropertyValue(value: String?): Backend? =
@@ -77,6 +78,8 @@ object OsGate {
         Backend.SKIA -> Supported.Yes
         Backend.WEB -> Supported.Yes
         Backend.GTK -> Supported.Yes
+        // A plain net10.0 console exe with no native dependency at all — it runs wherever a TTY does.
+        Backend.TUI -> Supported.Yes
 
         Backend.APPLE, Backend.SKIA_MAUI -> when (host) {
             HostOs.MACOS -> Supported.Yes

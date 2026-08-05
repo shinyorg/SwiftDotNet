@@ -124,6 +124,23 @@ dotnet build sample/SampleApp.Skia.Maui -f net10.0-android -t:Install   # then l
 incrementally, so assemblies from the previous configuration linger and the app dies at launch with
 `TypeLoadException: VTable setup of type Microsoft.Maui.Controls.Page failed`.
 
+### Terminal (TUI)
+
+Nothing to install — a plain `net10.0` console app, so it runs wherever a TTY does.
+
+```bash
+dotnet run --project sample/SampleApp.Tui
+
+# Real Sixel/Kitty images instead of character art (iTerm2, kitty, WezTerm…)
+SDN_TUI_GRAPHICS=1 dotnet run --project sample/SampleApp.Tui
+
+# Compare the character-art modes
+SDN_TUI_IMAGE_MODE=quadrant dotnet run --project sample/SampleApp.Tui
+```
+
+See [Terminal/TUI](backends/tui.md) — in particular the namespace collision between the DSL and
+Terminal.UI, which app code has to steer around.
+
 ## Hot reload
 
 Swap `dotnet run` for `dotnet watch run` on any of the heads above and edits to a `Body` apply to the

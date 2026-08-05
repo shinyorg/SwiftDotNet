@@ -23,13 +23,14 @@ And **two routes** to get there (see [Architecture → the two backend routes](.
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded — **never compiled**, no tests | [Windows](windows.md) |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome | [Web](web.md) |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp)** | ✅ Verified (macOS window + PNG) | [Skia](skia.md) |
+| **Any (terminal)** | **Characters in a TTY** | **Pure C# (XenoAtom.Terminal.UI)** | ✅ Verified headlessly on macOS (35 CI tests); not yet driven by hand in a live terminal | [Terminal/TUI](tui.md) |
 
 > **What "Verified" means, and what CI actually covers.** ✅ Verified means the backend was *run* and
 > inspected on the stated target — it is not a claim of test coverage. The automated suite
-> ([`tests/SwiftDotNet.Tests`](../../tests/SwiftDotNet.Tests), 137 green) exercises **Core and Skia only**.
-> There are no GTK, Web, WinUI, SwiftUI or Compose rendering tests, so per-backend behaviour in the tables
-> throughout these docs is verified by hand, not by CI. Prefer adding a Core or Skia test for new
-> behaviour — those are the ones that run on macOS.
+> ([`tests/SwiftDotNet.Tests`](../../tests/SwiftDotNet.Tests), 229 green) exercises **Core, Skia and the
+> terminal backend only**. There are no GTK, Web, WinUI, SwiftUI or Compose rendering tests, so per-backend
+> behaviour in the tables throughout these docs is verified by hand, not by CI. Prefer adding a Core, Skia
+> or TUI test for new behaviour — those are the ones that run on macOS.
 
 ## Choosing a backend
 
@@ -37,6 +38,9 @@ And **two routes** to get there (see [Architecture → the two backend routes](.
 - **Want a uniform look on every platform, or a target the native backends can't reach** (dependency-free
   desktop, embedded/framebuffer Linux)? Use **[Skia](skia.md)**. Trade-off: no native accessibility, and
   `WebView` / `Map` can't be painted onto a canvas (they need a native-view overlay).
+- **No display server at all — SSH, a container, CI?** Use **[Terminal/TUI](tui.md)**. Trade-off: one glyph
+  size (so `.Font` becomes emphasis, not scale), no transforms or animation, and images become character
+  art unless the terminal speaks Sixel/Kitty.
 
 ## What's shared vs. per-backend
 

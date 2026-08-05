@@ -67,6 +67,28 @@ GtkRenderers.Register("NativeRating", ctx => {
 // WinUI — WinRenderers.Register(type, ctx => FrameworkElement)
 // Skia  — SkiaRenderers.Register(type, ISkiaRenderer)  (Measure + Paint)
 // Web   — WebRenderers.Register(type, WebRenderer delegate)
+// TUI   — TuiRenderers.Register(type, ctx => Visual)
+```
+
+On the [terminal backend](backends/tui.md) this seam does double duty: it is also how you reach the
+Terminal.UI controls the DSL has no node type for — `Table`, `DataGridControl`, `TreeView`, `CodeEditor`,
+`MarkdownControl`, the chart family. Import the narrowest namespace, never `XenoAtom.Terminal.UI` itself,
+which declares its own `State<T>` and would make every `State<int>` in your views ambiguous:
+
+```csharp
+using XenoAtom.Terminal.UI.Controls;   // NOT XenoAtom.Terminal.UI
+
+TuiRenderers.Register("NativeRating", ctx =>
+{
+    // Range and step before value: Slider<T> clamps on every write to Value.
+    var slider = new Slider<double> { SnapToStep = true, ShowValueLabel = true };
+    slider.Minimum = 0;
+    slider.Maximum = 5;
+    slider.Step = 1;
+    slider.Value = ctx.Number("value") ?? 0;
+    slider.ValueChanged(() => ctx.Emit(((int)slider.Value).ToString()));
+    return slider;
+});
 ```
 
 For the **native-shim backends** (SwiftUI/Compose), register from the native side, since those toolkits have
@@ -84,7 +106,7 @@ registerRenderer("NativeRating") { props -> /* @Composable */ }
 
 ### Graceful fallback
 
-An **unregistered type renders a `⚠️` placeholder, not a crash.** So you can ship a `CustomView` and add
+An **unregistered type renders a `⚠️` placeholder, not a crash** (`⚠` on the terminal backend). So you can ship a `CustomView` and add
 backend renderers incrementally.
 
 ## Reaching a specific native view (`.Tag`)

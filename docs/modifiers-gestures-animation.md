@@ -48,6 +48,12 @@ Because modifiers are a universal wrapper, `.Opacity` / `.Disabled` / `.ScaleEff
 > - `.Material` is a real backdrop blur only on **SwiftUI** and **Web**; GTK, Skia, Compose and WinUI
 >   render a translucent tint. On Compose that's deliberate — `Modifier.blur` blurs the node's own content,
 >   not the backdrop.
+> - On the **[terminal](backends/tui.md)** backend the unit is the character cell, so `.Frame` and
+>   `.Padding` are divided down to cells (8px per column, 16px per row by default, tunable via
+>   `TuiStyle.CellWidthPx`/`CellHeightPx`), `.Font` degrades to emphasis (bold/dim — a terminal has one
+>   glyph size), and `.Opacity` is blended into the colour because a cell has no alpha. `.CornerRadius`,
+>   `.Offset`, `.ScaleEffect`, `.Rotation`, `.Shadow` and `.Animation` are honest no-ops; `.Material`
+>   renders a flat tint. A gradient collapses to its first stop.
 
 ## Safe area (iOS & Android only)
 
@@ -150,6 +156,7 @@ new Rectangle()
 | Web | pointer events; pinch = two live pointers, plus a ctrl+wheel trackpad path |
 | WinUI | manipulation events (**uncompiled** — see [Windows](backends/windows.md)) |
 | Skia | **nothing supplies these** — a self-drawing backend has no recognizers. Hosts must feed [`SkiaPointerRouter`](../src/SwiftDotNet.Skia/SkiaPointerRouter.cs); a host that doesn't gets tap-only. |
+| TUI | **none** — a terminal reports button press/release and wheel, not drag paths or pinch. `.OnTapGesture` maps to pointer press plus Enter-when-focused; the continuous gestures are no-ops. |
 
 ## Animation
 

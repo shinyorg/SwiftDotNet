@@ -80,6 +80,11 @@ canvas is a single unlabelled rectangle to VoiceOver and TalkBack today.
   inertia/rubber-banding; dirty-rect repaint; the Windows MAUI head. The iOS/Android MAUI TFMs, the AndroidX
   reconciliation, finger scrolling, slider scrubbing and the soft keyboard have landed. See
   [Skia backend](backends/skia.md).
+- **Terminal / TUI** — drive it by hand in a live terminal (focus order, mouse reporting, the alternate-screen
+  lifecycle are all framework-supplied but unverified by us); wire the terminal-only controls Terminal.UI
+  ships and the DSL has no node for — `Table`, `DataGridControl`, `TreeView`, `CodeEditor`,
+  `MarkdownControl`, the chart family — through the [`TuiRenderers`](custom-controls.md) seam; consider a
+  windowed `List` on Terminal.UI's own `ListBox<T>` virtualization. See [Terminal/TUI](backends/tui.md).
 - **Collection View** — true windowed streaming (WinUI/GTK/Web); Web pull-refresh/load-more/windowing (needs
   JS-interop `scrollTop`); Swift load-more wiring. See [Collection View → Deferred](collection-view.md#deferred).
 
@@ -87,4 +92,4 @@ canvas is a single unlabelled rectangle to VoiceOver and TalkBack today.
 
 - **Binary bridge protocol** — replace JSON on the hot path.
 - **Physical-device runs** on iOS/Android (currently simulator/emulator verified).
-- **Publish** the combined `SwiftDotNet` + `SwiftDotNet.Gtk` + `SwiftDotNet.Web` (+ Skia) as NuGet packages.
+- **Publish** the combined `SwiftDotNet` + `SwiftDotNet.Gtk` + `SwiftDotNet.Web` (+ Skia, + Tui) as NuGet packages.

@@ -4,7 +4,8 @@
 each platform: **SwiftUI** on iOS/macOS/tvOS, **Jetpack Compose** on Android, **GTK4** on Linux, **WinUI 3**
 on Windows, and **HTML/DOM** on the Web. Not a reimplementation of each toolkit — the actual native controls,
 with the platform's own layout, fonts, animations, and accessibility. Plus a **self-drawing SkiaSharp**
-backend that paints the UI itself for a pixel-identical look on every platform.
+backend that paints the UI itself for a pixel-identical look on every platform, and a **terminal**
+backend for anywhere with a TTY and no display server.
 
 One `View` subclass, and two families of rendering backend — **native-fidelity** (map to the OS's real
 controls) and **self-drawing** (paint every pixel with SkiaSharp for a pixel-identical look everywhere):
@@ -19,6 +20,7 @@ controls) and **self-drawing** (paint every pixel with SkiaSharp for a pixel-ide
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded (needs Windows to build) |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp — no native controls)** | ✅ Verified (macOS window + headless PNG) |
+| **Any (terminal)** | **Characters in a TTY** | **Pure C# (XenoAtom.Terminal.UI — no native controls)** | ✅ Verified headlessly (35 CI tests) |
 
 The **Skia** backend is a from-scratch UI toolkit: it owns layout, text shaping (HarfBuzz), scrolling,
 overlays, input/focus, an animation clock, and an icon font — rendering the *whole* shared `ContentView`
@@ -59,7 +61,8 @@ Full docs live in **[`docs/`](docs/README.md)**. Quick links:
   **[Controls Library](docs/controls-library.md)**
 - Backends: **[Overview](docs/backends/README.md)** · [Apple](docs/backends/apple.md) ·
   [Android](docs/backends/android.md) · [Linux/GTK](docs/backends/linux-gtk.md) ·
-  [Windows](docs/backends/windows.md) · [Web](docs/backends/web.md) · [Skia](docs/backends/skia.md)
+  [Windows](docs/backends/windows.md) · [Web](docs/backends/web.md) · [Skia](docs/backends/skia.md) ·
+  [Terminal/TUI](docs/backends/tui.md)
 - Tooling: **[Rider Plugin & Dev Tools](docs/rider-plugin.md)** — run configurations, the live
   patch inspector, and the in-IDE Skia preview
 - **[Maps](docs/maps.md)** · **[Roadmap](docs/roadmap.md)**
@@ -202,6 +205,8 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 | `src/SwiftDotNet.Gtk` | `net10.0` | **Separate** (Linux/GTK shares the `net10.0` TFM with Core, so folding it in would force every neutral consumer to take the GTK dependency). Pure-C# GTK4 backend over Gir.Core; references the combined `SwiftDotNet`. |
 | `src/SwiftDotNet.Web` | `net10.0` (Razor lib) | **Separate** (Blazor has no distinct TFM either). Pure-C# **Blazor WebAssembly** backend — `SwiftDotNetView` renders the node tree to HTML/CSS via `RenderTreeBuilder`; DOM events call back into C#. |
 | `src/SwiftDotNet.Skia` | `net10.0` | **Separate** (self-drawing engine; SkiaSharp on every neutral consumer). Pure-C# **SkiaSharp** backend — `SkiaBridge` keeps a retained scene tree and paints/measures/hit-tests it directly on an `SKCanvas`. Layout, HarfBuzz text, scrolling, overlays, input/focus, animation clock, `SkiaRenderers` registry. Host-agnostic via `ISkiaHost`. |
+| `src/SwiftDotNet.Tui` | `net10.0` | **Separate** (same reasoning as GTK — a terminal toolkit on every neutral consumer). Pure-C# **XenoAtom.Terminal.UI** backend — `TuiBridge` keeps a retained `Visual` tree and applies the same patches to it. Includes a hand-rolled PNG decoder and the image→character-art renderer, so it takes **no** image dependency. |
+| `src/SwiftDotNet.Tui.Graphics` | `net10.0` | **Optional** add-on: real Sixel/Kitty/iTerm2 images plus JPEG/WebP/GIF decode. Separate because it drags in SkiaSharp + native assets for three RIDs, which a terminal app shouldn't pay for unless it asks. |
 | `native/SwiftDotNetBridge` | Swift | `Bridge.swift` + build script → `build/SwiftDotNetBridge.xcframework` (SwiftUI interpreter; 5 slices — iOS device/sim, tvOS device/sim, macOS) |
 | `native/SwiftDotNetComposeBridge` | Kotlin | `Bridge.kt` + Gradle → `build/SwiftDotNetComposeBridge.aar` (Jetpack Compose interpreter) |
 | `sample/SharedUI` | `net10.0` | The demo `ContentView` (MAUI-style flyout menu) + composite `Rating` control — one file, shared by all apps |
@@ -212,6 +217,7 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 | `sample/SampleApp.Skia.Mac` | `net10.0-macos` | **Interactive** AppKit window: an `NSView` blits the Skia scene and feeds mouse/scroll/keyboard into the bridge; a timer drives the animation clock. |
 | `src/SwiftDotNet.Skia.Maui` | `net10.0-maccatalyst` (+more) | MAUI adapter: `SwiftDotNetSkiaView : SKCanvasView` hosts the engine on iOS/Android/Mac Catalyst/Windows. Composes with **Shiny** via MAUI hosting (`.UseShiny()`) — the Skia UI and Shiny plugins share one DI container. |
 | `sample/SampleApp.Skia.Maui` | `net10.0-maccatalyst` | MAUI + **Shiny** demo: `MauiProgram` calls `.UseSkiaSharp().UseShiny()` + `AddBluetoothLE()`; the page resolves `IBleManager` from the same container. (`-p:NoShiny=true` builds without Shiny.) |
+| `sample/SampleApp.Tui` | `net10.0` | Thin terminal app: references `SwiftDotNet.Tui` and registers a `TuiRenderers` custom renderer. `SDN_TUI_GRAPHICS=1` opts into real pixel images. |
 | `sample/SampleApp.Skia.Silk` | `net10.0` | **Dependency-free desktop** (Windows/macOS/Linux): a Silk.NET (GLFW) window + GL context; SkiaSharp draws onto a GL-backed surface. Base for embedded/framebuffer Linux. |
 
 All projects are wired into **`SwiftDotNet.slnx`** at the repo root.

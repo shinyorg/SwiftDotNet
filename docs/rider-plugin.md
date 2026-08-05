@@ -83,7 +83,7 @@ Head discovery reads one MSBuild property; it never guesses from package referen
 </PropertyGroup>
 ```
 
-Valid values: `apple`, `android`, `gtk`, `windows`, `web`, `skia`, `skia-maui`. For a head whose target
+Valid values: `apple`, `android`, `gtk`, `windows`, `web`, `skia`, `skia-maui`, `tui`. For a head whose target
 framework already answers the question — `net10.0-ios`, `net10.0-android` — you can leave it out and
 [`SwiftDotNet.Platform.targets`](../msbuild/SwiftDotNet.Platform.targets) derives it. Declare it
 explicitly when the TFM would lie: `sample/SampleApp.Skia.Mac` is `net10.0-macos` but draws with Skia,

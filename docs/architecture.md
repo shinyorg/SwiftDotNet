@@ -17,7 +17,7 @@ into a minimal patch so only changed nodes reach the renderer.
 ```
 
 The diagram shows the iOS/SwiftUI path. The **bridge** is a native shim on iOS/tvOS/macOS (Swift) and
-Android (Kotlin), and an **in-process interpreter** on the pure-C# backends (GTK / WinUI / Web / Skia) — but
+Android (Kotlin), and an **in-process interpreter** on the pure-C# backends (GTK / WinUI / Web / TUI / Skia) — but
 the patch protocol and event round-trip are **identical everywhere**.
 
 ## The Core
@@ -80,12 +80,12 @@ P/Invoke resolves the Swift bridge via `DllImport("__Internal")` — it's a load
 
 ### 2. Pure-C# interpreters (bindable toolkits)
 
-GTK4, WinUI 3, Blazor/DOM, and the Skia canvas are all fully C#-bindable (or self-drawn), so those backends
-are **pure C# with no native code** — a retained-mode interpreter that maps the node tree straight to native
-controls (or DOM elements, or canvas draws) and applies the *same* diff patches. Each implements `IBridge`
-and resolves nodes with a positional `Find(id)`. See
-[GTK](backends/linux-gtk.md), [Windows](backends/windows.md), [Web](backends/web.md), and
-[Skia](backends/skia.md).
+GTK4, WinUI 3, Blazor/DOM, XenoAtom.Terminal.UI, and the Skia canvas are all fully C#-bindable (or
+self-drawn), so those backends are **pure C# with no native code** — a retained-mode interpreter that maps
+the node tree straight to native controls (or DOM elements, terminal cells, or canvas draws) and applies the
+*same* diff patches. Each implements `IBridge` and resolves nodes with a positional `Find(id)`. See
+[GTK](backends/linux-gtk.md), [Windows](backends/windows.md), [Web](backends/web.md),
+[Terminal/TUI](backends/tui.md), and [Skia](backends/skia.md).
 
 > **One Core, three families.** The DSL, `State<T>`, `Node`, `TreeDiffer`, patch protocol, and `SwiftApp`
 > are shared verbatim. Only the leaf renderer differs: a native shim for the compiler-locked toolkits, a
@@ -99,15 +99,18 @@ and resolves nodes with a positional `Find(id)`. See
 | [`src/SwiftDotNet.Gtk`](../src/SwiftDotNet.Gtk) | `net10.0` | Separate pure-C# GTK4 backend (Linux shares `net10.0` with Core, so folding it in would force GTK on every consumer). |
 | [`src/SwiftDotNet.Web`](../src/SwiftDotNet.Web) | `net10.0` (Razor) | Separate Blazor WebAssembly backend. |
 | [`src/SwiftDotNet.Skia`](../src/SwiftDotNet.Skia) | `net10.0` | Separate self-drawing SkiaSharp engine. |
+| [`src/SwiftDotNet.Tui`](../src/SwiftDotNet.Tui) | `net10.0` | Separate pure-C# terminal backend over XenoAtom.Terminal.UI; includes its own PNG decoder and image→character-art renderer. |
+| [`src/SwiftDotNet.Tui.Graphics`](../src/SwiftDotNet.Tui.Graphics) | `net10.0` | Optional add-on: Sixel/Kitty/iTerm2 pixel images (pulls SkiaSharp, hence separate from the backend). |
 | [`src/SwiftDotNet.Skia.Maui`](../src/SwiftDotNet.Skia.Maui) | `net10.0-maccatalyst` (+more) | MAUI adapter hosting the Skia engine; composes with Shiny. |
 | [`native/SwiftDotNetBridge`](../native/SwiftDotNetBridge) | Swift | SwiftUI interpreter → xcframework (5 slices). |
 | [`native/SwiftDotNetComposeBridge`](../native/SwiftDotNetComposeBridge) | Kotlin | Compose interpreter → `.aar`. |
 | [`sample/SharedUI`](../sample/SharedUI) | `net10.0` | The demo `ContentView` + composite `Rating`, shared by all apps. |
 | [`sample/SampleApp`](../sample/SampleApp) | **multi-target** | One sample app, multi-targeted like the library. |
 
-Why some backends are **separate** projects rather than TFMs of the combined library: GTK, Web, and Skia
-all share the plain `net10.0` TFM with Core, so there's no TFM to distinguish them — folding them in would
-force their dependency (Gir.Core, Blazor, SkiaSharp) onto every neutral consumer.
+Why some backends are **separate** projects rather than TFMs of the combined library: GTK, Web, Skia and the
+terminal backend all share the plain `net10.0` TFM with Core, so there's no TFM to distinguish them —
+folding them in would force their dependency (Gir.Core, Blazor, SkiaSharp, XenoAtom.Terminal.UI) onto every
+neutral consumer.
 
 ## Centralized hosting & registration
 

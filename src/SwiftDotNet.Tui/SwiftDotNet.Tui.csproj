@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+  </ItemGroup>
+
+  <!-- Terminal backend: XenoAtom.Terminal.UI is a retained-mode, bindable widget toolkit, so this is a
+       pure-C# interpreter like the GTK backend — no native shim. Deliberately references ONLY the base
+       UI package: XenoAtom.Terminal.UI.Graphics (real Sixel/Kitty images) drags in SkiaSharp plus native
+       assets for three RIDs, which no terminal app should pay for unless it asks. Opt into it with the
+       separate SwiftDotNet.Tui.Graphics project; without it, images render as character art. -->
+  <ItemGroup>
+    <PackageReference Include="XenoAtom.Terminal.UI" Version="3.8.2" />
+  </ItemGroup>
+
+</Project>

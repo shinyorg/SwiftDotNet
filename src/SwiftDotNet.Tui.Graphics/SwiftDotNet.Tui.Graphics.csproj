@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Tui\SwiftDotNet.Tui.csproj" />
+  </ItemGroup>
+
+  <!-- Opt-in real-pixel images for the terminal backend (Sixel / Kitty / iTerm2). This is a SEPARATE
+       project on purpose: XenoAtom.Terminal.UI.Graphics pulls SkiaSharp plus native assets for Linux,
+       Windows and macOS, which is a lot of payload for a terminal app that may never show an image.
+       Reference this only when you want it; SwiftDotNet.Tui alone renders images as character art. -->
+  <ItemGroup>
+    <PackageReference Include="XenoAtom.Terminal.UI.Graphics" Version="3.8.2" />
+  </ItemGroup>
+
+</Project>

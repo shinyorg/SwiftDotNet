@@ -13,10 +13,13 @@
         <Project Path="sample/SampleApp.Skia.Silk/SampleApp.Skia.Silk.csproj"/>
         <Project Path="sample/SampleApp.Skia.Renderers/SampleApp.Skia.Renderers.csproj"/>
         <Project Path="sample/SampleApp.Skia.Maui/SampleApp.Skia.Maui.csproj"/>
+        <Project Path="sample/SampleApp.Tui/SampleApp.Tui.csproj"/>
     </Folder>
     <Project Path="src/SwiftDotNet.Gtk/SwiftDotNet.Gtk.csproj"/>
     <Project Path="src/SwiftDotNet.Skia/SwiftDotNet.Skia.csproj"/>
     <Project Path="src/SwiftDotNet.Skia.Maui/SwiftDotNet.Skia.Maui.csproj"/>
+    <Project Path="src/SwiftDotNet.Tui/SwiftDotNet.Tui.csproj"/>
+    <Project Path="src/SwiftDotNet.Tui.Graphics/SwiftDotNet.Tui.Graphics.csproj"/>
     <Project Path="src/SwiftDotNet.Maps/SwiftDotNet.Maps.csproj"/>
     <Project Path="src/SwiftDotNet.Controls/SwiftDotNet.Controls.csproj"/>
     <Project Path="src/SwiftDotNet.Controls.Camera/SwiftDotNet.Controls.Camera.csproj"/>
