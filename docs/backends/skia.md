@@ -184,6 +184,23 @@ The engine is host-agnostic via `ISkiaHost`. Available hosts:
 > — the app's ProjectReference graph resolves `SwiftDotNet` to its iOS slice, whose Swift-bridge P/Invokes
 > the native linker must resolve even though the Skia route never calls them.
 
+### Running on Linux
+
+The base `SkiaSharp` package ships native binaries for macOS and Windows only, so
+[`SwiftDotNet.Skia.csproj`](../../src/SwiftDotNet.Skia/SwiftDotNet.Skia.csproj) also references
+`SkiaSharp.NativeAssets.Linux` and `HarfBuzzSharp.NativeAssets.Linux`. Those are the **fontconfig-linked**
+builds, so a Linux host needs two things installed:
+
+| Package | Why |
+|---|---|
+| `libfontconfig1` | A hard load-time dependency of `libSkiaSharp.so`. Without it, anything touching an `SKCanvas` throws `DllNotFoundException: libSkiaSharp` — the library never loads at all. |
+| Any font package (e.g. `fonts-dejavu-core`) | Less obvious, and it fails *silently*: with no fonts installed, `SKTypeface.FromFamilyName` returns nothing, `Measure` returns 0, every `Text` lays out 0×0, and list rows collapse to zero height. Nothing throws — hit-testing, selection and scrolling just quietly miss their targets. |
+
+Both are installed explicitly by [the test workflow](../../.github/workflows/tests.yml) rather than being
+assumed of the runner image. `SkiaSharp.NativeAssets.Linux.NoDependencies` would drop the `libfontconfig1`
+requirement, but it also enumerates no system fonts — which lands you straight in the silent-zero-metrics
+case above.
+
 ## Gotchas
 
 - **A `ScrollView` centres its content** (a `Form`/`List`/`Section` is leading-aligned instead). A composite

@@ -23,6 +23,15 @@ jobs:
       - name: Install Android workload
         run: dotnet workload install android
 
+      # The Skia backend's native library is the fontconfig-linked build, so libfontconfig1 must be
+      # present or *every* test that touches an SKCanvas dies at load time with
+      # `DllNotFoundException: libSkiaSharp`. Fonts matter too, and less obviously: with none installed,
+      # SKTypeface.FromFamilyName returns nothing, text measures 0×0, list rows collapse to zero height
+      # and the hit-test/selection/scroll tests silently miss their targets. Installed explicitly rather
+      # than trusting the runner image to keep shipping them.
+      - name: Install Skia native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1 fonts-dejavu-core
+
       - name: Restore
         run: dotnet restore tests/SwiftDotNet.Tests/SwiftDotNet.Tests.csproj
 

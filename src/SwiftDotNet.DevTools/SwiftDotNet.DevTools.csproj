@@ -16,7 +16,15 @@
   <PropertyGroup Condition="$(TargetFramework.EndsWith('-ios'))"><SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion></PropertyGroup>
   <PropertyGroup Condition="$(TargetFramework.EndsWith('-tvos'))"><SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion></PropertyGroup>
   <PropertyGroup Condition="$(TargetFramework.EndsWith('-macos'))"><SupportedOSPlatformVersion>14.0</SupportedOSPlatformVersion></PropertyGroup>
-  <PropertyGroup Condition="$(TargetFramework.EndsWith('-android'))"><SupportedOSPlatformVersion>24</SupportedOSPlatformVersion></PropertyGroup>
+  <!-- The Android resource designer is generated into $(RootNamespace) — which here is
+       `SwiftDotNet.DevTools`, the *same* fully-qualified name as the `DevTools` class in namespace
+       SwiftDotNet. A namespace and a type can't share a name, so the android TFM failed to compile with
+       CS0101. This project ships no Android resources at all, so the designer is pure noise: turn it off
+       rather than rename the class or the root namespace. -->
+  <PropertyGroup Condition="$(TargetFramework.EndsWith('-android'))">
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
   <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))"><SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion></PropertyGroup>
 
   <ItemGroup>

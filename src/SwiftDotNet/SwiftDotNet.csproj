@@ -14,7 +14,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
     <RootNamespace>SwiftDotNet</RootNamespace>
-    <IsTrimmable>true</IsTrimmable>
+    <!-- Only the modern TFMs understand trimming; netstandard2.1 (the Unity retarget) warns NETSDK1212 if
+         this is set unconditionally. The condition is the SDK's own suggested form. -->
+    <IsTrimmable Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">true</IsTrimmable>
   </PropertyGroup>
 
   <!-- Per-platform OS versions. Conditioned on $(TargetFramework) (a global property, set during property

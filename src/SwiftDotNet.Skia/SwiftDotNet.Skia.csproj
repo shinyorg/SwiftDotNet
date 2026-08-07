@@ -23,4 +23,15 @@
     <PackageReference Include="SkiaSharp.HarfBuzz" Version="3.119.0" />
   </ItemGroup>
 
+  <!-- The base SkiaSharp package carries native binaries for macOS and Windows only; Linux ships in
+       separate NativeAssets packages. Without these, anything that touches an SKCanvas on Linux dies with
+       `DllNotFoundException: libSkiaSharp` — which is exactly what CI (ubuntu-latest) did to all 55 Skia
+       tests. They contribute linux-x64/arm64 runtime assets only, so they're inert on other hosts.
+       These are the fontconfig-linked builds, not `.NoDependencies`: the renderer enumerates system fonts
+       through SKFontManager, and the no-dependency binaries find none. -->
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.0" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="8.3.1.1" />
+  </ItemGroup>
+
 </Project>
