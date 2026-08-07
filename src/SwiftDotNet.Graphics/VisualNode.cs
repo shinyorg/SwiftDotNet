@@ -1,19 +1,19 @@
 using System.Globalization;
 using System.Text.Json;
-using SkiaSharp;
+using SwiftDotNet;
 
-namespace SwiftDotNet;
+namespace SwiftDotNet.Graphics;
 
 /// <summary>
-/// A node in the retained Skia scene tree — mirrors the wire node and owns its computed layout box and
+/// A node in the retained scene tree — mirrors the wire node and owns its computed layout box and
 /// paint state. Unlike the widget-backed backends (GTK/WinUI/Web) there is no native control underneath:
-/// each node measures, arranges, paints, and hit-tests itself directly on an <see cref="SKCanvas"/>.
+/// each node measures, arranges, paints, and hit-tests itself directly on an <see cref="ICanvas"/>.
 /// Patches (<c>updateProps</c>/<c>setChildren</c>) mutate this tree in place, keyed by structural id.
 ///
-/// Split across two files: this one holds construction, layout, hit-testing and helpers;
-/// <c>SkiaNodePaint.cs</c> holds the paint pass.
+/// Split across three files: this one holds construction, layout, hit-testing and helpers;
+/// <c>VisualNodePaint.cs</c> holds the paint pass and <c>VisualNodeOverlay.cs</c> the presented layer.
 /// </summary>
-sealed partial class SkiaNode
+sealed partial class VisualNode
 {
     // Id is refreshed when a keyed row is reused across a reconcile (its structural position moved), so
     // events still route to the current render's action table. Type is fixed for a node's lifetime.
@@ -21,16 +21,16 @@ sealed partial class SkiaNode
     public required string Type { get; init; }
     public Dictionary<string, object?> Props { get; private set; } = new();
     public List<Dictionary<string, object?>> Modifiers { get; private set; } = new();
-    public List<SkiaNode> Children { get; } = new();
+    public List<VisualNode> Children { get; } = new();
 
-    SkiaBridge _bridge = null!;
-    ISkiaRenderer? _custom;
+    VisualBridge _bridge = null!;
+    IVisualRenderer? _custom;
 
     // ---- layout results (canvas coordinates) --------------------------------
-    public SKRect Frame { get; private set; }
-    SKRect _content;                 // Frame minus padding insets
-    SKSize _measured;                // outer measured size
-    readonly List<SKSize> _childMeasured = new();
+    public Rect Frame { get; private set; }
+    Rect _content;                 // Frame minus padding insets
+    Size _measured;                // outer measured size
+    readonly List<Size> _childMeasured = new();
     float _gridCellW, _gridCellH;    // grid List only (uniform cells)
     float[]? _gridColW, _gridRowH;   // Grid: resolved track sizes
     GridSpan[]? _gridSpans;          // Grid: each child's resolved cell
@@ -39,17 +39,17 @@ sealed partial class SkiaNode
     int _tabIndex;                   // TabView: selected tab / page
     internal float ScrollOffset;     // ScrollView / List / Form: vertical scroll
     internal float ScrollMax;        // max scroll offset for the current layout
-    SkiaNode? _navOwner;             // NavigationLink → its enclosing NavigationStack
-    internal SkiaNode? PushedContent;// NavigationStack: currently pushed destination (or null)
+    VisualNode? _navOwner;             // NavigationLink → its enclosing NavigationStack
+    internal VisualNode? PushedContent;// NavigationStack: currently pushed destination (or null)
     internal string PushedTitle = "";
 
     // ========================================================================
     //  Construction / patching
     // ========================================================================
 
-    public static SkiaNode Build(JsonElement e, SkiaBridge bridge)
+    public static VisualNode Build(JsonElement e, VisualBridge bridge)
     {
-        var node = new SkiaNode
+        var node = new VisualNode
         {
             Id = e.GetProperty("id").GetString()!,
             Type = e.GetProperty("type").GetString()!,
@@ -67,7 +67,7 @@ sealed partial class SkiaNode
 
         if (node.Type == "NavigationStack") bridge.NavStack.Pop();
 
-        if (!IsBuiltIn(node.Type)) node._custom = SkiaRenderers.Get(node.Type);
+        if (!IsBuiltIn(node.Type)) node._custom = VisualRenderers.Get(node.Type);
         node.SyncTabIndex();
         return node;
     }
@@ -98,7 +98,7 @@ sealed partial class SkiaNode
         if (Type == "NavigationStack") _bridge.NavStack.Push(this);
 
         // Keyed containers (a keyed List) reconcile children by their "key" prop so a reused row keeps its
-        // SkiaNode instance — preserving nested scroll offsets, animation clocks and custom-renderer state —
+        // VisualNode instance — preserving nested scroll offsets, animation clocks and custom-renderer state —
         // instead of being torn down and rebuilt. Non-keyed containers keep the simple clear-and-rebuild.
         if (Props.GetValueOrDefault("keyed") as bool? == true)
             ReconcileKeyedChildren(children);
@@ -116,11 +116,11 @@ sealed partial class SkiaNode
     /// data into) the survivors, build the newcomers, and drop the rest — preserving per-row backend state.</summary>
     void ReconcileKeyedChildren(JsonElement children)
     {
-        var byKey = new Dictionary<string, SkiaNode>();
+        var byKey = new Dictionary<string, VisualNode>();
         foreach (var c in Children)
             if (c.Props.GetValueOrDefault("key") is string k) byKey[k] = c;
 
-        var next = new List<SkiaNode>();
+        var next = new List<VisualNode>();
         foreach (var el in children.EnumerateArray())
         {
             var key = el.GetProperty("props").TryGetProperty("key", out var kp) ? kp.GetString() : null;
@@ -290,28 +290,34 @@ sealed partial class SkiaNode
         if (repeat >= 0 && _pulseCycles >= repeat) { _pulseDone = true; _pulsePhase = 0; _pulseDir = 1; }
     }
 
-    public SKSize Measure(SKSize available)
+    public Size Measure(Size available)
     {
         UpdateAnimation();
         var pad = Padding();
-        var inner = new SKSize(
+        var inner = new Size(
             Math.Max(0, available.Width - pad.Horizontal),
             Math.Max(0, available.Height - pad.Vertical));
 
         var content = MeasureContent(inner);
-        var outer = new SKSize(content.Width + pad.Horizontal, content.Height + pad.Vertical);
+        var outer = new Size(content.Width + pad.Horizontal, content.Height + pad.Vertical);
 
+        // An explicit .Frame() overrides the measured size on each axis independently; an animating height
+        // reads from the interpolator instead. Size is immutable here (it was a mutable SKSize before), so
+        // the overrides accumulate into locals and rebuild the value once.
         var (fw, fh) = FrameSize();
-        if (fw is { } w) outer.Width = (float)w;
-        if (Mod("animation") is not null && Mod("frame")?.ContainsKey("height") == true) outer.Height = AnimH;
-        else if (fh is { } h) outer.Height = (float)h;
-        if (Mod("align") is not null || FillsWidth) outer.Width = available.Width;
+        var outerW = outer.Width;
+        var outerH = outer.Height;
+        if (fw is { } w) outerW = (float)w;
+        if (Mod("animation") is not null && Mod("frame")?.ContainsKey("height") == true) outerH = AnimH;
+        else if (fh is { } h) outerH = (float)h;
+        if (Mod("align") is not null || FillsWidth) outerW = available.Width;
+        outer = new Size(outerW, outerH);
 
         _measured = outer;
         return outer;
     }
 
-    SKSize MeasureContent(SKSize inner)
+    Size MeasureContent(Size inner)
     {
         _childMeasured.Clear();
         switch (Type)
@@ -321,7 +327,7 @@ sealed partial class SkiaNode
             case "Button":
             {
                 var t = MeasureText(Str("title"), Font());
-                return new SKSize(t.Width + 36, Math.Max(t.Height, 20) + 18);
+                return new Size(t.Width + 36, Math.Max(t.Height, 20) + 18);
             }
             case "Link":
                 return MeasureText(Str("title"), Font());
@@ -330,30 +336,30 @@ sealed partial class SkiaNode
                 // non-system Image factory) and is *greedy* — it fills the space offered, same convention as
                 // shapes, with a .Frame overriding. Measuring it as a glyph collapsed unframed raster images
                 // (e.g. the Controls ImageViewer's full-screen image) to nothing.
-                return HasProp("contentMode") ? inner : MeasureText(SkiaTheme.Icon(Str("system")), IconFont(22));
+                return HasProp("contentMode") ? inner : MeasureText(Theme.Icon(Str("system")), IconFont(22));
             case "Label":
-                return MeasureText(SkiaTheme.Icon(Str("systemImage")) + "  " + Str("title"), Font());
+                return MeasureText(Theme.Icon(Str("systemImage")) + "  " + Str("title"), Font());
             case "Divider":
-                return new SKSize(inner.Width, 1);
+                return new Size(inner.Width, 1);
             case "Spacer":
-                return new SKSize(0, 0);
+                return new Size(0, 0);
             case "Rectangle" or "Circle" or "Capsule" or "RoundedRectangle":
                 // Shapes are greedy: they fill the space offered (a .Frame modifier overrides). SwiftUI parity.
                 return inner;
             case "ProgressView":
-                return new SKSize(inner.Width, HasProp("label") ? 44 : 6);
+                return new Size(inner.Width, HasProp("label") ? 44 : 6);
             case "Gauge":
-                return new SKSize(inner.Width, HasProp("label") ? 48 : 26);
+                return new Size(inner.Width, HasProp("label") ? 48 : 26);
             case "WebView":
-                return new SKSize(inner.Width, 120);
+                return new Size(inner.Width, 120);
 
             // simple full-width control rows
             case "TextField" or "SecureField":
-                return new SKSize(inner.Width, 40);
+                return new Size(inner.Width, 40);
             case "TextEditor":
-                return new SKSize(inner.Width, 100);
+                return new Size(inner.Width, 100);
             case "Toggle" or "Slider" or "Stepper" or "Picker" or "DatePicker" or "ColorPicker" or "Menu":
-                return new SKSize(inner.Width, 44);
+                return new Size(inner.Width, 44);
 
             case "DisclosureGroup":
                 return MeasureDisclosure(inner);
@@ -377,19 +383,19 @@ sealed partial class SkiaNode
                 return MeasureFill(inner);
             case "NavigationStack":
             {
-                var avail = new SKSize(inner.Width, Math.Max(0, inner.Height - NavBarHeight));
+                var avail = new Size(inner.Width, Math.Max(0, inner.Height - NavBarHeight));
                 if (Children.Count > 0) _childMeasured.Add(Children[0].Measure(avail));
                 return inner;
             }
             case "NavigationLink":
                 return MeasureNavLink(inner);
             case "Sheet" or "Alert":
-                return Children.Count > 0 ? Children[0].Measure(inner) : new SKSize(0, 0);
+                return Children.Count > 0 ? Children[0].Measure(inner) : new Size(0, 0);
             case "TabView":
             {
                 // Only the selected tab/page is shown — measure just its subtree so Arrange has data.
                 var barH = Paged ? 28f : TabBarHeight;
-                var childAvail = new SKSize(inner.Width, Math.Max(0, inner.Height - barH));
+                var childAvail = new Size(inner.Width, Math.Max(0, inner.Height - barH));
                 if (_tabIndex < Children.Count) Children[_tabIndex].Measure(childAvail);
                 return inner; // TabView fills
             }
@@ -400,7 +406,7 @@ sealed partial class SkiaNode
         }
     }
 
-    SKSize MeasureStack(SKSize inner, bool horizontal)
+    Size MeasureStack(Size inner, bool horizontal)
     {
         var spacing = (float)(Num("spacing") ?? 8);
         var count = Children.Count;
@@ -416,12 +422,12 @@ sealed partial class SkiaNode
                 mainV += s.Height;
                 crossV = Math.Max(crossV, s.Width);
             }
-            return new SKSize(crossV, mainV + gaps);
+            return new Size(crossV, mainV + gaps);
         }
 
         // Horizontal: measure everyone at the full offered width first (SwiftUI-ish: each child takes
         // its ideal size).
-        var sizes = new SKSize[count];
+        var sizes = new Size[count];
         float main = gaps, cross = 0;
         for (var i = 0; i < count; i++)
         {
@@ -454,7 +460,7 @@ sealed partial class SkiaNode
                 foreach (var s in sizes) cross = Math.Max(cross, s.Height);
                 foreach (var i in greedy)
                 {
-                    var s = Children[i].Measure(new SKSize(share, inner.Height));
+                    var s = Children[i].Measure(new Size(share, inner.Height));
                     sizes[i] = s;
                     main += s.Width;
                     cross = Math.Max(cross, s.Height);
@@ -463,12 +469,12 @@ sealed partial class SkiaNode
         }
 
         _childMeasured.AddRange(sizes);
-        return new SKSize(main, cross);
+        return new Size(main, cross);
     }
 
     // Scrollables measure their content like a VStack but report only the available height
     // (content taller than that scrolls). Section adds a header line.
-    SKSize MeasureScrollable(SKSize inner)
+    Size MeasureScrollable(Size inner)
     {
         var headerH = Type == "Section" && HasProp("header") ? 26f : 0f;
         var spacing = Type == "Section" ? 6f : (Type == "ScrollView" ? 12f : 10f);
@@ -476,7 +482,7 @@ sealed partial class SkiaNode
         var count = 0;
         foreach (var c in Children)
         {
-            var s = c.Measure(new SKSize(inner.Width, inner.Height));
+            var s = c.Measure(new Size(inner.Width, inner.Height));
             _childMeasured.Add(s);
             contentH += s.Height;
             cross = Math.Max(cross, s.Width);
@@ -486,13 +492,13 @@ sealed partial class SkiaNode
         _naturalHeight = contentH;
         // Section reports its natural height (it lives inside a scrollable). ScrollView/List/Form cap to available.
         if (Type is "Section")
-            return new SKSize(Math.Max(cross, inner.Width), contentH);
-        return new SKSize(inner.Width, Math.Min(contentH, inner.Height));
+            return new Size(Math.Max(cross, inner.Width), contentH);
+        return new Size(inner.Width, Math.Min(contentH, inner.Height));
     }
 
     float _naturalHeight;
 
-    SKSize MeasureZ(SKSize inner)
+    Size MeasureZ(Size inner)
     {
         float w = 0, h = 0;
         foreach (var c in Children)
@@ -502,7 +508,7 @@ sealed partial class SkiaNode
             w = Math.Max(w, s.Width);
             h = Math.Max(h, s.Height);
         }
-        return new SKSize(w, h);
+        return new Size(w, h);
     }
 
     // ---- Grid ---------------------------------------------------------------
@@ -513,7 +519,7 @@ sealed partial class SkiaNode
     float ColumnGap => (float)(Num("columnSpacing") ?? Num("spacing") ?? 8);
     float RowGap => (float)(Num("rowSpacing") ?? Num("spacing") ?? 8);
 
-    SKSize MeasureGrid(SKSize inner)
+    Size MeasureGrid(Size inner)
     {
         var colTracks = GridEngine.ParseTracks(StrOrNull("columnTracks"), (int)(Num("columns") ?? 2));
         var cols = colTracks.Length;
@@ -527,7 +533,7 @@ sealed partial class SkiaNode
         var rowGap = RowGap;
 
         // pass 1 — natural sizes
-        var natural = new SKSize[Children.Count];
+        var natural = new Size[Children.Count];
         for (var i = 0; i < Children.Count; i++) natural[i] = Children[i].Measure(inner);
         _gridColW = ResolveTracks(colTracks, inner.Width, colGap, spans, natural, horizontal: true);
 
@@ -536,7 +542,7 @@ sealed partial class SkiaNode
         {
             var s = spans[i];
             var cellW = TrackExtent(_gridColW, s.Column, s.ColumnSpan, colGap);
-            _childMeasured.Add(Children[i].Measure(new SKSize(cellW, inner.Height)));
+            _childMeasured.Add(Children[i].Measure(new Size(cellW, inner.Height)));
         }
 
         var rowSpec = StrOrNull("rowTracks");
@@ -548,7 +554,7 @@ sealed partial class SkiaNode
 
         _gridRowH = ResolveTracks(rowTracks, inner.Height, rowGap, spans, _childMeasured.ToArray(), horizontal: false);
 
-        return new SKSize(
+        return new Size(
             Total(_gridColW, colGap),
             Total(_gridRowH, rowGap));
     }
@@ -575,7 +581,7 @@ sealed partial class SkiaNode
     /// is added to the last content-sized track it covers, which is what keeps a wide header from
     /// stretching only column 0.
     /// </summary>
-    static float[] ResolveTracks(GridTrack[] tracks, float available, float gap, GridSpan[] spans, SKSize[] sizes, bool horizontal)
+    static float[] ResolveTracks(GridTrack[] tracks, float available, float gap, GridSpan[] spans, Size[] sizes, bool horizontal)
     {
         var n = tracks.Length;
         var resolved = new float[n];
@@ -658,14 +664,14 @@ sealed partial class SkiaNode
     /// *something*), and each child is measured at whatever size its <c>.LayoutBounds</c> declares —
     /// falling back to its natural size on the axes left auto.
     /// </summary>
-    SKSize MeasureAbsolute(SKSize inner)
+    Size MeasureAbsolute(Size inner)
     {
         // Resolve fractions against the box this layout will actually get. A `.Frame(height:)` is applied
         // to the *outer* size after MeasureContent returns, so read it here too — otherwise a child
         // measured at 0.5 of the available height and then arranged at 0.5 of the framed height would
         // wrap its text against the wrong width.
         var (fw, fh) = FrameSize();
-        var host = new SKSize((float)(fw ?? inner.Width), (float)(fh ?? inner.Height));
+        var host = new Size((float)(fw ?? inner.Width), (float)(fh ?? inner.Height));
 
         foreach (var c in Children)
         {
@@ -677,8 +683,8 @@ sealed partial class SkiaNode
                 ? (float)((b!.Value.Flags & LayoutFlags.HeightProportional) != 0 ? dh * host.Height : dh)
                 : (float?)null;
 
-            var natural = c.Measure(new SKSize(w ?? host.Width, h ?? host.Height));
-            _childMeasured.Add(new SKSize(w ?? natural.Width, h ?? natural.Height));
+            var natural = c.Measure(new Size(w ?? host.Width, h ?? host.Height));
+            _childMeasured.Add(new Size(w ?? natural.Width, h ?? natural.Height));
         }
         return host;
     }
@@ -698,11 +704,11 @@ sealed partial class SkiaNode
 
             var left = _content.Left + (float)x;
             var top = _content.Top + (float)y;
-            Children[i].Arrange(new SKRect(left, top, left + (float)w, top + (float)h));
+            Children[i].Arrange(new Rect(left, top, left + (float)w, top + (float)h));
         }
     }
 
-    SKSize MeasureFill(SKSize inner)
+    Size MeasureFill(Size inner)
     {
         if (Children.Count > 0)
         {
@@ -712,15 +718,15 @@ sealed partial class SkiaNode
         return inner;
     }
 
-    SKSize MeasureNavLink(SKSize inner)
+    Size MeasureNavLink(Size inner)
     {
         // child 0 = label (shown as a row); child 1 = destination (measured only when pushed)
-        var label = Children.Count > 0 ? Children[0].Measure(inner) : new SKSize(0, 0);
+        var label = Children.Count > 0 ? Children[0].Measure(inner) : new Size(0, 0);
         _childMeasured.Add(label);
-        return new SKSize(inner.Width, Math.Max(label.Height, 22) + 8);
+        return new Size(inner.Width, Math.Max(label.Height, 22) + 8);
     }
 
-    SKSize MeasureDisclosure(SKSize inner)
+    Size MeasureDisclosure(Size inner)
     {
         var h = 40f; // header row
         if (Bool("expanded"))
@@ -729,16 +735,16 @@ sealed partial class SkiaNode
                 var s = c.Measure(inner);
                 h += s.Height + 6;
             }
-        return new SKSize(inner.Width, h);
+        return new Size(inner.Width, h);
     }
 
     // ---- Arrange -------------------------------------------------------------
 
-    public void Arrange(SKRect rect)
+    public void Arrange(Rect rect)
     {
         Frame = rect;
         var pad = Padding();
-        _content = new SKRect(rect.Left + pad.Left, rect.Top + pad.Top, rect.Right - pad.Right, rect.Bottom - pad.Bottom);
+        _content = new Rect(rect.Left + pad.Left, rect.Top + pad.Top, rect.Right - pad.Right, rect.Bottom - pad.Bottom);
 
         switch (Type)
         {
@@ -768,10 +774,10 @@ sealed partial class SkiaNode
                 break;
             case "NavigationStack":
                 if (Children.Count > 0)
-                    Children[0].Arrange(new SKRect(_content.Left, _content.Top + NavBarHeight, _content.Right, _content.Bottom));
+                    Children[0].Arrange(new Rect(_content.Left, _content.Top + NavBarHeight, _content.Right, _content.Bottom));
                 break;
             case "NavigationLink":
-                if (Children.Count > 0) Children[0].Arrange(new SKRect(_content.Left, _content.Top, _content.Right - 20, _content.Bottom));
+                if (Children.Count > 0) Children[0].Arrange(new Rect(_content.Left, _content.Top, _content.Right - 20, _content.Bottom));
                 break;
             case "Sheet" or "Alert":
                 if (Children.Count > 0) Children[0].Arrange(_content);
@@ -811,14 +817,14 @@ sealed partial class SkiaNode
             {
                 var cw = child.Type == "Spacer" ? spacerEach : m.Width;
                 var y = CrossPos(_content.Top, _content.Height, m.Height, CrossToken(), vertical: true);
-                child.Arrange(new SKRect(cursor, y, cursor + cw, y + m.Height));
+                child.Arrange(new Rect(cursor, y, cursor + cw, y + m.Height));
                 cursor += cw;
             }
             else
             {
                 var ch = child.Type == "Spacer" ? spacerEach : m.Height;
                 var x = CrossPos(_content.Left, _content.Width, m.Width, CrossToken(), vertical: false);
-                child.Arrange(new SKRect(x, cursor, x + m.Width, cursor + ch));
+                child.Arrange(new Rect(x, cursor, x + m.Width, cursor + ch));
                 cursor += ch;
             }
         }
@@ -828,12 +834,12 @@ sealed partial class SkiaNode
 
     // A grid List measures uniform cells (like Grid) but reports only the available height and remembers
     // the natural height so it can scroll vertically.
-    SKSize MeasureScrollableGrid(SKSize inner)
+    Size MeasureScrollableGrid(Size inner)
     {
         var cols = Math.Max(1, (int)(Num("columns") ?? 2));
         var spacing = (float)(Num("spacing") ?? 8);
         float cellW = 0, cellH = 0;
-        var cellAvail = new SKSize(Math.Max(0, (inner.Width - (cols - 1) * spacing) / cols), inner.Height);
+        var cellAvail = new Size(Math.Max(0, (inner.Width - (cols - 1) * spacing) / cols), inner.Height);
         foreach (var c in Children)
         {
             var s = c.Measure(cellAvail);
@@ -846,7 +852,7 @@ sealed partial class SkiaNode
         _gridCellH = cellH;
         var rows = (int)Math.Ceiling(Children.Count / (double)cols);
         _naturalHeight = rows * cellH + Math.Max(0, rows - 1) * spacing;
-        return new SKSize(inner.Width, Math.Min(_naturalHeight, inner.Height));
+        return new Size(inner.Width, Math.Min(_naturalHeight, inner.Height));
     }
 
     void ArrangeScrollableGrid()
@@ -862,7 +868,7 @@ sealed partial class SkiaNode
             var row = i / cols;
             var x = _content.Left + col * (_gridCellW + spacing);
             var y = top + row * (_gridCellH + spacing);
-            Children[i].Arrange(new SKRect(x, y, x + _gridCellW, y + _gridCellH));
+            Children[i].Arrange(new Rect(x, y, x + _gridCellW, y + _gridCellH));
         }
     }
 
@@ -887,7 +893,7 @@ sealed partial class SkiaNode
             var x = span ? _content.Left
                 : leading ? _content.Left
                 : CrossPos(_content.Left, _content.Width, m.Width, null, vertical: false);
-            Children[i].Arrange(new SKRect(x, y, x + cw, y + m.Height));
+            Children[i].Arrange(new Rect(x, y, x + cw, y + m.Height));
             y += m.Height;
         }
     }
@@ -902,7 +908,7 @@ sealed partial class SkiaNode
             var cw = span ? _content.Width : m.Width;
             var x = span ? _content.Left : CrossPos(_content.Left, _content.Width, m.Width, token, vertical: false);
             var y = CrossPos(_content.Top, _content.Height, m.Height, token, vertical: true);
-            Children[i].Arrange(new SKRect(x, y, x + cw, y + m.Height));
+            Children[i].Arrange(new Rect(x, y, x + cw, y + m.Height));
         }
     }
 
@@ -928,7 +934,7 @@ sealed partial class SkiaNode
             var h = Math.Min(m.Height, cellH);
             var x = CrossPos(cellX, cellW, w, token, vertical: false);
             var y = CrossPos(cellY, cellH, h, token, vertical: true);
-            Children[i].Arrange(new SKRect(x, y, x + w, y + h));
+            Children[i].Arrange(new Rect(x, y, x + w, y + h));
         }
     }
 
@@ -962,13 +968,13 @@ sealed partial class SkiaNode
         if (Paged)
         {
             // carousel: selected page fills, minus a dot strip at the bottom
-            var pageRect = new SKRect(_content.Left, _content.Top, _content.Right, _content.Bottom - 28);
+            var pageRect = new Rect(_content.Left, _content.Top, _content.Right, _content.Bottom - 28);
             if (_tabIndex < Children.Count) Children[_tabIndex].Arrange(pageRect);
         }
         else
         {
             var barTop = _content.Bottom - TabBarHeight;
-            var contentRect = new SKRect(_content.Left, _content.Top, _content.Right, barTop);
+            var contentRect = new Rect(_content.Left, _content.Top, _content.Right, barTop);
             if (_tabIndex < Children.Count) Children[_tabIndex].Arrange(contentRect); // selected Tab
         }
     }
@@ -979,8 +985,8 @@ sealed partial class SkiaNode
         var y = _content.Top + 40;
         foreach (var c in Children)
         {
-            var s = c.Measure(new SKSize(_content.Width - 12, _content.Height));
-            c.Arrange(new SKRect(_content.Left + 12, y, _content.Right, y + s.Height));
+            var s = c.Measure(new Size(_content.Width - 12, _content.Height));
+            c.Arrange(new Rect(_content.Left + 12, y, _content.Right, y + s.Height));
             y += s.Height + 6;
         }
     }
@@ -994,7 +1000,7 @@ sealed partial class SkiaNode
     //  HIT TESTING — topmost interactive node under the point wins
     // ========================================================================
 
-    public bool HitTest(SKPoint p)
+    public bool HitTest(Point p)
     {
         if (!Frame.Contains(p)) return false;
 
@@ -1094,7 +1100,7 @@ sealed partial class SkiaNode
 
     static readonly string[] Palette = { "#FF3B30", "#FF9500", "#FFCC00", "#34C759", "#007AFF", "#5856D6", "#AF52DE" };
 
-    void ControlTap(SKPoint p)
+    void ControlTap(Point p)
     {
         switch (Type)
         {
@@ -1148,7 +1154,7 @@ sealed partial class SkiaNode
     /// modifier emits (swipe also matches the direction token). Mirrors the tap path but for the
     /// timed/directional recognizers the host resolves from raw pointer streams.
     /// </summary>
-    public bool DispatchGesture(SKPoint p, string modType, string? direction)
+    public bool DispatchGesture(Point p, string modType, string? direction)
     {
         if (!Frame.Contains(p)) return false;
         for (var i = Children.Count - 1; i >= 0; i--)
@@ -1168,7 +1174,7 @@ sealed partial class SkiaNode
 
     // F1: deepest visible node under `p` that carries `modType` (onDrag/onMagnify), or null. Used to
     // capture a continuous-gesture target at gesture-begin so subsequent moves route to the same node.
-    internal SkiaNode? NodeWithModAt(SKPoint p, string modType)
+    internal VisualNode? NodeWithModAt(Point p, string modType)
     {
         if (!Frame.Contains(p)) return null;
         for (var i = Children.Count - 1; i >= 0; i--)
@@ -1187,7 +1193,7 @@ sealed partial class SkiaNode
     /// (Stepper/Picker/DatePicker/ColorPicker) deliberately do not qualify: they advance once per tap, so
     /// letting a finger drag them would fire them once per pointer-move event.
     /// </summary>
-    internal SkiaNode? ScrubbableAt(SKPoint p)
+    internal VisualNode? ScrubbableAt(Point p)
     {
         if (!Frame.Contains(p)) return null;
         for (var i = Children.Count - 1; i >= 0; i--)
@@ -1199,18 +1205,18 @@ sealed partial class SkiaNode
     }
 
     /// <summary>Set a scrubbable control's value from a pointer position (the same math a tap uses).</summary>
-    internal void ScrubTo(SKPoint p) => ControlTap(p);
+    internal void ScrubTo(Point p) => ControlTap(p);
 
     /// <summary>Children that are actually on screen (a TabView shows only its selected tab) — for the overlay walk.</summary>
-    internal IEnumerable<SkiaNode> VisibleOverlayChildren()
+    internal IEnumerable<VisualNode> VisibleOverlayChildren()
     {
         if (Type == "TabView")
-            return _tabIndex < Children.Count ? new[] { Children[_tabIndex] } : Array.Empty<SkiaNode>();
+            return _tabIndex < Children.Count ? new[] { Children[_tabIndex] } : Array.Empty<VisualNode>();
         return Children;
     }
 
     /// <summary>Find the innermost scrollable node under a point (for wheel/drag scrolling).</summary>
-    public SkiaNode? ScrollableAt(SKPoint p)
+    public VisualNode? ScrollableAt(Point p)
     {
         if (!Frame.Contains(p)) return null;
         for (var i = Children.Count - 1; i >= 0; i--)
@@ -1249,17 +1255,25 @@ sealed partial class SkiaNode
         or "ScrollView" or "List" or "Form" or "Section" or "ZStack" or "Grid" or "AbsoluteLayout"
         or "Tab" or "TabView" or "NavigationStack" or "NavigationLink" or "Sheet" or "Alert";
 
-    SKFont Font() => SkiaTheme.MakeFont(Mod("font")?.GetValueOrDefault("value") as string);
-    static SKFont IconFont(float size) => new(SKTypeface.Default, size);
+    /// <summary>The rasterizer's font provider, reached through the bridge that owns this tree.</summary>
+    IFontProvider Fonts => _bridge.Fonts;
+
+    Font Font() => Theme.MakeFont(Mod("font")?.GetValueOrDefault("value") as string, Fonts);
+
+    /// <summary>
+    /// The face used for SF-Symbol stand-in glyphs. Deliberately the default face rather than the node's
+    /// font: the stand-ins are emoji, and a bold/heavy text face often lacks them.
+    /// </summary>
+    Font IconFont(float size) => Fonts.Get(size, bold: false);
 
     string? AlignToken() => Mod("align")?.GetValueOrDefault("value") as string
         ?? (Mod("frame")?.GetValueOrDefault("alignment") as string);
 
-    SKColor ForegroundColor(bool dark) => SkiaTheme.Color(Mod("foregroundColor")?.GetValueOrDefault("value") as string, dark);
-    SKColor? ForegroundColorOptional(bool dark) =>
-        Mod("foregroundColor")?.GetValueOrDefault("value") is string t ? SkiaTheme.Color(t, dark) : null;
-    SKColor? BackgroundColor(bool dark) =>
-        Mod("background")?.GetValueOrDefault("value") is string t ? SkiaTheme.Color(t, dark) : null;
+    Color ForegroundColor(bool dark) => Theme.Color(Mod("foregroundColor")?.GetValueOrDefault("value") as string, dark);
+    Color? ForegroundColorOptional(bool dark) =>
+        Mod("foregroundColor")?.GetValueOrDefault("value") is string t ? Theme.Color(t, dark) : null;
+    Color? BackgroundColor(bool dark) =>
+        Mod("background")?.GetValueOrDefault("value") is string t ? Theme.Color(t, dark) : null;
 
     float RawOpacity => (float)(MNull(Mod("opacity"), "amount") ?? 1);
     float Opacity() => AnimO;
@@ -1284,21 +1298,21 @@ sealed partial class SkiaNode
         return m is null ? null : (MNull(m, "degrees") ?? 0, m.GetValueOrDefault("value") as string ?? "center");
     }
 
-    // F5 gradient background: a shader painted in place of the flat background fill when present.
-    internal SKShader? BackgroundShader(bool dark)
+    // F5 gradient background: painted in place of the flat background fill when present.
+    internal Gradient? BackgroundGradient(bool dark)
     {
         if (Mod("background")?.GetValueOrDefault("gradient") is not string spec) return null;
-        return SkiaGradient.Shader(spec, Frame, dark);
+        return Gradient.Parse(spec, Frame, dark);
     }
 
     // F3 raster: decode once and cache (keyed by the source string) so paint doesn't decode per frame.
-    // bytes/file decode synchronously; url goes through SkiaImageLoader's async cache and paints as soon
+    // bytes/file decode synchronously; url goes through ImageLoader's async cache and paints as soon
     // as the fetch lands (the loader invalidates the bridge, which schedules the repaint).
-    SKImage? _rasterImage;
+    IImage? _rasterImage;
     string? _rasterKey;
-    internal SKImage? RasterImage()
+    internal IImage? RasterImage()
     {
-        if (HasProp("url")) return SkiaImageLoader.Get(Str("url"), _bridge);
+        if (HasProp("url")) return ImageLoader.Get(Str("url"), _bridge.Images, _bridge.RequestRepaint);
 
         var src = HasProp("bytes") ? "b:" + Str("bytes")
                 : HasProp("file") ? "f:" + Str("file")
@@ -1306,11 +1320,12 @@ sealed partial class SkiaNode
         if (src is null) return null;
         if (src == _rasterKey) return _rasterImage;
         _rasterKey = src;
-        _rasterImage?.Dispose();
+        (_rasterImage as IDisposable)?.Dispose();
         try
         {
-            if (src[0] == 'b') _rasterImage = SKImage.FromEncodedData(Convert.FromBase64String(Str("bytes")));
-            else _rasterImage = SKImage.FromEncodedData(Str("file"));
+            _rasterImage = src[0] == 'b'
+                ? _bridge.Images.Decode(Convert.FromBase64String(Str("bytes")))
+                : _bridge.Images.DecodeFile(Str("file"));
         }
         catch { _rasterImage = null; }
         return _rasterImage;
@@ -1323,19 +1338,24 @@ sealed partial class SkiaNode
         return 0;
     }
 
-    (SKColor color, double width)? Border(bool dark)
+    (Color color, double width)? Border(bool dark)
     {
         var m = Mod("border");
-        if (m?.GetValueOrDefault("color") is string c) return (SkiaTheme.Color(c, dark), MNull(m, "width") ?? 1);
+        if (m?.GetValueOrDefault("color") is string c) return (Theme.Color(c, dark), MNull(m, "width") ?? 1);
         return null;
     }
 
-    (double x, double y, double radius, SKColor color)? Shadow()
+    /// <summary>The <c>.Shadow()</c> modifier as a paint-ready spec, or null when the node casts none.</summary>
+    Shadow? DropShadow()
     {
         var m = Mod("shadow");
         if (m is null) return null;
-        var col = m.GetValueOrDefault("color") is string c ? SkiaTheme.Color(c, false) : new SKColor(0, 0, 0, 90);
-        return (MNull(m, "x") ?? 0, MNull(m, "y") ?? 0, MNull(m, "radius") ?? 4, col);
+        var col = m.GetValueOrDefault("color") is string c ? Theme.Color(c, false) : new Color(0, 0, 0, 90);
+        return new Shadow(
+            (float)(MNull(m, "x") ?? 0),
+            (float)(MNull(m, "y") ?? 0),
+            (float)(MNull(m, "radius") ?? 4),
+            col);
     }
 
     EdgeInsets Padding()
@@ -1374,7 +1394,7 @@ sealed partial class SkiaNode
 
     string? CrossToken() => Props.GetValueOrDefault("alignment") as string;
 
-    SkiaRenderContext RenderCtx() => new(Id, Props, _bridge.Emit);
+    VisualRenderContext RenderCtx() => new(Id, Props, _bridge.Emit);
 
     Dictionary<string, object?>? Mod(string type)
     {
@@ -1393,24 +1413,18 @@ sealed partial class SkiaNode
     static double? MNull(Dictionary<string, object?>? m, string key) =>
         m is not null && m.TryGetValue(key, out var v) && v is double d ? d : null;
 
-    static SKSize MeasureText(string text, SKFont font)
-    {
-        var m = font.Metrics;
-        var h = m.Descent - m.Ascent;
-        var w = string.IsNullOrEmpty(text) ? 0 : font.MeasureText(text);
-        return new SKSize(w, h);
-    }
+    Size MeasureText(string text, Font font) => string.IsNullOrEmpty(text)
+        ? new Size(0, font.Metrics.LineHeight)
+        : TextLayout.MeasureLine(text, font, Fonts);
 
     // Wraps `text` to `maxWidth`, caching the broken lines for the paint pass. Returns the block size.
     List<string>? _wrapLines;
-    SKSize MeasureWrapped(string text, SKFont font, float maxWidth)
+    Size MeasureWrapped(string text, Font font, float maxWidth)
     {
-        _wrapLines = SkiaText.Wrap(text, font, maxWidth);
-        var m = font.Metrics;
-        var lineH = m.Descent - m.Ascent;
-        float w = 0;
-        foreach (var line in _wrapLines) w = Math.Max(w, font.MeasureText(line));
-        return new SKSize(w, lineH * _wrapLines.Count);
+        _wrapLines = TextLayout.Wrap(text, font, maxWidth, Fonts);
+        var w = 0f;
+        foreach (var line in _wrapLines) w = Math.Max(w, Fonts.Measure(line, font));
+        return new Size(w, font.Metrics.LineHeight * _wrapLines.Count);
     }
 
     static Dictionary<string, object?> ReadDict(JsonElement e)

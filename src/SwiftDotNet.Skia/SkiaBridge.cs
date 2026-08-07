@@ -1,363 +1,86 @@
-using System.Globalization;
-using System.Text.Json;
 using SkiaSharp;
+using SwiftDotNet.Graphics;
 
 namespace SwiftDotNet;
 
 /// <summary>
-/// The SkiaSharp implementation of <see cref="IBridge"/> — a pure-C# retained-mode interpreter that
-/// draws the UI itself. Like the GTK backend it keeps a scene tree keyed by structural node id and
-/// applies <c>replace</c>/<c>updateProps</c>/<c>setChildren</c> patches in place; unlike GTK there is
-/// no native widget layer, so this owns layout, paint, and hit-testing against an <see cref="SKCanvas"/>.
-///
-/// A host (a windowed <c>SKCanvasView</c>, or the headless <see cref="SkiaImageHost"/>) supplies the
-/// canvas + size + pointer events and listens on <see cref="Invalidate"/> to redraw after a patch.
+/// The SkiaSharp binding of the self-drawing engine.
 /// </summary>
-public sealed class SkiaBridge : IBridge
+/// <remarks>
+/// <para>All the behaviour lives in <see cref="VisualBridge"/>; this subclass pins the Skia rasterizer
+/// (fonts, image decoding, canvas wrapping) and re-exposes the geometric entry points in SkiaSharp's value
+/// types, so hosts and tests written against <c>SKPoint</c>/<c>SKRect</c>/<c>SKSize</c> keep working
+/// unchanged.</para>
+///
+/// <para>New code can use the base class's <see cref="Graphics.Point"/>-typed members directly; these
+/// overloads exist for continuity with the hosts that predate the renderer seam.</para>
+/// </remarks>
+public sealed class SkiaBridge : VisualBridge
 {
-    Action<string, string?>? _handler;
-    SkiaNode? _root;
-    SKSize _lastSize;
+    readonly SkiaFonts _fonts;
 
-    /// <summary>Active NavigationStacks during a build pass (innermost on top) so links can capture their owner.</summary>
-    internal Stack<SkiaNode> NavStack { get; } = new();
+    public SkiaBridge() : this(new SkiaFonts(), new SkiaImages()) { }
 
-    /// <summary>Node id of the control with keyboard focus (a text field/editor), or null.</summary>
-    public string? FocusedId
-    {
-        get => _focusedId;
-        internal set
-        {
-            if (_focusedId == value) return;
-            _focusedId = value;
-            FocusChanged?.Invoke(value);
-        }
-    }
-    string? _focusedId;
+    SkiaBridge(SkiaFonts fonts, SkiaImages images) : base(fonts, images) => _fonts = fonts;
 
-    /// <summary>
-    /// Raised when keyboard focus moves to a text control (its node id) or away from one (null). A host
-    /// with a soft keyboard hangs off this: the engine decides *what* is focused, the host decides how to
-    /// raise an IME for it. Desktop hosts that already own a hardware keyboard can ignore it.
-    /// </summary>
-    public event Action<string?>? FocusChanged;
-
-    /// <summary>The current text of the focused control, or null when nothing is focused.</summary>
-    public string? FocusedText => FocusedId is { } id ? Find(id)?.TextProp() : null;
-
-    /// <summary>True when the focused control masks its content, so a host can match its IME.</summary>
-    public bool FocusedIsSecure => FocusedId is { } id && Find(id)?.Type == "SecureField";
-
-    /// <summary>True when the focused control accepts newlines (a host should offer a return key, not "done").</summary>
-    public bool FocusedIsMultiline => FocusedId is { } id && Find(id)?.Type == "TextEditor";
-
-    /// <summary>Drop keyboard focus (a host calls this when its IME closes).</summary>
-    public void ClearFocus() => FocusedId = null;
-
-    /// <summary>Raised whenever the scene changes (a patch was applied); the host should repaint.</summary>
-    public event Action? Invalidate;
-
-    // Captured at construction (on the host's UI thread) so work that completes on a background thread —
-    // notably SkiaImageLoader's fetches — can raise Invalidate where the host can safely act on it.
-    readonly SynchronizationContext? _ui = SynchronizationContext.Current;
-
-    /// <summary>Raise <see cref="Invalidate"/>, marshalling to the UI thread when called from elsewhere.</summary>
-    internal void RequestRepaint()
-    {
-        if (_ui is null || _ui == SynchronizationContext.Current) Invalidate?.Invoke();
-        else _ui.Post(_ => Invalidate?.Invoke(), null);
-    }
-
-    public void SetEventHandler(Action<string, string?> handler) => _handler = handler;
-
-    /// <summary>Raise an event as if it came from a control (what hit-testing / recognizers call).</summary>
-    public void Emit(string id, string? value) => _handler?.Invoke(id, value);
-
-    public void Render(string json)
-    {
-        using var doc = JsonDocument.Parse(json);
-        foreach (var op in doc.RootElement.GetProperty("ops").EnumerateArray())
-        {
-            switch (op.GetProperty("op").GetString())
-            {
-                case "replace":
-                    _root = SkiaNode.Build(op.GetProperty("node"), this);
-                    break;
-                case "updateProps":
-                    Find(op.GetProperty("id").GetString()!)?.UpdateProps(op.GetProperty("props"), op.GetProperty("modifiers"));
-                    break;
-                case "setChildren":
-                    Find(op.GetProperty("id").GetString()!)?.SetChildren(op.GetProperty("children"));
-                    break;
-            }
-        }
-        Invalidate?.Invoke();
-    }
+    /// <summary>Wraps a Skia canvas so a custom renderer or host can draw through the engine's seam.</summary>
+    public SkiaCanvas Wrap(SKCanvas canvas) => new(canvas, _fonts);
 
     /// <summary>Lay out then paint the current scene into <paramref name="canvas"/> filling <paramref name="size"/>.</summary>
-    public void Paint(SKCanvas canvas, SKSize size, bool dark)
-    {
-        canvas.Clear(SkiaTheme.Background(dark));
-        if (_root is null) return;
-        _lastSize = size;
-        _root.Measure(size);
-        _root.Arrange(new SKRect(0, 0, size.Width, size.Height));
-        _root.Paint(canvas, dark);
+    public void Paint(SKCanvas canvas, SKSize size, bool dark) =>
+        Draw(new SkiaCanvas(canvas, _fonts), SkiaCanvas.FromSk(size), dark);
 
-        // Overlays (Sheet/Alert/Menu/pushed nav) paint full-window on top, post-order so an outer
-        // presentation lands above an inner one.
-        var window = new SKRect(0, 0, size.Width, size.Height);
-        foreach (var n in Overlays(_root)) n.PaintOverlay(canvas, window, dark);
-    }
+    // ---- SkiaSharp-typed overloads of the engine's pointer/gesture surface ----
 
-    /// <summary>Dispatch a pointer tap; returns true if a node handled it (host should then repaint).</summary>
-    public bool DispatchPointer(SKPoint point)
-    {
-        if (_root is null) return false;
-        var window = new SKRect(0, 0, _lastSize.Width, _lastSize.Height);
-        // Topmost overlay first (reverse of paint order).
-        foreach (var n in OverlaysTopFirst(_root))
-            if (n.HitTestOverlay(point, window)) { Invalidate?.Invoke(); return true; }
+    public bool DispatchPointer(SKPoint point) => DispatchPointer(SkiaCanvas.FromSk(point));
 
-        var handled = _root.HitTest(point);
-        if (handled) Invalidate?.Invoke(); // engine-local changes (tab/menu/nav) need a repaint too
-        return handled;
-    }
+    public bool Scroll(SKPoint point, float dy) => Scroll(SkiaCanvas.FromSk(point), dy);
 
-    static IEnumerable<SkiaNode> Overlays(SkiaNode n)
-    {
-        // Only descend into what's actually on screen (e.g. the selected tab) so a presentation in a
-        // hidden tab doesn't bleed over the visible one.
-        foreach (var c in n.VisibleOverlayChildren())
-            foreach (var o in Overlays(c))
-                yield return o;
-        if (n.HasActiveOverlay) yield return n;
+    public bool LongPress(SKPoint point) => LongPress(SkiaCanvas.FromSk(point));
 
-        // An overlay's *content* is a separate subtree (a pushed nav destination, a Sheet's body), so it
-        // is not reached by the Children walk above. Anything it presents in turn — a Menu, a colour
-        // popover, a Sheet from inside a pushed page — has to be collected too, and *after* this node so
-        // it paints above the page that owns it. Without this those presentations silently never appeared.
-        foreach (var c in n.OverlayContentRoots())
-            foreach (var o in Overlays(c))
-                yield return o;
-    }
+    public bool Swipe(SKPoint point, string direction) => Swipe(SkiaCanvas.FromSk(point), direction);
 
-    static IEnumerable<SkiaNode> OverlaysTopFirst(SkiaNode n) => Overlays(n).Reverse();
+    public bool Drag(SKPoint point, GesturePhase phase, float tx, float ty, float vx, float vy) =>
+        Drag(SkiaCanvas.FromSk(point), phase, tx, ty, vx, vy);
 
-    /// <summary>Scroll the innermost scrollable under <paramref name="point"/> by <paramref name="dy"/> px.</summary>
-    public bool Scroll(SKPoint point, float dy)
-    {
-        // Search the presented overlay first, exactly as gestures do — a pushed nav destination's ScrollView
-        // hangs off the overlay node, not off _root's children, so scrolling a pushed page needs this.
-        if (GestureTarget(point)?.ScrollableAt(point) is not { } node) return false;
-        ScrollBy(node, dy);
-        return true;
-    }
+    public bool Magnify(SKPoint point, GesturePhase phase, float scale) =>
+        Magnify(SkiaCanvas.FromSk(point), phase, scale);
 
-    // Shared by the wheel path (Scroll) and the touch path (PanScroll) so pull-to-refresh and
-    // incremental load fire the same way under a finger as under a wheel.
-    void ScrollBy(SkiaNode node, float dy)
-    {
-        // Pull-to-refresh: dragging down while already at the top of a refreshable list.
-        if (node.ScrollOffset <= 0 && dy < 0 && node.Props.GetValueOrDefault("refreshable") as bool? == true)
-            Emit(node.Id, List.RefreshValue);
+    public bool BeginScrub(SKPoint point) => BeginScrub(SkiaCanvas.FromSk(point));
 
-        node.ScrollOffset = Math.Max(0, node.ScrollOffset + dy); // clamped to content on next layout
+    public void Scrub(SKPoint point) => Scrub(SkiaCanvas.FromSk(point));
 
-        // Incremental load: scrolled within the threshold of the end of a list that asked for it.
-        if (node.Props.GetValueOrDefault("reachEndThreshold") is double threshold
-            && node.ScrollMax > 0 && node.ScrollOffset >= node.ScrollMax - threshold)
-            Emit(node.Id, List.LoadMoreValue);
+    public bool BeginPan(SKPoint point) => BeginPan(SkiaCanvas.FromSk(point));
 
-        Invalidate?.Invoke();
-    }
-
-    /// <summary>The laid-out frame of a node by id (valid after a <see cref="Paint"/> pass). For tests/tooling.</summary>
+    /// <summary>The laid-out frame of a node by id, in canvas coordinates.</summary>
     public bool TryGetFrame(string id, out SKRect frame)
     {
-        var node = Find(id);
-        frame = node?.Frame ?? default;
-        return node is not null;
+        if (TryGetFrame(id, out Graphics.Rect r)) { frame = SkiaCanvas.ToSk(r); return true; }
+        frame = default;
+        return false;
     }
 
-    /// <summary>Advance all active implicit animations by <paramref name="dt"/>s. Returns true while animating
-    /// (the host should keep repainting); false when everything has settled.</summary>
-    public bool Tick(double dt)
-    {
-        var active = _root?.Tick(dt) ?? false;
-        if (active) Invalidate?.Invoke();
-        return active;
-    }
-
-    /// <summary>Fire a long-press at a point (host resolves the hold from a pointer stream).</summary>
-    public bool LongPress(SKPoint point)
-    {
-        var handled = Dispatch(point, "onLongPress", null);
-        if (handled) Invalidate?.Invoke();
-        return handled;
-    }
-
-    /// <summary>Fire a directional swipe at a point (host resolves direction from a drag).</summary>
-    public bool Swipe(SKPoint point, string direction)
-    {
-        var handled = Dispatch(point, "onSwipe", direction);
-        if (handled) Invalidate?.Invoke();
-        return handled;
-    }
-
-    // Every gesture must search the presented overlays before the base scene, exactly as DispatchPointer
-    // does — an overlay's content (a pushed nav destination, a Sheet body) is a separate tree hanging off
-    // the overlay node, not part of _root's children.
-    /// <summary>The subtree a gesture at <paramref name="p"/> should search: topmost overlay content, else the scene.</summary>
-    SkiaNode? GestureTarget(SKPoint p)
-    {
-        if (_root is null) return null;
-        foreach (var overlay in OverlaysTopFirst(_root))
-            if (overlay.OverlayContentAt(p) is { } content)
-                return content;
-        return _root;
-    }
-
-    bool Dispatch(SKPoint p, string modType, string? direction)
-        => GestureTarget(p)?.DispatchGesture(p, modType, direction) ?? false;
-
-    // F1 continuous drag/pinch. The host feeds a raw pointer stream; the engine captures the target node
-    // at Began and routes subsequent Changed/Ended to it, emitting the shared drag grammar.
-    SkiaNode? _dragTarget;
-    SkiaNode? _magnifyTarget;
-
-    /// <summary>Feed a continuous drag. <paramref name="phase"/>: begin captures the target; change/end reuse it.</summary>
-    public bool Drag(SKPoint point, GesturePhase phase, float tx, float ty, float vx, float vy)
-    {
-        if (phase == GesturePhase.Began) _dragTarget = GestureTarget(point)?.NodeWithModAt(point, "onDrag");
-        if (_dragTarget?.ModEvent("onDrag") is not { } ev) return false;
-        var ph = phase switch { GesturePhase.Began => "b", GesturePhase.Ended => "e", _ => "c" };
-        Emit(ev, string.Format(CultureInfo.InvariantCulture, "{0};{1},{2};{3},{4};{5},{6}",
-            ph, tx, ty, point.X, point.Y, vx, vy));
-        if (phase == GesturePhase.Ended) _dragTarget = null;
-        Invalidate?.Invoke();
-        return true;
-    }
-
-    // A touch host has no wheel and no toolkit recognizers, so two things a mouse got for free have to be
-    // resolved from the raw pointer stream as well: scrubbing a continuous control, and panning a scroll
-    // view. SkiaPointerRouter tries .OnDrag first, then these, in that order.
-    SkiaNode? _scrubTarget;
-    SkiaNode? _panTarget;
-
-    /// <summary>
-    /// Capture a continuous control (a <c>Slider</c>) under <paramref name="point"/> and set it from that
-    /// position. Returns false when there is none, so the caller can try panning instead.
-    /// </summary>
-    public bool BeginScrub(SKPoint point)
-    {
-        _scrubTarget = GestureTarget(point)?.ScrubbableAt(point);
-        if (_scrubTarget is null) return false;
-        _scrubTarget.ScrubTo(point);
-        Invalidate?.Invoke();
-        return true;
-    }
-
-    /// <summary>Track a live scrub. The captured control keeps it even once the finger leaves its bounds.</summary>
-    public void Scrub(SKPoint point)
-    {
-        if (_scrubTarget is null) return;
-        _scrubTarget.ScrubTo(point);
-        Invalidate?.Invoke();
-    }
-
-    /// <summary>End a scrub started by <see cref="BeginScrub"/>.</summary>
-    public void EndScrub() => _scrubTarget = null;
-
-    /// <summary>
-    /// Capture the innermost scrollable under <paramref name="point"/> for finger panning. Returns false
-    /// when nothing there scrolls. Capturing does <em>not</em> consume the press — the router only starts
-    /// panning once the finger passes its tap slop, so a tap on a row still taps that row.
-    /// </summary>
-    public bool BeginPan(SKPoint point)
-    {
-        _panTarget = GestureTarget(point)?.ScrollableAt(point);
-        return _panTarget is not null;
-    }
-
-    /// <summary>
-    /// Pan the captured scrollable by <paramref name="dy"/> px of content travel (positive scrolls toward
-    /// the end). Kept separate from <see cref="Scroll"/> so a pan sticks to the view it started on rather
-    /// than re-hit-testing under a moving finger.
-    /// </summary>
-    public void PanScroll(float dy)
-    {
-        if (_panTarget is not null) ScrollBy(_panTarget, dy);
-    }
-
-    /// <summary>End a pan started by <see cref="BeginPan"/>.</summary>
-    public void EndPan() => _panTarget = null;
-
-    /// <summary>The scroll offset of a node by id (valid after a <see cref="Paint"/> pass). For tests/tooling.</summary>
-    public float ScrollOffsetOf(string id) => Find(id)?.ScrollOffset ?? 0;
-
-    /// <summary>
-    /// Centre of the <paramref name="index"/>th swatch in an open ColorPicker popover (valid after a
-    /// <see cref="Paint"/> pass). For tests/tooling — the popover is engine-drawn chrome, so there is no
-    /// node to hit-test against.
-    /// </summary>
+    /// <summary>Centre of a laid-out swatch in an open ColorPicker popover. For tests/tooling.</summary>
     public bool TryGetSwatchCenter(string id, int index, out SKPoint center)
     {
+        if (TryGetSwatchCenter(id, index, out Graphics.Point p)) { center = SkiaCanvas.ToSk(p); return true; }
         center = default;
-        if (Find(id) is not { } node) return false;
-        return node.TryGetSwatchCenter(index, out center);
+        return false;
     }
+}
 
-    /// <summary>Feed a continuous pinch. <paramref name="phase"/>: begin captures the target; scale is cumulative.</summary>
-    public bool Magnify(SKPoint point, GesturePhase phase, float scale)
-    {
-        if (phase == GesturePhase.Began) _magnifyTarget = GestureTarget(point)?.NodeWithModAt(point, "onMagnify");
-        if (_magnifyTarget?.ModEvent("onMagnify") is not { } ev) return false;
-        Emit(ev, scale.ToString(CultureInfo.InvariantCulture));
-        if (phase == GesturePhase.Ended) _magnifyTarget = null;
-        Invalidate?.Invoke();
-        return true;
-    }
+/// <summary>
+/// The SkiaSharp-typed <see cref="PointerRouter"/>. Same state machine; the overloads exist so hosts and
+/// tests can keep feeding <c>SKPoint</c>s.
+/// </summary>
+public sealed class SkiaPointerRouter : PointerRouter
+{
+    public SkiaPointerRouter(VisualBridge bridge) : base(bridge) { }
 
-    /// <summary>Append typed text to the focused text control (routes through its C# binding).</summary>
-    public void InsertText(string s)
-    {
-        if (FocusedId is null || Find(FocusedId) is not { } node) return;
-        Emit(FocusedId, node.TextProp() + s);
-    }
-
-    /// <summary>
-    /// Replace the focused control's whole value. This is what a host backed by a real IME uses — a
-    /// system keyboard reports the *resulting* string (including autocorrect, dictation, paste, and
-    /// selection edits), not the individual keystrokes <see cref="InsertText"/> assumes.
-    /// </summary>
-    public void SetFocusedText(string text)
-    {
-        if (FocusedId is null || Find(FocusedId) is not { } node) return;
-        if (node.TextProp() == text) return;      // echo of our own patch — don't loop
-        Emit(FocusedId, text);
-    }
-
-    /// <summary>Delete the last character of the focused text control.</summary>
-    public void DeleteBackward()
-    {
-        if (FocusedId is null || Find(FocusedId) is not { } node) return;
-        var cur = node.TextProp();
-        if (cur.Length > 0) Emit(FocusedId, cur[..^1]);
-    }
-
-    SkiaNode? Find(string id)
-    {
-        var node = _root;
-        if (node is null) return null;
-        var parts = id.Split('.');
-        if (parts[0] != node.Id) return null;
-        for (var i = 1; i < parts.Length; i++)
-        {
-            var idx = int.Parse(parts[i]);
-            if (idx < 0 || idx >= node.Children.Count) return null;
-            node = node.Children[idx];
-        }
-        return node;
-    }
+    public void Down(SKPoint p, double time) => Down(SkiaCanvas.FromSk(p), time);
+    public void Move(SKPoint p, double time) => Move(SkiaCanvas.FromSk(p), time);
+    public void Up(SKPoint p, double time) => Up(SkiaCanvas.FromSk(p), time);
+    public void Pinch(SKPoint p, GesturePhase phase, float scale) => Pinch(SkiaCanvas.FromSk(p), phase, scale);
+    public void PinchDelta(SKPoint p, float factor) => PinchDelta(SkiaCanvas.FromSk(p), factor);
+    public void EndPinch(SKPoint p) => EndPinch(SkiaCanvas.FromSk(p));
 }

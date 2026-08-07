@@ -24,7 +24,7 @@ public static class SwiftDotNetAppBuilderExtensions
     public static SwiftDotNetAppBuilder UseSwiftApp<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TRoot>(
         this SwiftDotNetAppBuilder builder) where TRoot : View
     {
-        ArgumentNullException.ThrowIfNull(builder);
+        Throw.IfNull(builder);
         builder.Services.TryAddSwiftRoot<TRoot>();
         builder.SetRootFactory(static sp => sp.GetRequiredService<TRoot>());
         return builder;
@@ -37,8 +37,8 @@ public static class SwiftDotNetAppBuilderExtensions
     public static SwiftDotNetAppBuilder UseSwiftApp<TRoot>(
         this SwiftDotNetAppBuilder builder, Func<IServiceProvider, TRoot> factory) where TRoot : View
     {
-        ArgumentNullException.ThrowIfNull(builder);
-        ArgumentNullException.ThrowIfNull(factory);
+        Throw.IfNull(builder);
+        Throw.IfNull(factory);
         builder.Services.AddSingleton(factory);
         builder.SetRootFactory(sp => factory(sp));
         return builder;

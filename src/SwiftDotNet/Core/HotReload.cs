@@ -58,7 +58,7 @@ public static class HotReload
     /// </remarks>
     public static void RegisterCacheFlush(Action<Type[]?> flush)
     {
-        ArgumentNullException.ThrowIfNull(flush);
+        Throw.IfNull(flush);
         if (!IsSupported)
             return;
         Flushes.Add(flush);

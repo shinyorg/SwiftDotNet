@@ -61,7 +61,7 @@ against the code on **2026-07-20**.
 | URL images | ✅ | ✅ | ✅ | ✅ | ✅ | ✅² |
 | `CameraView` | ✅ | ❌ | ❌¹⁰ | placeholder | ❌ | ❌ |
 
-¹ Only if the host wires [`SkiaPointerRouter`](../src/SwiftDotNet.Skia/SkiaPointerRouter.cs). A
+¹ Only if the host wires [`SkiaPointerRouter`](../src/SwiftDotNet.Graphics/PointerRouter.cs). A
 self-drawing backend has no gesture recognizers, so a host that forwards only taps leaves all seven
 drag-driven controls **inert while looking perfectly correct**. All three in-repo hosts are wired.
 ² WinUI is **uncompiled and untested** — see [Windows](backends/windows.md).

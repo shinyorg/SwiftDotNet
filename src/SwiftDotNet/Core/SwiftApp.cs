@@ -65,7 +65,7 @@ public static class SwiftApp
     /// </summary>
     public static void Transaction(Action mutations)
     {
-        ArgumentNullException.ThrowIfNull(mutations);
+        Throw.IfNull(mutations);
 
         if (_batching)
         {

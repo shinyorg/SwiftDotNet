@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+  </PropertyGroup>
+
+  <!-- A from-scratch GPU rasterizer for the engine's ICanvas seam. No Skia anywhere in this graph:
+       shapes are signed-distance fields evaluated in a fragment shader, text comes from a glyph atlas
+       rasterized by the pure-managed stb_truetype port, and PNG decoding is Graphics' own. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.WebGPU" Version="2.23.0" />
+    <!-- wgpuDevicePoll, which the spec leaves to the host environment: in a browser the event loop
+         resolves map callbacks, and headless there is nothing to resolve them but an explicit poll. -->
+    <PackageReference Include="Silk.NET.WebGPU.Extensions.WGPU" Version="2.23.0" />
+    <!-- wgpu-native: the WebGPU implementation. Maps to Metal on Apple, Vulkan on Linux/Android,
+         D3D12 on Windows — the portability is the point of targeting WebGPU rather than any one of them. -->
+    <PackageReference Include="Silk.NET.WebGPU.Native.WGPU" Version="2.23.0" />
+    <PackageReference Include="StbTrueTypeSharp" Version="1.26.12" />
+  </ItemGroup>
+
+</Project>

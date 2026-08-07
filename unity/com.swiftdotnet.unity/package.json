@@ -1,0 +1,9 @@
+{
+  "name": "com.swiftdotnet.unity",
+  "version": "0.1.0",
+  "displayName": "SwiftDotNet for Unity",
+  "description": "Renders a SwiftDotNet UI tree inside Unity. The engine (layout, hit-testing, gestures, paint) is the same one every other backend uses; this package supplies the Unity host — a texture to draw into and an input pump.",
+  "unity": "6000.0",
+  "keywords": ["ui", "declarative", "swiftui", "skia"],
+  "author": { "name": "SwiftDotNet" }
+}

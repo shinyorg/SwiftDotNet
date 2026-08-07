@@ -35,7 +35,7 @@ public static class SwiftHost
     /// </summary>
     public static IDisposable EnterScope(IServiceProvider scope)
     {
-        ArgumentNullException.ThrowIfNull(scope);
+        Throw.IfNull(scope);
         var previous = ActiveScope;
         ActiveScope = scope;
         return new ScopeHandle(previous);
@@ -60,7 +60,7 @@ public static class SwiftHost
     /// <summary>Resolve a required service, throwing a registration-shaped message if it is missing.</summary>
     public static TService Require<TService>(IServiceProvider provider) where TService : notnull
     {
-        ArgumentNullException.ThrowIfNull(provider);
+        Throw.IfNull(provider);
         return (TService?)provider.GetService(typeof(TService)) ?? throw new InvalidOperationException(
             $"No service registered for {typeof(TService)}. Register it in SwiftProgram.CreateSwiftApp().");
     }
@@ -68,7 +68,7 @@ public static class SwiftHost
     /// <summary>Resolve an optional service; <c>default</c> when unregistered.</summary>
     public static TService? Optional<TService>(IServiceProvider provider)
     {
-        ArgumentNullException.ThrowIfNull(provider);
+        Throw.IfNull(provider);
         return (TService?)provider.GetService(typeof(TService));
     }
 

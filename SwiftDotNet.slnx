@@ -16,8 +16,10 @@
         <Project Path="sample/SampleApp.Tui/SampleApp.Tui.csproj"/>
     </Folder>
     <Project Path="src/SwiftDotNet.Gtk/SwiftDotNet.Gtk.csproj"/>
+    <Project Path="src/SwiftDotNet.Graphics/SwiftDotNet.Graphics.csproj"/>
     <Project Path="src/SwiftDotNet.Skia/SwiftDotNet.Skia.csproj"/>
     <Project Path="src/SwiftDotNet.Skia.Maui/SwiftDotNet.Skia.Maui.csproj"/>
+    <Project Path="src/SwiftDotNet.WebGpu/SwiftDotNet.WebGpu.csproj"/>
     <Project Path="src/SwiftDotNet.Tui/SwiftDotNet.Tui.csproj"/>
     <Project Path="src/SwiftDotNet.Tui.Graphics/SwiftDotNet.Tui.Graphics.csproj"/>
     <Project Path="src/SwiftDotNet.Maps/SwiftDotNet.Maps.csproj"/>

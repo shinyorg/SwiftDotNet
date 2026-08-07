@@ -62,6 +62,7 @@ Full docs live in **[`docs/`](docs/README.md)**. Quick links:
 - Backends: **[Overview](docs/backends/README.md)** · [Apple](docs/backends/apple.md) ·
   [Android](docs/backends/android.md) · [Linux/GTK](docs/backends/linux-gtk.md) ·
   [Windows](docs/backends/windows.md) · [Web](docs/backends/web.md) · [Skia](docs/backends/skia.md) ·
+  [WebGPU](docs/backends/webgpu.md) · [Unity](docs/backends/unity.md) ·
   [Terminal/TUI](docs/backends/tui.md)
 - Tooling: **[Rider Plugin & Dev Tools](docs/rider-plugin.md)** — run configurations, the live
   patch inspector, and the in-IDE Skia preview

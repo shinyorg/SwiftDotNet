@@ -113,7 +113,7 @@ public static class StyleExtensions
     /// <c>EnvironmentValues.Current</c>; its modifiers apply after any inline modifiers on the same view.</summary>
     public static T Style<T>(this T view, IViewStyle style) where T : View
     {
-        ArgumentNullException.ThrowIfNull(style);
+        Throw.IfNull(style);
         view.AddStyle(style.Configure);
         return view;
     }
@@ -122,7 +122,7 @@ public static class StyleExtensions
     /// Resolves at render time (see the <see cref="IViewStyle"/> overload).</summary>
     public static T Style<T>(this T view, Action<ViewStyleBuilder> configure) where T : View
     {
-        ArgumentNullException.ThrowIfNull(configure);
+        Throw.IfNull(configure);
         view.AddStyle(configure);
         return view;
     }
@@ -134,7 +134,7 @@ public static class StyleExtensions
     /// mechanism): <c>root.Environment(e =&gt; e.Font(Font.Body).ForegroundColor(Color.Primary))</c>.</summary>
     public static EnvironmentScope Environment<T>(this T view, Action<EnvironmentBuilder> configure) where T : View
     {
-        ArgumentNullException.ThrowIfNull(configure);
+        Throw.IfNull(configure);
         var b = new EnvironmentBuilder();
         configure(b);
         return new EnvironmentScope(view, b.Build());
@@ -144,7 +144,7 @@ public static class StyleExtensions
     /// <c>EnvironmentValues.Current.Theme</c>.</summary>
     public static EnvironmentScope Theme<T>(this T view, Theme theme) where T : View
     {
-        ArgumentNullException.ThrowIfNull(theme);
+        Throw.IfNull(theme);
         return new EnvironmentScope(view, new EnvironmentBuilder().Theme(theme).Build());
     }
 
@@ -152,7 +152,7 @@ public static class StyleExtensions
     /// (mirrors SwiftUI's <c>.buttonStyle()</c>).</summary>
     public static EnvironmentScope ButtonStyle<T>(this T view, IButtonStyle style) where T : View
     {
-        ArgumentNullException.ThrowIfNull(style);
+        Throw.IfNull(style);
         return new EnvironmentScope(view, new EnvironmentBuilder().ButtonStyle(style).Build());
     }
 }

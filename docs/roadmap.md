@@ -85,6 +85,16 @@ canvas is a single unlabelled rectangle to VoiceOver and TalkBack today.
   ships and the DSL has no node for — `Table`, `DataGridControl`, `TreeView`, `CodeEditor`,
   `MarkdownControl`, the chart family — through the [`TuiRenderers`](custom-controls.md) seam; consider a
   windowed `List` on Terminal.UI's own `ListBox<T>` virtualization. See [Terminal/TUI](backends/tui.md).
+- **WebGPU** — a windowed host (only the headless one exists; mirror
+  [`SampleApp.Skia.Silk`](../sample/SampleApp.Skia.Silk)); run it on Vulkan and D3D12, which are written but
+  unexercised; real compositing layers so `.Opacity` on an overlapping subtree stops approximating; text
+  shaping for scripts needing ligatures/reordering; image formats beyond PNG. See
+  [WebGPU backend](backends/webgpu.md).
+- **Unity** — open the package in a Unity 6 project and make it compile and run (it never has); verify
+  IL2CPP/AOT; wire safe area (needs a host-facing entry point — `SafeArea.Update` is internal) and the soft
+  keyboard off `FocusChanged`. Route B (node tree → UI Toolkit `VisualElement`s) remains open if
+  Unity-native inspectability ever matters more than reusing the verified Skia backend. See
+  [Unity backend](backends/unity.md).
 - **Collection View** — true windowed streaming (WinUI/GTK/Web); Web pull-refresh/load-more/windowing (needs
   JS-interop `scrollTop`); Swift load-more wiring. See [Collection View → Deferred](collection-view.md#deferred).
 
@@ -92,4 +102,9 @@ canvas is a single unlabelled rectangle to VoiceOver and TalkBack today.
 
 - **Binary bridge protocol** — replace JSON on the hot path.
 - **Physical-device runs** on iOS/Android (currently simulator/emulator verified).
-- **Publish** the combined `SwiftDotNet` + `SwiftDotNet.Gtk` + `SwiftDotNet.Web` (+ Skia, + Tui) as NuGet packages.
+- **Publish** the combined `SwiftDotNet` + `SwiftDotNet.Gtk` + `SwiftDotNet.Web` (+ Graphics, Skia, WebGPU,
+  Tui) as NuGet packages.
+- **An arbitrary path primitive** in [`ICanvas`](../src/SwiftDotNet.Graphics/ICanvas.cs), behind a
+  capability check rather than in the interface — adding it unconditionally would make every future
+  self-drawing backend owe a full vector rasterizer. Skia gets it free; WebGPU would need something like
+  Vello.

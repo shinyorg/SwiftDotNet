@@ -5,6 +5,13 @@ SkiaSharp, using **no native controls**. It's a from-scratch UI toolkit that own
 scrolling, overlays, input/focus, an animation clock, and an icon font, rendering the *whole* shared
 [`ContentView`](../../sample/SharedUI/ContentView.cs) **identically on every OS**.
 
+> **Where the code lives.** That toolkit is no longer *in* this project. Layout, hit-testing, gestures and
+> the paint pass live in [`SwiftDotNet.Graphics`](../../src/SwiftDotNet.Graphics), behind the
+> [renderer seam](../architecture.md#the-renderer-seam); `SwiftDotNet.Skia` is now just the SkiaSharp
+> binding of that seam (~530 lines) plus the hosts. The same engine drives
+> [WebGPU](webgpu.md) and [Unity](unity.md). Public API is unchanged — `SkiaBridge`, `SkiaImageHost`,
+> `SkiaPointerRouter` and `ISkiaRenderer` all still work, and the existing tests were not touched.
+
 - **Shipped & verified** (headless PNG, interactive macOS window, iOS simulator and Android emulator via the
   MAUI host): renders all tabs identically to the native backends.
 
@@ -17,17 +24,33 @@ scrolling, overlays, input/focus, an animation clock, and an icon font, renderin
 **Trade-offs:** no native accessibility, and `WebView`/`Map` can't be painted onto a canvas — they need a
 native-view overlay (a planned punch-through).
 
-## Engine ([`src/SwiftDotNet.Skia`](../../src/SwiftDotNet.Skia))
+## The engine ([`src/SwiftDotNet.Graphics`](../../src/SwiftDotNet.Graphics))
 
-net10.0, `RootNamespace SwiftDotNet`, references `SwiftDotNet` + `SkiaSharp` + `SkiaSharp.HarfBuzz`.
+net10.0 + netstandard2.1, dependency-free — no SkiaSharp, no graphics API.
 
 | File | Role |
 |------|------|
-| `SkiaBridge.cs` | `IBridge`; retained `SkiaNode? _root`; applies patches via `Find(id)`; `Paint(canvas,size,dark)` = measure+arrange+paint+overlays; dispatches pointer/scroll/text/long-press/swipe/tick; focus; `TryGetFrame(id)` for tests. |
-| `SkiaNode.cs` / `SkiaNodePaint.cs` / `SkiaNodeOverlay.cs` | Retained scene tree: two-pass `Measure`→`Arrange`, `Paint`, `HitTest`, `DispatchGesture`, `ScrollableAt`, animation clock. Covers all node types + modifiers; per-node local state (tab index, scroll offset, pushed content, menu open); overlays. |
-| `SkiaText.cs` | Greedy word-wrap + per-run font fallback via `SKFontManager.MatchCharacter` (color emoji/CJK render instead of tofu). |
-| `SkiaTheme.cs` | Color/font tokens (light + dark), SF-Symbol → emoji `Icon()`. |
-| `SkiaRenderers.cs` | `ISkiaRenderer { Measure, Paint }` custom-renderer registry (demoed with a real Map renderer). |
+| `VisualBridge.cs` | `IBridge`; retained `VisualNode? _root`; applies patches via `Find(id)`; `Draw(canvas,size,dark)` = measure+arrange+paint+overlays; dispatches pointer/scroll/text/long-press/swipe/tick; focus; `TryGetFrame(id)` for tests. |
+| `VisualNode.cs` / `VisualNodePaint.cs` / `VisualNodeOverlay.cs` | Retained scene tree: two-pass `Measure`→`Arrange`, `Draw`, `HitTest`, `DispatchGesture`, `ScrollableAt`, animation clock. Covers all node types + modifiers; per-node local state (tab index, scroll offset, pushed content, menu open); overlays. |
+| `ICanvas.cs` / `Text.cs` / `Image.cs` | The rasterizer seam: draw primitives, font provider + word wrap, image decode. |
+| `Geometry.cs` / `Color.cs` / `Paint.cs` / `Gradient.cs` | Rasterizer-neutral `Rect`/`Point`/`Size`/`Color`, paint state, and the `Brush` wire-format parser. |
+| `Theme.cs` | Color/font tokens (light + dark), SF-Symbol → emoji `Icon()`. Shared so every self-drawing backend agrees on what "headline" means. |
+| `PointerRouter.cs` | Raw pointer stream → taps, long-press, swipe, drag, pinch, pan. |
+| `VisualRenderers.cs` | `IVisualRenderer { Measure, Paint }` custom-renderer registry. |
+| `Png.cs` | Pure-managed PNG decoder, shared with the terminal backend. |
+
+## The Skia binding ([`src/SwiftDotNet.Skia`](../../src/SwiftDotNet.Skia))
+
+net10.0, `RootNamespace SwiftDotNet`, references `SwiftDotNet` + `SwiftDotNet.Graphics` + `SkiaSharp` +
+`SkiaSharp.HarfBuzz`.
+
+| File | Role |
+|------|------|
+| `SkiaCanvas.cs` | `ICanvas` over `SKCanvas`; converts the seam's paint/shadow/gradient descriptions into `SKPaint`, `SKImageFilter` and `SKShader`. |
+| `SkiaFonts.cs` | `IFontProvider` + `IImageDecoder`: cached faces, per-run font fallback via `SKFontManager.MatchCharacter` (colour emoji/CJK instead of tofu), `SKImage` decode. |
+| `SkiaBridge.cs` | `VisualBridge` subclass pinning the Skia rasterizer, re-exposing the pointer/gesture surface in `SKPoint`/`SKRect`/`SKSize` for existing hosts. Also `SkiaPointerRouter`. |
+| `SkiaRenderers.cs` | `ISkiaRenderer` back-compat shim over `IVisualRenderer`, plus `SkiaImageLoader`. |
+| `SkiaHost.cs` | `ISkiaHost` + the headless `SkiaImageHost` (render-to-PNG, tap/scroll/type/advance). |
 | `SkiaHost.cs` | `ISkiaHost` abstraction + headless `SkiaImageHost`. |
 
 ## Coverage
@@ -49,7 +72,7 @@ line. Grid measures twice on purpose — natural sizes drive the content-sized c
 re-measured at its final cell width so wrapping `Text` reports the height it will actually paint at.
 
 Two paint-side notes: raster images (`Image.FromFile/FromBytes`, and `Image.FromUrl` via the async
-[`SkiaImageLoader`](../../src/SwiftDotNet.Skia/SkiaImageLoader.cs)) are **greedy** — they fill the space
+[`SkiaImageLoader`](../../src/SwiftDotNet.Graphics/ImageLoader.cs)) are **greedy** — they fill the space
 offered, like a shape, so a `.Frame` is what constrains them; and `.Material` blur is a translucent **tint**,
 not a real backdrop blur.
 
@@ -119,7 +142,7 @@ continuous gesture — `Slider`, `RangeSlider`, `ColorPicker`, `FloatingPanel`, 
 recognizers from its toolkit; a self-drawing backend has none, so the engine's `SkiaBridge.Drag/Magnify`
 sat unused while hosts forwarded only taps, and those seven controls rendered perfectly and did nothing.
 
-[`SkiaPointerRouter`](../../src/SwiftDotNet.Skia/SkiaPointerRouter.cs) closes that: hosts feed it raw
+[`SkiaPointerRouter`](../../src/SwiftDotNet.Graphics/PointerRouter.cs) closes that: hosts feed it raw
 pointer events and it resolves tap / long-press / swipe / drag / pinch. **A host that does not use it gets
 tap-only interaction.** Wiring is four calls:
 

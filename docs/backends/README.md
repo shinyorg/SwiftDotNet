@@ -4,7 +4,10 @@ One `View` subclass, many renderers. There are **two families** of backend:
 
 - **Native-fidelity** — map the view tree to the OS's *real* controls, with the platform's own layout, fonts,
   animations, and accessibility.
-- **Self-drawing** — paint every pixel with SkiaSharp for a pixel-identical look everywhere.
+- **Self-drawing** — paint every pixel ourselves for a pixel-identical look everywhere. The engine that does
+  this is rasterizer-agnostic (see [the renderer seam](../architecture.md#the-renderer-seam)), so the same
+  layout, hit-testing, gestures and paint pass drive SkiaSharp, a from-scratch WebGPU renderer, or a Unity
+  texture.
 
 And **two routes** to get there (see [Architecture → the two backend routes](../architecture.md#the-two-backend-routes)):
 
@@ -23,6 +26,8 @@ And **two routes** to get there (see [Architecture → the two backend routes](.
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded — **never compiled**, no tests | [Windows](windows.md) |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome | [Web](web.md) |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp)** | ✅ Verified (macOS window + PNG) | [Skia](skia.md) |
+| **Any (WebGPU)** | **Self-drawn, on the GPU** | **Pure C# (wgpu-native, no Skia)** | ✅ Verified on Metal via headless pixel readback (8 CI tests); Vulkan/D3D12 unexercised | [WebGPU](webgpu.md) |
+| **Unity** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine + Unity host)** | 🧩 .NET side builds for netstandard2.1; the host MonoBehaviour is **never compiled** | [Unity](unity.md) |
 | **Any (terminal)** | **Characters in a TTY** | **Pure C# (XenoAtom.Terminal.UI)** | ✅ Verified headlessly on macOS (35 CI tests); not yet driven by hand in a live terminal | [Terminal/TUI](tui.md) |
 
 > **What "Verified" means, and what CI actually covers.** ✅ Verified means the backend was *run* and
@@ -38,6 +43,10 @@ And **two routes** to get there (see [Architecture → the two backend routes](.
 - **Want a uniform look on every platform, or a target the native backends can't reach** (dependency-free
   desktop, embedded/framebuffer Linux)? Use **[Skia](skia.md)**. Trade-off: no native accessibility, and
   `WebView` / `Map` can't be painted onto a canvas (they need a native-view overlay).
+- **Want the self-drawn look with no native imaging dependency, or GPU-resident rendering?** Use
+  **[WebGPU](webgpu.md)**. Trade-off: PNG-only images, no complex text shaping, and group opacity is
+  approximated.
+- **Rendering inside a game engine?** Use **[Unity](unity.md)** — the Skia engine drawn into a `Texture2D`.
 - **No display server at all — SSH, a container, CI?** Use **[Terminal/TUI](tui.md)**. Trade-off: one glyph
   size (so `.Font` becomes emphasis, not scale), no transforms or animation, and images become character
   art unless the terminal speaks Sixel/Kitty.

@@ -1,16 +1,19 @@
-using SkiaSharp;
+using SwiftDotNet;
 
-namespace SwiftDotNet;
+namespace SwiftDotNet.Graphics;
 
 /// <summary>
-/// Overlay pass for <see cref="SkiaNode"/> — Sheet, Alert, Menu popovers and pushed NavigationStack
+/// Overlay pass for <see cref="VisualNode"/> — Sheet, Alert, Menu popovers and pushed NavigationStack
 /// destinations. Because a self-drawn canvas has no OS modal layer, these are painted full-window on top
 /// of the base scene by the bridge (post-order, so an outer Alert lands above an inner Sheet), and
 /// hit-tested before the base scene. Presented state is prop-bound (Sheet/Alert) or engine-local (Menu, nav push).
 /// </summary>
-sealed partial class SkiaNode
+sealed partial class VisualNode
 {
-    SKRect _menuRect, _sheetPanel, _alertBox, _alertOk, _navBack, _swatchRect;
+    Rect _menuRect, _sheetPanel, _alertBox, _alertOk, _navBack, _swatchRect;
+
+    /// <summary>The lift shared by every floating popover (Menu, ColorPicker swatches).</summary>
+    static readonly Shadow PopoverShadow = new(0, 4, 8, new Color(0, 0, 0, 60));
 
     internal bool HasActiveOverlay => Type switch
     {
@@ -22,7 +25,7 @@ sealed partial class SkiaNode
         _ => false,
     };
 
-    internal void PaintOverlay(SKCanvas canvas, SKRect window, bool dark)
+    internal void PaintOverlay(ICanvas canvas, Rect window, bool dark)
     {
         switch (Type)
         {
@@ -34,7 +37,7 @@ sealed partial class SkiaNode
         }
     }
 
-    internal bool HitTestOverlay(SKPoint p, SKRect window)
+    internal bool HitTestOverlay(Point p, Rect window)
     {
         switch (Type)
         {
@@ -86,7 +89,7 @@ sealed partial class SkiaNode
     /// which made every gesture dead on a pushed page or inside a Sheet, including the Controls library's
     /// overlay-presented Dialog / FloatingPanel / ImageViewer.
     /// </summary>
-    internal SkiaNode? OverlayContentAt(SKPoint p) => Type switch
+    internal VisualNode? OverlayContentAt(Point p) => Type switch
     {
         "Sheet" when _sheetPanel.Contains(p) && Children.Count > 1 => Children[1],
         "NavigationStack" when Frame.Contains(p) && !_navBack.Contains(p) => PushedContent,
@@ -98,77 +101,78 @@ sealed partial class SkiaNode
     /// The content subtrees this node presents, for the overlay walk. These hang off the node rather than
     /// living in <see cref="Children"/>, so anything *they* present needs collecting separately.
     /// </summary>
-    internal IEnumerable<SkiaNode> OverlayContentRoots()
+    internal IEnumerable<VisualNode> OverlayContentRoots()
     {
         if (Type == "NavigationStack" && PushedContent is { } pushed) yield return pushed;
         if (Type == "Sheet" && Bool("presented") && Children.Count > 1) yield return Children[1];
     }
 
-    static void Scrim(SKCanvas canvas, SKRect window)
+    static void Scrim(ICanvas canvas, Rect window)
     {
-        using var s = new SKPaint { Color = new SKColor(0, 0, 0, 110) };
+        var s = new Paint { Color = new Color(0, 0, 0, 110) };
         canvas.DrawRect(window, s);
     }
 
-    void PaintSheet(SKCanvas canvas, SKRect window, bool dark)
+    void PaintSheet(ICanvas canvas, Rect window, bool dark)
     {
         Scrim(canvas, window);
-        _sheetPanel = new SKRect(window.Left, window.Top + 90, window.Right, window.Bottom);
-        using var panel = new SKPaint { Color = SkiaTheme.Background(dark), IsAntialias = true };
+        _sheetPanel = new Rect(window.Left, window.Top + 90, window.Right, window.Bottom);
+        var panel = new Paint { Color = Theme.Background(dark), IsAntialias = true };
         canvas.DrawRoundRect(_sheetPanel, 18, 18, panel);
         // grabber
-        using var grab = new SKPaint { Color = SkiaTheme.Separator(dark), IsAntialias = true };
-        canvas.DrawRoundRect(new SKRect(window.MidX - 18, _sheetPanel.Top + 8, window.MidX + 18, _sheetPanel.Top + 12), 2, 2, grab);
+        var grab = new Paint { Color = Theme.Separator(dark), IsAntialias = true };
+        canvas.DrawRoundRect(new Rect(window.MidX - 18, _sheetPanel.Top + 8, window.MidX + 18, _sheetPanel.Top + 12), 2, 2, grab);
 
-        var inner = new SKRect(_sheetPanel.Left + 8, _sheetPanel.Top + 20, _sheetPanel.Right - 8, _sheetPanel.Bottom);
+        var inner = new Rect(_sheetPanel.Left + 8, _sheetPanel.Top + 20, _sheetPanel.Right - 8, _sheetPanel.Bottom);
         var content = Children[1];
-        content.Measure(new SKSize(inner.Width, inner.Height));
+        content.Measure(new Size(inner.Width, inner.Height));
         content.Arrange(inner);
-        content.Paint(canvas, dark);
+        content.Draw(canvas, dark);
     }
 
-    void PaintAlert(SKCanvas canvas, SKRect window, bool dark)
+    void PaintAlert(ICanvas canvas, Rect window, bool dark)
     {
         Scrim(canvas, window);
         var w = 300f;
-        var titleFont = SkiaTheme.MakeFont("headline");
-        var msgFont = SkiaTheme.MakeFont("body");
-        var msgLines = SkiaText.Wrap(Str("message"), msgFont, w - 40);
+        var titleFont = Theme.MakeFont("headline", Fonts);
+        var msgFont = Theme.MakeFont("body", Fonts);
+        var msgLines = TextLayout.Wrap(Str("message"), msgFont, w - 40, Fonts);
         var lh = msgFont.Metrics.Descent - msgFont.Metrics.Ascent;
         var h = 28 + 24 + msgLines.Count * lh + 20 + 44;
-        _alertBox = new SKRect(window.MidX - w / 2, window.MidY - h / 2, window.MidX + w / 2, window.MidY + h / 2);
-        using var box = new SKPaint { Color = SkiaTheme.Surface(dark), IsAntialias = true };
+        _alertBox = new Rect(window.MidX - w / 2, window.MidY - h / 2, window.MidX + w / 2, window.MidY + h / 2);
+        var box = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
         canvas.DrawRoundRect(_alertBox, 14, 14, box);
 
         var y = _alertBox.Top + 20 - titleFont.Metrics.Ascent;
-        DrawBlock(canvas, new() { Str("title") }, new SKRect(_alertBox.Left, _alertBox.Top + 20, _alertBox.Right, _alertBox.Top + 44), titleFont, dark ? SKColors.White : SKColors.Black, "center");
+        DrawBlock(canvas, new() { Str("title") }, new Rect(_alertBox.Left, _alertBox.Top + 20, _alertBox.Right, _alertBox.Top + 44), titleFont, dark ? Colors.White : Colors.Black, "center");
         var my = _alertBox.Top + 52;
         foreach (var line in msgLines)
         {
-            DrawBlock(canvas, new() { line }, new SKRect(_alertBox.Left, my, _alertBox.Right, my + lh), msgFont, new SKColor(0x8E, 0x8E, 0x93), "center");
+            DrawBlock(canvas, new() { line }, new Rect(_alertBox.Left, my, _alertBox.Right, my + lh), msgFont, new Color(0x8E, 0x8E, 0x93), "center");
             my += lh;
         }
-        _alertOk = new SKRect(_alertBox.Left, _alertBox.Bottom - 44, _alertBox.Right, _alertBox.Bottom);
-        using var sep = new SKPaint { Color = SkiaTheme.Separator(dark), StrokeWidth = 1 };
+        _alertOk = new Rect(_alertBox.Left, _alertBox.Bottom - 44, _alertBox.Right, _alertBox.Bottom);
+        var sep = new Paint { Color = Theme.Separator(dark), StrokeWidth = 1 };
         canvas.DrawLine(_alertOk.Left, _alertOk.Top, _alertOk.Right, _alertOk.Top, sep);
-        DrawCentered(canvas, "OK", _alertOk, SkiaTheme.MakeFont("headline"), SkiaTheme.Accent);
+        DrawCentered(canvas, "OK", _alertOk, Theme.MakeFont("headline", Fonts), Theme.Accent);
     }
 
-    void PaintMenu(SKCanvas canvas, SKRect window, bool dark)
+    void PaintMenu(ICanvas canvas, Rect window, bool dark)
     {
         var w = 220f;
         var h = Children.Count * 40 + 12;
         var top = Math.Min(_content.Bottom + 4, window.Bottom - h - 8);
-        _menuRect = new SKRect(Math.Max(8, _content.Right - w), top, _content.Right, top + h);
-        using var shadow = new SKPaint { Color = SkiaTheme.Surface(dark), IsAntialias = true, ImageFilter = SKImageFilter.CreateDropShadow(0, 4, 8, 8, new SKColor(0, 0, 0, 60)) };
-        canvas.DrawRoundRect(_menuRect, 12, 12, shadow);
-        var font = SkiaTheme.MakeFont("body");
+        _menuRect = new Rect(Math.Max(8, _content.Right - w), top, _content.Right, top + h);
+        canvas.DrawRoundRect(_menuRect, 12, 12,
+            new Paint { Color = Theme.Surface(dark), IsAntialias = true, Shadow = PopoverShadow });
+        var font = Theme.MakeFont("body", Fonts);
         for (var i = 0; i < Children.Count; i++)
         {
             var ry = _menuRect.Top + 6 + i * 40;
-            if (i > 0) using (var sep = new SKPaint { Color = SkiaTheme.Separator(dark), StrokeWidth = 0.5f })
-                canvas.DrawLine(_menuRect.Left + 12, ry, _menuRect.Right - 12, ry, sep);
-            SkiaText.DrawLine(canvas, Children[i].Str("title"), _menuRect.Left + 14, ry + 26, font, dark ? SKColors.White : SKColors.Black);
+            if (i > 0)
+                canvas.DrawLine(_menuRect.Left + 12, ry, _menuRect.Right - 12, ry,
+                    Paint.Hairline(Theme.Separator(dark), 0.5f));
+            canvas.DrawText(Children[i].Str("title"), _menuRect.Left + 14, ry + 26, font, dark ? Colors.White : Colors.Black);
         }
     }
 
@@ -182,75 +186,70 @@ sealed partial class SkiaNode
     /// one ringed. It used to advance blindly to the next palette entry on each tap, which is technically
     /// "working" and reads as broken — you cannot choose a colour, only cycle past it.
     /// </summary>
-    void PaintSwatches(SKCanvas canvas, SKRect window, bool dark)
+    void PaintSwatches(ICanvas canvas, Rect window, bool dark)
     {
         var rows = (Palette.Length + SwatchColumns - 1) / SwatchColumns;
         var w = SwatchColumns * SwatchStride - SwatchGap + SwatchPad * 2;
         var h = rows * SwatchStride - SwatchGap + SwatchPad * 2;
         var top = Math.Min(_content.Bottom + 4, window.Bottom - h - 8);
         var left = Math.Max(8, Math.Min(_content.Right - w, window.Right - w - 8));
-        _swatchRect = new SKRect(left, top, left + w, top + h);
+        _swatchRect = new Rect(left, top, left + w, top + h);
 
-        using var panel = new SKPaint
-        {
-            Color = SkiaTheme.Surface(dark),
-            IsAntialias = true,
-            ImageFilter = SKImageFilter.CreateDropShadow(0, 4, 8, 8, new SKColor(0, 0, 0, 60)),
-        };
-        canvas.DrawRoundRect(_swatchRect, 12, 12, panel);
+        canvas.DrawRoundRect(_swatchRect, 12, 12,
+            new Paint { Color = Theme.Surface(dark), IsAntialias = true, Shadow = PopoverShadow });
 
         var current = Str("value");
         for (var i = 0; i < Palette.Length; i++)
         {
             var cx = _swatchRect.Left + SwatchPad + i % SwatchColumns * SwatchStride;
             var cy = _swatchRect.Top + SwatchPad + i / SwatchColumns * SwatchStride;
-            var cell = new SKRect(cx, cy, cx + SwatchSize, cy + SwatchSize);
+            var cell = new Rect(cx, cy, cx + SwatchSize, cy + SwatchSize);
 
-            using var fill = new SKPaint { Color = SkiaTheme.Color(Palette[i], dark), IsAntialias = true };
+            var fill = new Paint { Color = Theme.Color(Palette[i], dark), IsAntialias = true };
             canvas.DrawRoundRect(cell, 10, 10, fill);
 
             if (!string.Equals(Palette[i], current, StringComparison.OrdinalIgnoreCase)) continue;
-            using var ring = new SKPaint
+            var ring = new Paint
             {
-                Color = dark ? SKColors.White : SKColors.Black,
+                Color = dark ? Colors.White : Colors.Black,
                 IsAntialias = true,
-                Style = SKPaintStyle.Stroke,
+                Style = PaintStyle.Stroke,
                 StrokeWidth = 3,
             };
-            canvas.DrawRoundRect(SKRect.Inflate(cell, 3, 3), 13, 13, ring);
+            canvas.DrawRoundRect(Rect.Inflate(cell, 3, 3), 13, 13, ring);
         }
     }
 
     /// <summary>Centre of a laid-out swatch in the open popover. For tests/tooling.</summary>
-    internal bool TryGetSwatchCenter(int index, out SKPoint center)
+    internal bool TryGetSwatchCenter(int index, out Point center)
     {
         center = default;
         if (Type != "ColorPicker" || !MenuOpen || index < 0 || index >= Palette.Length) return false;
-        center = new SKPoint(
+        center = new Point(
             _swatchRect.Left + SwatchPad + index % SwatchColumns * SwatchStride + SwatchSize / 2,
             _swatchRect.Top + SwatchPad + index / SwatchColumns * SwatchStride + SwatchSize / 2);
         return true;
     }
 
-    void PaintPushed(SKCanvas canvas, SKRect window, bool dark)
+    void PaintPushed(ICanvas canvas, Rect window, bool dark)
     {
         // A nav push lives INSIDE its tab, so it covers the NavigationStack's own frame — not the whole
         // window — leaving the tab bar visible and tappable.
         var region = Frame;
-        using var bg = new SKPaint { Color = SkiaTheme.Background(dark) };
+        var bg = new Paint { Color = Theme.Background(dark) };
         canvas.DrawRect(region, bg);
-        var bar = new SKRect(region.Left, region.Top, region.Right, region.Top + NavBarHeight);
-        _navBack = new SKRect(bar.Left, bar.Top, bar.Left + 80, bar.Bottom);
-        using var barBg = new SKPaint { Color = SkiaTheme.Surface(dark), IsAntialias = true };
+        var bar = new Rect(region.Left, region.Top, region.Right, region.Top + NavBarHeight);
+        _navBack = new Rect(bar.Left, bar.Top, bar.Left + 80, bar.Bottom);
+        var barBg = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
         canvas.DrawRect(bar, barBg);
-        using var sep = new SKPaint { Color = SkiaTheme.Separator(dark), StrokeWidth = 1 };
+        var sep = new Paint { Color = Theme.Separator(dark), StrokeWidth = 1 };
         canvas.DrawLine(bar.Left, bar.Bottom, bar.Right, bar.Bottom, sep);
-        SkiaText.DrawLine(canvas, "‹ Back", bar.Left + 12, Baseline(bar, SkiaTheme.MakeFont("body")), SkiaTheme.MakeFont("body"), SkiaTheme.Accent);
-        DrawCentered(canvas, PushedTitle, bar, SkiaTheme.MakeFont("headline"), dark ? SKColors.White : SKColors.Black);
+        canvas.DrawText("‹ Back", bar.Left + 12, Baseline(bar, Theme.MakeFont("body", Fonts)), Theme.MakeFont("body", Fonts), Theme.Accent);
+        DrawCentered(canvas, PushedTitle, bar, Theme.MakeFont("headline", Fonts), dark ? Colors.White : Colors.Black);
 
-        var contentRect = new SKRect(region.Left, bar.Bottom, region.Right, region.Bottom);
-        PushedContent!.Measure(new SKSize(contentRect.Width, contentRect.Height));
+        var contentRect = new Rect(region.Left, bar.Bottom, region.Right, region.Bottom);
+        PushedContent!.Measure(new Size(contentRect.Width, contentRect.Height));
         PushedContent.Arrange(contentRect);
-        PushedContent.Paint(canvas, dark);
+        PushedContent.Draw(canvas, dark);
     }
 }

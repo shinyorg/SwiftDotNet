@@ -1,37 +1,33 @@
 using System.Globalization;
-using SkiaSharp;
+using SwiftDotNet;
 
-namespace SwiftDotNet;
+namespace SwiftDotNet.Graphics;
 
-/// <summary>The paint pass for <see cref="SkiaNode"/> — decorations, per-type content, and controls.</summary>
-sealed partial class SkiaNode
+/// <summary>The paint pass for <see cref="VisualNode"/> — decorations, per-type content, and controls.</summary>
+sealed partial class VisualNode
 {
     static readonly DateTime Epoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-    public void Paint(SKCanvas canvas, bool dark)
+    public void Draw(ICanvas canvas, bool dark)
     {
         var count = canvas.Save();
         ApplyScale(canvas);
         ApplyOffset(canvas);
         ApplyRotation(canvas);
 
+        // Group opacity composites the whole subtree once. Fading each child independently instead would
+        // let overlapping siblings show through one another.
         var opacity = Opacity();
-        SKPaint? layerPaint = null;
-        if (opacity < 1)
-        {
-            layerPaint = new SKPaint { Color = SKColors.White.WithAlpha((byte)(opacity * 255)) };
-            canvas.SaveLayer(layerPaint);
-        }
+        if (opacity < 1) canvas.SaveLayer((float)opacity);
 
         PaintDecorations(canvas, dark);
         PaintContent(canvas, dark);
         PaintChildren(canvas, dark);
 
         canvas.RestoreToCount(count);
-        layerPaint?.Dispose();
     }
 
-    void ApplyScale(SKCanvas canvas)
+    void ApplyScale(ICanvas canvas)
     {
         if (Scale() is not { } s || (Math.Abs(s.x - 1) < 0.0001 && Math.Abs(s.y - 1) < 0.0001)) return;
         var ax = s.anchor is "leading" or "topLeading" or "bottomLeading" ? Frame.Left
@@ -43,13 +39,13 @@ sealed partial class SkiaNode
         canvas.Translate(-ax, -ay);
     }
 
-    void ApplyOffset(SKCanvas canvas)
+    void ApplyOffset(ICanvas canvas)
     {
         if (Offset() is { } o) canvas.Translate((float)o.x, (float)o.y);
     }
 
     // Aspect-preserving placement of a source image into a destination rect (fit = contain, fill = cover).
-    static SKRect FitRect(int srcW, int srcH, SKRect dst, bool fill)
+    static Rect FitRect(int srcW, int srcH, Rect dst, bool fill)
     {
         if (srcW <= 0 || srcH <= 0) return dst;
         var scale = fill
@@ -59,10 +55,10 @@ sealed partial class SkiaNode
         var h = srcH * scale;
         var x = dst.MidX - w / 2f;
         var y = dst.MidY - h / 2f;
-        return new SKRect(x, y, x + w, y + h);
+        return new Rect(x, y, x + w, y + h);
     }
 
-    void ApplyRotation(SKCanvas canvas)
+    void ApplyRotation(ICanvas canvas)
     {
         if (Rotation() is not { } r || Math.Abs(r.degrees) < 0.0001) return;
         var ax = r.anchor is "leading" or "topLeading" or "bottomLeading" ? Frame.Left
@@ -72,25 +68,25 @@ sealed partial class SkiaNode
         canvas.RotateDegrees((float)r.degrees, ax, ay);
     }
 
-    void PaintChildren(SKCanvas canvas, bool dark)
+    void PaintChildren(ICanvas canvas, bool dark)
     {
         switch (Type)
         {
             case "TabView":
-                if (_tabIndex < Children.Count) Children[_tabIndex].Paint(canvas, dark);
+                if (_tabIndex < Children.Count) Children[_tabIndex].Draw(canvas, dark);
                 PaintTabBar(canvas, dark);
                 return;
             case "DisclosureGroup":
-                if (Bool("expanded")) foreach (var c in Children) c.Paint(canvas, dark);
+                if (Bool("expanded")) foreach (var c in Children) c.Draw(canvas, dark);
                 return;
             case "NavigationLink":
-                if (Children.Count > 0) Children[0].Paint(canvas, dark);
+                if (Children.Count > 0) Children[0].Draw(canvas, dark);
                 return;
             case "NavigationStack":
-                if (Children.Count > 0) Children[0].Paint(canvas, dark); // pushed destination is drawn as an overlay
+                if (Children.Count > 0) Children[0].Draw(canvas, dark); // pushed destination is drawn as an overlay
                 return;
             case "Sheet" or "Alert":
-                if (Children.Count > 0) Children[0].Paint(canvas, dark); // presented content is drawn as an overlay
+                if (Children.Count > 0) Children[0].Draw(canvas, dark); // presented content is drawn as an overlay
                 return;
             case "Picker" or "Menu":
                 return; // option / action children are shown inline (Picker) or in a popover (Menu), not laid out
@@ -108,44 +104,36 @@ sealed partial class SkiaNode
                     if (!c.Frame.IntersectsWith(Frame)) continue;
                     if (c.Props.GetValueOrDefault("selected") as bool? == true)
                     {
-                        using var hl = new SKPaint { Color = SkiaTheme.Color("accentColor", dark).WithAlpha(40), IsAntialias = true };
-                        canvas.DrawRect(new SKRect(Frame.Left, c.Frame.Top, Frame.Right, c.Frame.Bottom), hl);
+                        var hl = new Paint { Color = Theme.Color("accentColor", dark).WithAlpha(40), IsAntialias = true };
+                        canvas.DrawRect(new Rect(Frame.Left, c.Frame.Top, Frame.Right, c.Frame.Bottom), hl);
                     }
-                    c.Paint(canvas, dark);
+                    c.Draw(canvas, dark);
                 }
                 canvas.RestoreToCount(clip);
                 PaintScrollbar(canvas, dark);
                 return;
             }
             default:
-                foreach (var c in Children) c.Paint(canvas, dark);
+                foreach (var c in Children) c.Draw(canvas, dark);
                 return;
         }
     }
 
     // ---- decorations (background / shadow / border) --------------------------
 
-    void PaintDecorations(SKCanvas canvas, bool dark)
+    void PaintDecorations(ICanvas canvas, bool dark)
     {
         var radius = CornerRadius();
 
-        if (BackgroundShader(dark) is { } shader)
-        {
-            using var paint = new SKPaint { Shader = shader, IsAntialias = true, Style = SKPaintStyle.Fill };
-            if (Shadow() is { } sh)
-                paint.ImageFilter = SKImageFilter.CreateDropShadow(
-                    (float)sh.x, (float)sh.y, (float)sh.radius, (float)sh.radius, sh.color);
-            canvas.DrawRoundRect(Frame, radius, radius, paint);
-            shader.Dispose();
-        }
-        else if (BackgroundColor(dark) is { } bg)
-        {
-            using var paint = new SKPaint { Color = bg, IsAntialias = true, Style = SKPaintStyle.Fill };
-            if (Shadow() is { } sh)
-                paint.ImageFilter = SKImageFilter.CreateDropShadow(
-                    (float)sh.x, (float)sh.y, (float)sh.radius, (float)sh.radius, sh.color);
-            canvas.DrawRoundRect(Frame, radius, radius, paint);
-        }
+        // A gradient brush wins over a flat colour. Either way the shadow rides on the same paint, so it is
+        // cast by the filled shape itself rather than drawn as a separate rect behind it.
+        Paint? background =
+            BackgroundGradient(dark) is { } gradient ? Paint.Fill(gradient) :
+            BackgroundColor(dark) is { } bg ? Paint.Fill(bg) :
+            null;
+
+        if (background is { } fill)
+            canvas.DrawRoundRect(Frame, radius, radius, fill.With(DropShadow()));
 
         // F6 material: real backdrop blur needs a surface snapshot the engine doesn't keep, so paint a
         // translucent tint (documented fallback). Sits above the background, below content.
@@ -154,9 +142,8 @@ sealed partial class SkiaNode
             var tint = (mat.GetValueOrDefault("value") as string) switch
             { "ultraThin" => 0.55, "thin" => 0.65, "thick" => 0.85, _ => 0.75 };
             var matDark = (mat.GetValueOrDefault("dark") as string) == "true";
-            var baseColor = matDark ? new SKColor(20, 20, 22) : new SKColor(255, 255, 255);
-            using var mp = new SKPaint { Color = baseColor.WithAlpha((byte)(tint * 255)), IsAntialias = true, Style = SKPaintStyle.Fill };
-            canvas.DrawRoundRect(Frame, radius, radius, mp);
+            var baseColor = matDark ? new Color(20, 20, 22) : new Color(255, 255, 255);
+            canvas.DrawRoundRect(Frame, radius, radius, Paint.Fill(baseColor.WithAlpha((byte)(tint * 255))));
         }
 
         // Form/List/Section rows sit on a grouped surface.
@@ -166,18 +153,12 @@ sealed partial class SkiaNode
         }
 
         if (Border(dark) is { } b)
-        {
-            using var stroke = new SKPaint
-            {
-                Color = b.color, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = (float)b.width,
-            };
-            canvas.DrawRoundRect(Frame, radius, radius, stroke);
-        }
+            canvas.DrawRoundRect(Frame, radius, radius, Paint.Stroke(b.color, (float)b.width));
     }
 
     // ---- content -------------------------------------------------------------
 
-    void PaintContent(SKCanvas canvas, bool dark)
+    void PaintContent(ICanvas canvas, bool dark)
     {
         switch (Type)
         {
@@ -185,7 +166,7 @@ sealed partial class SkiaNode
                 DrawBlock(canvas, _wrapLines ?? new List<string> { Str("text") }, _content, Font(), ForegroundColor(dark), AlignToken());
                 break;
             case "Link":
-                DrawBlock(canvas, new() { Str("title") }, _content, Font(), SkiaTheme.Color("blue", dark), AlignToken());
+                DrawBlock(canvas, new() { Str("title") }, _content, Font(), Theme.Color("blue", dark), AlignToken());
                 break;
             case "Button":
                 PaintButton(canvas, dark);
@@ -196,28 +177,28 @@ sealed partial class SkiaNode
                     var dst = FitRect(img.Width, img.Height, _content, Str("contentMode") == "fill");
                     var save = canvas.Save();
                     canvas.ClipRect(_content);
-                    canvas.DrawImage(img, dst, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+                    canvas.DrawImage(img, dst);
                     canvas.RestoreToCount(save);
                 }
                 else if (Str("system").Length > 0)
                     // Only fall back to a glyph when the app actually asked for an SF Symbol. A raster-only
                     // image that failed/hasn't loaded draws nothing, so callers can supply their own placeholder.
-                    SkiaText.DrawLine(canvas, SkiaTheme.Icon(Str("system")), _content.Left, Baseline(_content, IconFont(22)), IconFont(22), ForegroundColor(dark));
+                    canvas.DrawText(Theme.Icon(Str("system")), _content.Left, Baseline(_content, IconFont(22)), IconFont(22), ForegroundColor(dark));
                 break;
             case "Label":
-                SkiaText.DrawLine(canvas, SkiaTheme.Icon(Str("systemImage")) + "  " + Str("title"), _content.Left, Baseline(_content, Font()), Font(), ForegroundColor(dark));
+                canvas.DrawText(Theme.Icon(Str("systemImage")) + "  " + Str("title"), _content.Left, Baseline(_content, Font()), Font(), ForegroundColor(dark));
                 break;
             case "Divider":
-                using (var line = new SKPaint { Color = SkiaTheme.Separator(dark), StrokeWidth = 1 })
-                    canvas.DrawLine(_content.Left, _content.MidY, _content.Right, _content.MidY, line);
+                canvas.DrawLine(_content.Left, _content.MidY, _content.Right, _content.MidY,
+                    Paint.Hairline(Theme.Separator(dark)));
                 break;
             case "Rectangle" or "Circle" or "Capsule" or "RoundedRectangle":
                 PaintShape(canvas, dark);
                 break;
             case "Section":
                 if (HasProp("header"))
-                    SkiaText.DrawLine(canvas, Str("header").ToUpperInvariant(), _content.Left, _content.Top + 16,
-                        SkiaTheme.MakeFont("caption"), new SKColor(0x8E, 0x8E, 0x93));
+                    canvas.DrawText(Str("header").ToUpperInvariant(), _content.Left, _content.Top + 16,
+                        Theme.MakeFont("caption", Fonts), new Color(0x8E, 0x8E, 0x93));
                 break;
             case "TextField" or "SecureField":
                 PaintTextField(canvas, dark);
@@ -271,19 +252,19 @@ sealed partial class SkiaNode
 
     // ---- primitives ----------------------------------------------------------
 
-    void PaintButton(SKCanvas canvas, bool dark)
+    void PaintButton(ICanvas canvas, bool dark)
     {
-        using var chrome = new SKPaint { Color = SkiaTheme.Surface(dark), IsAntialias = true };
+        var chrome = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
         canvas.DrawRoundRect(Frame, 10, 10, chrome);
-        var color = IsDisabled ? new SKColor(0x8E, 0x8E, 0x93) : (ForegroundColorOptional(dark) ?? SkiaTheme.Accent);
+        var color = IsDisabled ? new Color(0x8E, 0x8E, 0x93) : (ForegroundColorOptional(dark) ?? Theme.Accent);
         DrawCentered(canvas, Str("title"), Frame, Font(), color);
     }
 
-    void PaintShape(SKCanvas canvas, bool dark)
+    void PaintShape(ICanvas canvas, bool dark)
     {
-        var fill = ForegroundColorOptional(dark) ?? SkiaTheme.Accent;
+        var fill = ForegroundColorOptional(dark) ?? Theme.Accent;
         var box = _content; // inset by any padding
-        using var paint = new SKPaint { Color = fill, IsAntialias = true, Style = SKPaintStyle.Fill };
+        var paint = new Paint { Color = fill, IsAntialias = true, Style = PaintStyle.Fill };
         switch (Type)
         {
             case "Rectangle": canvas.DrawRect(box, paint); break;
@@ -297,156 +278,156 @@ sealed partial class SkiaNode
                 break;
             case "Circle":
                 var d = Math.Min(box.Width, box.Height);
-                canvas.DrawOval(new SKRect(box.MidX - d / 2, box.MidY - d / 2, box.MidX + d / 2, box.MidY + d / 2), paint);
+                canvas.DrawOval(new Rect(box.MidX - d / 2, box.MidY - d / 2, box.MidX + d / 2, box.MidY + d / 2), paint);
                 break;
         }
     }
 
     // ---- controls ------------------------------------------------------------
 
-    void PaintTextField(SKCanvas canvas, bool dark)
+    void PaintTextField(ICanvas canvas, bool dark)
     {
-        using var box = new SKPaint { Color = SkiaTheme.Surface(dark), IsAntialias = true };
+        var box = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
         canvas.DrawRoundRect(Frame, 8, 8, box);
         var text = Str("text");
         var showPlaceholder = text.Length == 0;
         var display = Type == "SecureField" && !showPlaceholder ? new string('•', text.Length) : (showPlaceholder ? Str("placeholder") : text);
-        var color = showPlaceholder ? new SKColor(0x8E, 0x8E, 0x93) : (dark ? SKColors.White : SKColors.Black);
-        SkiaText.DrawLine(canvas, display, _content.Left + 10, Baseline(_content, Font()), Font(), color);
-        if (_bridge.FocusedId == Id) DrawCaret(canvas, _content.Left + 10 + SkiaText.Measure(display, Font()), dark);
+        var color = showPlaceholder ? new Color(0x8E, 0x8E, 0x93) : (dark ? Colors.White : Colors.Black);
+        canvas.DrawText(display, _content.Left + 10, Baseline(_content, Font()), Font(), color);
+        if (_bridge.FocusedId == Id) DrawCaret(canvas, _content.Left + 10 + Fonts.Measure(display, Font()), dark);
     }
 
-    void PaintTextEditor(SKCanvas canvas, bool dark)
+    void PaintTextEditor(ICanvas canvas, bool dark)
     {
-        using var box = new SKPaint { Color = SkiaTheme.Surface(dark), IsAntialias = true };
+        var box = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
         canvas.DrawRoundRect(Frame, 8, 8, box);
         var font = Font();
-        var lines = SkiaText.Wrap(Str("text"), font, _content.Width - 20);
+        var lines = TextLayout.Wrap(Str("text"), font, _content.Width - 20, Fonts);
         var y = _content.Top + 8 - font.Metrics.Ascent;
         var lh = font.Metrics.Descent - font.Metrics.Ascent;
-        foreach (var line in lines) { SkiaText.DrawLine(canvas, line, _content.Left + 10, y, font, dark ? SKColors.White : SKColors.Black); y += lh; }
-        if (_bridge.FocusedId == Id) DrawCaret(canvas, _content.Left + 10 + SkiaText.Measure(lines.Count > 0 ? lines[^1] : "", font), dark);
+        foreach (var line in lines) { canvas.DrawText(line, _content.Left + 10, y, font, dark ? Colors.White : Colors.Black); y += lh; }
+        if (_bridge.FocusedId == Id) DrawCaret(canvas, _content.Left + 10 + Fonts.Measure(lines.Count > 0 ? lines[^1] : "", font), dark);
     }
 
-    void DrawCaret(SKCanvas canvas, float x, bool dark)
+    void DrawCaret(ICanvas canvas, float x, bool dark)
     {
-        using var p = new SKPaint { Color = SkiaTheme.Accent, StrokeWidth = 2 };
+        var p = new Paint { Color = Theme.Accent, StrokeWidth = 2 };
         canvas.DrawLine(x + 1, _content.Top + 8, x + 1, _content.Top + 8 + Font().Size + 4, p);
     }
 
-    void PaintToggle(SKCanvas canvas, bool dark)
+    void PaintToggle(ICanvas canvas, bool dark)
     {
-        SkiaText.DrawLine(canvas, Str("label"), _content.Left, Baseline(_content, Font()), Font(), dark ? SKColors.White : SKColors.Black);
+        canvas.DrawText(Str("label"), _content.Left, Baseline(_content, Font()), Font(), dark ? Colors.White : Colors.Black);
         var on = Bool("value");
         var w = 50f; var h = 30f;
-        var track = new SKRect(_content.Right - w, _content.MidY - h / 2, _content.Right, _content.MidY + h / 2);
-        using var tp = new SKPaint { Color = on ? new SKColor(0x34, 0xC7, 0x59) : new SKColor(0x78, 0x78, 0x80, 0x66), IsAntialias = true };
+        var track = new Rect(_content.Right - w, _content.MidY - h / 2, _content.Right, _content.MidY + h / 2);
+        var tp = new Paint { Color = on ? new Color(0x34, 0xC7, 0x59) : new Color(0x78, 0x78, 0x80, 0x66), IsAntialias = true };
         canvas.DrawRoundRect(track, h / 2, h / 2, tp);
-        using var knob = new SKPaint { Color = SKColors.White, IsAntialias = true };
+        var knob = new Paint { Color = Colors.White, IsAntialias = true };
         var kx = on ? track.Right - h / 2 : track.Left + h / 2;
         canvas.DrawCircle(kx, track.MidY, h / 2 - 2, knob);
     }
 
-    void PaintSlider(SKCanvas canvas, bool dark)
+    void PaintSlider(ICanvas canvas, bool dark)
     {
         var min = Num("min") ?? 0; var max = Num("max") ?? 1; var val = Num("value") ?? 0;
         var t = (float)Math.Clamp((val - min) / Math.Max(0.0001, max - min), 0, 1);
         var left = _content.Left + 10; var right = _content.Right - 10; var y = _content.MidY;
-        using var track = new SKPaint { Color = SkiaTheme.Separator(dark), StrokeWidth = 4, StrokeCap = SKStrokeCap.Round, IsAntialias = true };
+        var track = new Paint { Color = Theme.Separator(dark), StrokeWidth = 4, StrokeCap = StrokeCap.Round, IsAntialias = true };
         canvas.DrawLine(left, y, right, y, track);
         var knobX = left + t * (right - left);
-        using var fill = new SKPaint { Color = SkiaTheme.Accent, StrokeWidth = 4, StrokeCap = SKStrokeCap.Round, IsAntialias = true };
+        var fill = new Paint { Color = Theme.Accent, StrokeWidth = 4, StrokeCap = StrokeCap.Round, IsAntialias = true };
         canvas.DrawLine(left, y, knobX, y, fill);
-        using var knob = new SKPaint { Color = SKColors.White, IsAntialias = true };
-        using var knobEdge = new SKPaint { Color = SkiaTheme.Separator(dark), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1 };
+        var knob = new Paint { Color = Colors.White, IsAntialias = true };
+        var knobEdge = new Paint { Color = Theme.Separator(dark), IsAntialias = true, Style = PaintStyle.Stroke, StrokeWidth = 1 };
         canvas.DrawCircle(knobX, y, 11, knob);
         canvas.DrawCircle(knobX, y, 11, knobEdge);
     }
 
-    void PaintStepper(SKCanvas canvas, bool dark)
+    void PaintStepper(ICanvas canvas, bool dark)
     {
-        SkiaText.DrawLine(canvas, Str("label") + " " + ((int)(Num("value") ?? 0)), _content.Left, Baseline(_content, Font()), Font(), dark ? SKColors.White : SKColors.Black);
-        DrawPillButton(canvas, dark, new SKRect(_content.Right - 76, _content.MidY - 15, _content.Right - 44, _content.MidY + 15), "−");
-        DrawPillButton(canvas, dark, new SKRect(_content.Right - 32, _content.MidY - 15, _content.Right, _content.MidY + 15), "+");
+        canvas.DrawText(Str("label") + " " + ((int)(Num("value") ?? 0)), _content.Left, Baseline(_content, Font()), Font(), dark ? Colors.White : Colors.Black);
+        DrawPillButton(canvas, dark, new Rect(_content.Right - 76, _content.MidY - 15, _content.Right - 44, _content.MidY + 15), "−");
+        DrawPillButton(canvas, dark, new Rect(_content.Right - 32, _content.MidY - 15, _content.Right, _content.MidY + 15), "+");
     }
 
-    void DrawPillButton(SKCanvas canvas, bool dark, SKRect r, string glyph)
+    void DrawPillButton(ICanvas canvas, bool dark, Rect r, string glyph)
     {
-        using var p = new SKPaint { Color = SkiaTheme.Surface(dark), IsAntialias = true };
+        var p = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
         canvas.DrawRoundRect(r, 6, 6, p);
-        DrawCentered(canvas, glyph, r, SkiaTheme.MakeFont("headline"), dark ? SKColors.White : SKColors.Black);
+        DrawCentered(canvas, glyph, r, Theme.MakeFont("headline", Fonts), dark ? Colors.White : Colors.Black);
     }
 
-    void PaintPicker(SKCanvas canvas, bool dark)
+    void PaintPicker(ICanvas canvas, bool dark)
     {
         var sel = (int)(Num("selection") ?? 0);
         var value = sel >= 0 && sel < Children.Count ? Children[sel].Str("text") : "";
         PaintRowValue(canvas, dark, Str("label"), value + "  ▾");
     }
 
-    void PaintColorPicker(SKCanvas canvas, bool dark)
+    void PaintColorPicker(ICanvas canvas, bool dark)
     {
-        SkiaText.DrawLine(canvas, Str("label"), _content.Left, Baseline(_content, Font()), Font(), dark ? SKColors.White : SKColors.Black);
-        var swatch = new SKRect(_content.Right - 34, _content.MidY - 13, _content.Right, _content.MidY + 13);
-        using var p = new SKPaint { Color = SkiaTheme.Color(Str("value"), dark), IsAntialias = true };
+        canvas.DrawText(Str("label"), _content.Left, Baseline(_content, Font()), Font(), dark ? Colors.White : Colors.Black);
+        var swatch = new Rect(_content.Right - 34, _content.MidY - 13, _content.Right, _content.MidY + 13);
+        var p = new Paint { Color = Theme.Color(Str("value"), dark), IsAntialias = true };
         canvas.DrawRoundRect(swatch, 6, 6, p);
-        using var edge = new SKPaint { Color = SkiaTheme.Separator(dark), Style = SKPaintStyle.Stroke, StrokeWidth = 1, IsAntialias = true };
+        var edge = new Paint { Color = Theme.Separator(dark), Style = PaintStyle.Stroke, StrokeWidth = 1, IsAntialias = true };
         canvas.DrawRoundRect(swatch, 6, 6, edge);
     }
 
-    void PaintRowValue(SKCanvas canvas, bool dark, string label, string value)
+    void PaintRowValue(ICanvas canvas, bool dark, string label, string value)
     {
-        SkiaText.DrawLine(canvas, label, _content.Left, Baseline(_content, Font()), Font(), dark ? SKColors.White : SKColors.Black);
-        var w = SkiaText.Measure(value, Font());
-        SkiaText.DrawLine(canvas, value, _content.Right - w, Baseline(_content, Font()), Font(), new SKColor(0x8E, 0x8E, 0x93));
+        canvas.DrawText(label, _content.Left, Baseline(_content, Font()), Font(), dark ? Colors.White : Colors.Black);
+        var w = Fonts.Measure(value, Font());
+        canvas.DrawText(value, _content.Right - w, Baseline(_content, Font()), Font(), new Color(0x8E, 0x8E, 0x93));
     }
 
-    void PaintDisclosureHeader(SKCanvas canvas, bool dark)
+    void PaintDisclosureHeader(ICanvas canvas, bool dark)
     {
         var chevron = Bool("expanded") ? "▾" : "▸";
-        SkiaText.DrawLine(canvas, chevron + "  " + Str("label"), _content.Left, _content.Top + 24, Font(), dark ? SKColors.White : SKColors.Black);
+        canvas.DrawText(chevron + "  " + Str("label"), _content.Left, _content.Top + 24, Font(), dark ? Colors.White : Colors.Black);
     }
 
-    void PaintProgress(SKCanvas canvas, bool dark)
+    void PaintProgress(ICanvas canvas, bool dark)
     {
         var top = _content.Top;
-        if (HasProp("label")) { SkiaText.DrawLine(canvas, Str("label"), _content.Left, top + 14, SkiaTheme.MakeFont("caption"), new SKColor(0x8E, 0x8E, 0x93)); top += 24; }
+        if (HasProp("label")) { canvas.DrawText(Str("label"), _content.Left, top + 14, Theme.MakeFont("caption", Fonts), new Color(0x8E, 0x8E, 0x93)); top += 24; }
         var y = top + 3;
-        var bar = new SKRect(_content.Left, y - 3, _content.Right, y + 3);
-        using var bg = new SKPaint { Color = SkiaTheme.Separator(dark), IsAntialias = true };
+        var bar = new Rect(_content.Left, y - 3, _content.Right, y + 3);
+        var bg = new Paint { Color = Theme.Separator(dark), IsAntialias = true };
         canvas.DrawRoundRect(bar, 3, 3, bg);
         var frac = (float)Math.Clamp(Num("value") ?? 0.3, 0, 1);
-        using var fg = new SKPaint { Color = SkiaTheme.Accent, IsAntialias = true };
-        canvas.DrawRoundRect(new SKRect(bar.Left, bar.Top, bar.Left + bar.Width * frac, bar.Bottom), 3, 3, fg);
+        var fg = new Paint { Color = Theme.Accent, IsAntialias = true };
+        canvas.DrawRoundRect(new Rect(bar.Left, bar.Top, bar.Left + bar.Width * frac, bar.Bottom), 3, 3, fg);
     }
 
-    void PaintGauge(SKCanvas canvas, bool dark)
+    void PaintGauge(ICanvas canvas, bool dark)
     {
         var top = _content.Top;
-        if (HasProp("label")) { SkiaText.DrawLine(canvas, Str("label"), _content.Left, top + 14, SkiaTheme.MakeFont("caption"), new SKColor(0x8E, 0x8E, 0x93)); top += 22; }
+        if (HasProp("label")) { canvas.DrawText(Str("label"), _content.Left, top + 14, Theme.MakeFont("caption", Fonts), new Color(0x8E, 0x8E, 0x93)); top += 22; }
         var min = Num("min") ?? 0; var max = Num("max") ?? 1; var val = Num("value") ?? 0;
         var frac = (float)Math.Clamp((val - min) / Math.Max(0.0001, max - min), 0, 1);
         var y = top + 6;
-        var bar = new SKRect(_content.Left, y - 5, _content.Right, y + 5);
-        using var bg = new SKPaint { Color = SkiaTheme.Separator(dark), IsAntialias = true };
+        var bar = new Rect(_content.Left, y - 5, _content.Right, y + 5);
+        var bg = new Paint { Color = Theme.Separator(dark), IsAntialias = true };
         canvas.DrawRoundRect(bar, 5, 5, bg);
-        using var fg = new SKPaint { Color = new SKColor(0x34, 0xC7, 0x59), IsAntialias = true };
-        canvas.DrawRoundRect(new SKRect(bar.Left, bar.Top, bar.Left + bar.Width * frac, bar.Bottom), 5, 5, fg);
+        var fg = new Paint { Color = new Color(0x34, 0xC7, 0x59), IsAntialias = true };
+        canvas.DrawRoundRect(new Rect(bar.Left, bar.Top, bar.Left + bar.Width * frac, bar.Bottom), 5, 5, fg);
     }
 
-    void PaintWebView(SKCanvas canvas, bool dark)
+    void PaintWebView(ICanvas canvas, bool dark)
     {
-        using var box = new SKPaint { Color = SkiaTheme.Surface(dark), IsAntialias = true };
+        var box = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
         canvas.DrawRoundRect(Frame, 8, 8, box);
-        using var edge = new SKPaint { Color = SkiaTheme.Separator(dark), Style = SKPaintStyle.Stroke, StrokeWidth = 1, IsAntialias = true };
+        var edge = new Paint { Color = Theme.Separator(dark), Style = PaintStyle.Stroke, StrokeWidth = 1, IsAntialias = true };
         canvas.DrawRoundRect(Frame, 8, 8, edge);
         var label = HasProp("url") ? "🌐  " + Str("url") : "🌐  HTML content";
-        DrawCentered(canvas, label + "\n(native WebView — not drawable on a canvas)", Frame, SkiaTheme.MakeFont("caption"), new SKColor(0x8E, 0x8E, 0x93));
+        DrawCentered(canvas, label + "\n(native WebView — not drawable on a canvas)", Frame, Theme.MakeFont("caption", Fonts), new Color(0x8E, 0x8E, 0x93));
     }
 
     // ---- tab bar / scrollbar -------------------------------------------------
 
-    void PaintTabBar(SKCanvas canvas, bool dark)
+    void PaintTabBar(ICanvas canvas, bool dark)
     {
         if (Paged)
         {
@@ -458,64 +439,64 @@ sealed partial class SkiaNode
             var startX = _content.MidX - (n - 1) * spacing / 2;
             for (var i = 0; i < n; i++)
             {
-                using var p = new SKPaint { Color = i == _tabIndex ? SkiaTheme.Accent : SkiaTheme.Separator(dark), IsAntialias = true };
+                var p = new Paint { Color = i == _tabIndex ? Theme.Accent : Theme.Separator(dark), IsAntialias = true };
                 canvas.DrawCircle(startX + i * spacing, cy, 4, p);
             }
             return;
         }
 
         var barTop = _content.Bottom - TabBarHeight;
-        using var barBg = new SKPaint { Color = SkiaTheme.Surface(dark), IsAntialias = true };
-        canvas.DrawRect(new SKRect(_content.Left, barTop, _content.Right, _content.Bottom), barBg);
-        using var sep = new SKPaint { Color = SkiaTheme.Separator(dark), StrokeWidth = 1 };
+        var barBg = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
+        canvas.DrawRect(new Rect(_content.Left, barTop, _content.Right, _content.Bottom), barBg);
+        var sep = new Paint { Color = Theme.Separator(dark), StrokeWidth = 1 };
         canvas.DrawLine(_content.Left, barTop, _content.Right, barTop, sep);
 
         var n2 = Children.Count;
         var cellW = _content.Width / Math.Max(1, n2);
         var iconFont = IconFont(20);
-        var titleFont = SkiaTheme.MakeFont("caption");
+        var titleFont = Theme.MakeFont("caption", Fonts);
         for (var i = 0; i < n2; i++)
         {
             var cx = _content.Left + cellW * (i + 0.5f);
             var selected = i == _tabIndex;
-            var color = selected ? SkiaTheme.Accent : new SKColor(0x8E, 0x8E, 0x93);
-            var icon = SkiaTheme.Icon(Children[i].Str("systemImage"));
-            var iw = SkiaText.Measure(icon, iconFont);
-            SkiaText.DrawLine(canvas, icon, cx - iw / 2, barTop + 24, iconFont, color);
+            var color = selected ? Theme.Accent : new Color(0x8E, 0x8E, 0x93);
+            var icon = Theme.Icon(Children[i].Str("systemImage"));
+            var iw = Fonts.Measure(icon, iconFont);
+            canvas.DrawText(icon, cx - iw / 2, barTop + 24, iconFont, color);
             var title = Children[i].Str("title");
-            var tw = SkiaText.Measure(title, titleFont);
-            SkiaText.DrawLine(canvas, title, cx - tw / 2, barTop + 44, titleFont, color);
+            var tw = Fonts.Measure(title, titleFont);
+            canvas.DrawText(title, cx - tw / 2, barTop + 44, titleFont, color);
         }
     }
 
-    void PaintScrollbar(SKCanvas canvas, bool dark)
+    void PaintScrollbar(ICanvas canvas, bool dark)
     {
         if (ScrollMax <= 0) return;
         var trackH = _content.Height;
         var thumbH = Math.Max(30, trackH * (_content.Height / (_naturalHeight)));
         var t = ScrollOffset / ScrollMax;
         var y = _content.Top + t * (trackH - thumbH);
-        using var p = new SKPaint { Color = new SKColor(0x8E, 0x8E, 0x93, 0x99), IsAntialias = true };
-        canvas.DrawRoundRect(new SKRect(_content.Right - 4, y, _content.Right - 1, y + thumbH), 2, 2, p);
+        var p = new Paint { Color = new Color(0x8E, 0x8E, 0x93, 0x99), IsAntialias = true };
+        canvas.DrawRoundRect(new Rect(_content.Right - 4, y, _content.Right - 1, y + thumbH), 2, 2, p);
     }
 
     // ---- text helpers --------------------------------------------------------
 
-    void DrawBlock(SKCanvas canvas, List<string> lines, SKRect rect, SKFont font, SKColor color, string? align)
+    void DrawBlock(ICanvas canvas, List<string> lines, Rect rect, Font font, Color color, string? align)
     {
         var m = font.Metrics;
         var lh = m.Descent - m.Ascent;
         var y = rect.Top - m.Ascent;
         foreach (var line in lines)
         {
-            var w = SkiaText.Measure(line, font);
+            var w = Fonts.Measure(line, font);
             var x = align is "center" ? rect.MidX - w / 2 : align is "trailing" ? rect.Right - w : rect.Left;
-            SkiaText.DrawLine(canvas, line, x, y, font, color);
+            canvas.DrawText(line, x, y, font, color);
             y += lh;
         }
     }
 
-    static void DrawCentered(SKCanvas canvas, string text, SKRect rect, SKFont font, SKColor color)
+    void DrawCentered(ICanvas canvas, string text, Rect rect, Font font, Color color)
     {
         var lines = text.Split('\n');
         var m = font.Metrics;
@@ -523,25 +504,25 @@ sealed partial class SkiaNode
         var y = rect.MidY - lh * lines.Length / 2 - m.Ascent;
         foreach (var line in lines)
         {
-            var w = SkiaText.Measure(line, font);
-            SkiaText.DrawLine(canvas, line, rect.MidX - w / 2, y, font, color);
+            var w = Fonts.Measure(line, font);
+            canvas.DrawText(line, rect.MidX - w / 2, y, font, color);
             y += lh;
         }
     }
 
-    void PaintNavBar(SKCanvas canvas, bool dark, string title, bool back)
+    void PaintNavBar(ICanvas canvas, bool dark, string title, bool back)
     {
-        var bar = new SKRect(Frame.Left, Frame.Top, Frame.Right, Frame.Top + NavBarHeight);
-        using var bg = new SKPaint { Color = SkiaTheme.Surface(dark), IsAntialias = true };
+        var bar = new Rect(Frame.Left, Frame.Top, Frame.Right, Frame.Top + NavBarHeight);
+        var bg = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
         canvas.DrawRect(bar, bg);
-        using var sep = new SKPaint { Color = SkiaTheme.Separator(dark), StrokeWidth = 1 };
+        var sep = new Paint { Color = Theme.Separator(dark), StrokeWidth = 1 };
         canvas.DrawLine(bar.Left, bar.Bottom, bar.Right, bar.Bottom, sep);
         if (back)
-            SkiaText.DrawLine(canvas, "‹ Back", bar.Left + 12, Baseline(bar, SkiaTheme.MakeFont("body")), SkiaTheme.MakeFont("body"), SkiaTheme.Accent);
-        DrawCentered(canvas, title, bar, SkiaTheme.MakeFont("headline"), dark ? SKColors.White : SKColors.Black);
+            canvas.DrawText("‹ Back", bar.Left + 12, Baseline(bar, Theme.MakeFont("body", Fonts)), Theme.MakeFont("body", Fonts), Theme.Accent);
+        DrawCentered(canvas, title, bar, Theme.MakeFont("headline", Fonts), dark ? Colors.White : Colors.Black);
     }
 
-    static float Baseline(SKRect rect, SKFont font)
+    static float Baseline(Rect rect, Font font)
     {
         var m = font.Metrics;
         return rect.MidY - (m.Ascent + m.Descent) / 2;

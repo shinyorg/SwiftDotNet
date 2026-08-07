@@ -1,0 +1,19 @@
+{
+  "name": "SwiftDotNet.Unity",
+  "rootNamespace": "SwiftDotNet.Unity",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "SwiftDotNet.dll",
+    "SwiftDotNet.Graphics.dll",
+    "SwiftDotNet.Skia.dll",
+    "SkiaSharp.dll"
+  ],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

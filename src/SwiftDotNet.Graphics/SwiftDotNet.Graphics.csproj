@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0;netstandard2.1</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <!-- The self-drawing toolkit, minus the rasterizer.
+
+       Layout, arrangement, hit-testing, gestures, scrolling, animation AND the paint pass all live here;
+       the only thing a rasterizer supplies is an ICanvas / IFontProvider / IImageDecoder. That split is
+       what lets one engine drive SkiaSharp, a WebGPU renderer, or a Unity texture — see docs/backends.
+
+       Dependency-free on purpose (same rule as Core): no SkiaSharp, no graphics API, trim/AOT-safe. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+  </ItemGroup>
+
+  <!-- Unity target. Core's polyfills are internal to that assembly, so the same file is linked in rather
+       than made public — these types must exist per-assembly, and nothing should see them as API. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <Compile Include="..\SwiftDotNet\Compat\Netstandard.cs" Link="Compat\Netstandard.cs" />
+    <PackageReference Include="System.Text.Json" Version="9.0.*" />
+  </ItemGroup>
+
+</Project>

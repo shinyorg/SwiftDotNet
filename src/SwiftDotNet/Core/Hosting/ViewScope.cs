@@ -45,8 +45,8 @@ public sealed class ViewScope : IDisposable
     /// <param name="factory">Builds the view; runs with the new scope active, so it may resolve from it.</param>
     public static ViewScope Create(IServiceProvider provider, Func<IServiceProvider, View> factory)
     {
-        ArgumentNullException.ThrowIfNull(provider);
-        ArgumentNullException.ThrowIfNull(factory);
+        Throw.IfNull(provider);
+        Throw.IfNull(factory);
 
         var scope = provider.CreateScope();
         var services = scope.ServiceProvider;
@@ -74,8 +74,8 @@ public sealed class ViewScope : IDisposable
     /// </summary>
     public void Use(Action work)
     {
-        ArgumentNullException.ThrowIfNull(work);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Throw.IfNull(work);
+        Throw.IfDisposed(_disposed, this);
 
         using (SwiftHost.EnterScope(Services))
             work();

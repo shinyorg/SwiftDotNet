@@ -17,7 +17,8 @@ into a minimal patch so only changed nodes reach the renderer.
 ```
 
 The diagram shows the iOS/SwiftUI path. The **bridge** is a native shim on iOS/tvOS/macOS (Swift) and
-Android (Kotlin), and an **in-process interpreter** on the pure-C# backends (GTK / WinUI / Web / TUI / Skia) — but
+Android (Kotlin), and an **in-process interpreter** on the pure-C# backends (GTK / WinUI / Web / TUI /
+Skia / WebGPU) — but
 the patch protocol and event round-trip are **identical everywhere**.
 
 ## The Core
@@ -91,16 +92,55 @@ P/Invoke resolves the Swift bridge via `DllImport("__Internal")` — it's a load
 
 ### 2. Pure-C# interpreters (bindable toolkits)
 
-GTK4, WinUI 3, Blazor/DOM, XenoAtom.Terminal.UI, and the Skia canvas are all fully C#-bindable (or
+GTK4, WinUI 3, Blazor/DOM, XenoAtom.Terminal.UI, and the self-drawing canvases are all fully C#-bindable (or
 self-drawn), so those backends are **pure C# with no native code** — a retained-mode interpreter that maps
 the node tree straight to native controls (or DOM elements, terminal cells, or canvas draws) and applies the
 *same* diff patches. Each implements `IBridge` and resolves nodes with a positional `Find(id)`. See
 [GTK](backends/linux-gtk.md), [Windows](backends/windows.md), [Web](backends/web.md),
-[Terminal/TUI](backends/tui.md), and [Skia](backends/skia.md).
+[Terminal/TUI](backends/tui.md), [Skia](backends/skia.md), [WebGPU](backends/webgpu.md) and
+[Unity](backends/unity.md).
 
 > **One Core, three families.** The DSL, `State<T>`, `Node`, `TreeDiffer`, patch protocol, and `SwiftApp`
 > are shared verbatim. Only the leaf renderer differs: a native shim for the compiler-locked toolkits, a
-> pure-C# widget interpreter for the bindable ones, and a self-drawing engine for Skia.
+> pure-C# widget interpreter for the bindable ones, and a self-drawing engine for Skia/WebGPU/Unity.
+
+## The renderer seam
+
+A self-drawing backend is a whole UI toolkit — measure, arrange, hit-test, gesture recognition, scrolling,
+animation, *and* painting. Only the last of those is actually about the rasterizer. So the self-drawing
+engine lives once, in [`SwiftDotNet.Graphics`](../src/SwiftDotNet.Graphics), and a rasterizer supplies three
+small interfaces:
+
+| Interface | Supplies | Why it exists |
+|---|---|---|
+| [`ICanvas`](../src/SwiftDotNet.Graphics/ICanvas.cs) | The paint primitives | The whole drawing vocabulary, deliberately closed |
+| [`IFontProvider`](../src/SwiftDotNet.Graphics/Text.cs) | Fonts + measurement | The **layout** pass needs text metrics long before anything is drawn |
+| [`IImageDecoder`](../src/SwiftDotNet.Graphics/Image.cs) | Bytes → a drawable image | The decode target is rasterizer-specific (bitmap vs. GPU texture) |
+
+```
+                     SwiftDotNet.Graphics
+   VisualBridge ─► VisualNode: Measure / Arrange / HitTest / Draw
+                             │
+                    ICanvas · IFontProvider · IImageDecoder
+             ┌───────────────┼────────────────┐
+        SkiaCanvas     WebGpuCanvas      (Unity reuses SkiaCanvas)
+```
+
+The split is roughly **3,600 lines of engine to 530 lines of Skia adapter** — a good measure of how little
+of a self-drawing toolkit is really about the rasterizer.
+
+Two design choices in `ICanvas` are worth knowing:
+
+- **The vocabulary is closed and small**: rounded rects, ovals, circles, lines, images and text, under a
+  save/restore transform stack with *rectangular* clipping. That is the complete set the DSL's node types
+  draw. Notably absent is an arbitrary path primitive — adding one would make every future backend owe a
+  full vector rasterizer, so it belongs behind a capability check rather than in the interface.
+- **Shadows and gradients are descriptions, not objects.** The engine used to hang an
+  `SKImageFilter.CreateDropShadow(...)` off its paint, which forces every backend to own an image-filter
+  graph. Carrying a shadow as four numbers instead lets the Skia adapter rebuild exactly that filter while
+  the WebGPU backend renders it as an SDF falloff in the same draw call.
+
+See [Skia](backends/skia.md), [WebGPU](backends/webgpu.md) and [Unity](backends/unity.md).
 
 ## Project layout
 
@@ -109,7 +149,10 @@ the node tree straight to native controls (or DOM elements, terminal cells, or c
 | [`src/SwiftDotNet`](../src/SwiftDotNet) | **multi-target** | One library. `Core/` compiles for every TFM; `Platforms/{iOS,macOS,tvOS,Android,Windows}/` are opted in per TFM. |
 | [`src/SwiftDotNet.Gtk`](../src/SwiftDotNet.Gtk) | `net10.0` | Separate pure-C# GTK4 backend (Linux shares `net10.0` with Core, so folding it in would force GTK on every consumer). |
 | [`src/SwiftDotNet.Web`](../src/SwiftDotNet.Web) | `net10.0` (Razor) | Separate Blazor WebAssembly backend. |
-| [`src/SwiftDotNet.Skia`](../src/SwiftDotNet.Skia) | `net10.0` | Separate self-drawing SkiaSharp engine. |
+| [`src/SwiftDotNet.Graphics`](../src/SwiftDotNet.Graphics) | `net10.0`, `netstandard2.1` | The self-drawing **engine** — layout, hit-testing, gestures, paint pass — minus any rasterizer. Dependency-free, like Core. |
+| [`src/SwiftDotNet.Skia`](../src/SwiftDotNet.Skia) | `net10.0` | The SkiaSharp binding of that engine's seam (canvas, fonts, image decode) plus hosts. |
+| [`src/SwiftDotNet.WebGpu`](../src/SwiftDotNet.WebGpu) | `net10.0` | A from-scratch GPU rasterizer for the same seam: SDF shapes, a glyph atlas, wgpu-native. No Skia. |
+| [`unity/com.swiftdotnet.unity`](../unity/com.swiftdotnet.unity) | Unity package | The Unity host: draws the Skia engine into a `Texture2D` and pumps input. |
 | [`src/SwiftDotNet.Tui`](../src/SwiftDotNet.Tui) | `net10.0` | Separate pure-C# terminal backend over XenoAtom.Terminal.UI; includes its own PNG decoder and image→character-art renderer. |
 | [`src/SwiftDotNet.Tui.Graphics`](../src/SwiftDotNet.Tui.Graphics) | `net10.0` | Optional add-on: Sixel/Kitty/iTerm2 pixel images (pulls SkiaSharp, hence separate from the backend). |
 | [`src/SwiftDotNet.Skia.Maui`](../src/SwiftDotNet.Skia.Maui) | `net10.0-maccatalyst` (+more) | MAUI adapter hosting the Skia engine; composes with Shiny. |
@@ -118,10 +161,14 @@ the node tree straight to native controls (or DOM elements, terminal cells, or c
 | [`sample/SharedUI`](../sample/SharedUI) | `net10.0` | The demo `ContentView` + composite `Rating`, shared by all apps. |
 | [`sample/SampleApp`](../sample/SampleApp) | **multi-target** | One sample app, multi-targeted like the library. |
 
-Why some backends are **separate** projects rather than TFMs of the combined library: GTK, Web, Skia and the
-terminal backend all share the plain `net10.0` TFM with Core, so there's no TFM to distinguish them —
-folding them in would force their dependency (Gir.Core, Blazor, SkiaSharp, XenoAtom.Terminal.UI) onto every
-neutral consumer.
+Why some backends are **separate** projects rather than TFMs of the combined library: GTK, Web, Skia, WebGPU
+and the terminal backend all share the plain `net10.0` TFM with Core, so there's no TFM to distinguish them —
+folding them in would force their dependency (Gir.Core, Blazor, SkiaSharp, wgpu-native,
+XenoAtom.Terminal.UI) onto every neutral consumer. `SwiftDotNet.Graphics` is the exception that proves the
+rule: it is dependency-free, which is exactly why it can sit between Core and every self-drawing backend.
+
+Core and `SwiftDotNet.Graphics` also target **netstandard2.1**, purely so Unity can consume them — see
+[Unity → why Core multi-targets netstandard2.1](backends/unity.md#why-core-multi-targets-netstandard21).
 
 ## Centralized hosting & registration
 

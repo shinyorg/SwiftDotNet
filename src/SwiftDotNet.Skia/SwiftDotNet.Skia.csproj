@@ -8,8 +8,11 @@
     <RootNamespace>SwiftDotNet</RootNamespace>
   </PropertyGroup>
 
+  <!-- The engine (layout / hit-test / gestures / paint) lives in SwiftDotNet.Graphics; this project is
+       only the SkiaSharp binding of its ICanvas / IFontProvider / IImageDecoder seam. -->
   <ItemGroup>
     <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
   </ItemGroup>
 
   <!-- Self-drawing backend: SkiaSharp paints the whole UI onto a canvas (no native controls).

@@ -1,0 +1,379 @@
+using System.Globalization;
+using System.Text.Json;
+using SwiftDotNet;
+
+namespace SwiftDotNet.Graphics;
+
+/// <summary>
+/// The self-drawing implementation of <see cref="IBridge"/> — a pure-C# retained-mode interpreter that
+/// draws the UI itself. Like the GTK backend it keeps a scene tree keyed by structural node id and
+/// applies <c>replace</c>/<c>updateProps</c>/<c>setChildren</c> patches in place; unlike GTK there is
+/// no native widget layer, so this owns layout, paint, and hit-testing against an <see cref="ICanvas"/>.
+///
+/// <para>A host supplies the canvas + size + pointer events and listens on <see cref="Invalidate"/> to
+/// redraw after a patch. Which rasterizer actually puts pixels down is decided entirely by the
+/// <see cref="ICanvas"/> the host passes to <see cref="Draw"/>, plus the font provider and image decoder
+/// handed to the constructor — the same instance of this class drives Skia, WebGPU or Unity.</para>
+/// </summary>
+public class VisualBridge : IBridge
+{
+    Action<string, string?>? _handler;
+    VisualNode? _root;
+    Size _lastSize;
+
+    /// <param name="fonts">Supplies and measures fonts; the layout pass depends on it.</param>
+    /// <param name="images">Decodes image bytes into something the paired canvas can draw.</param>
+    public VisualBridge(IFontProvider fonts, IImageDecoder images)
+    {
+        Fonts = fonts;
+        Images = images;
+    }
+
+    /// <summary>The rasterizer's font provider. Must pair with the <see cref="ICanvas"/> used to draw.</summary>
+    public IFontProvider Fonts { get; }
+
+    /// <summary>The rasterizer's image decoder. Must pair with the <see cref="ICanvas"/> used to draw.</summary>
+    public IImageDecoder Images { get; }
+
+    /// <summary>Active NavigationStacks during a build pass (innermost on top) so links can capture their owner.</summary>
+    internal Stack<VisualNode> NavStack { get; } = new();
+
+    /// <summary>Node id of the control with keyboard focus (a text field/editor), or null.</summary>
+    public string? FocusedId
+    {
+        get => _focusedId;
+        internal set
+        {
+            if (_focusedId == value) return;
+            _focusedId = value;
+            FocusChanged?.Invoke(value);
+        }
+    }
+    string? _focusedId;
+
+    /// <summary>
+    /// Raised when keyboard focus moves to a text control (its node id) or away from one (null). A host
+    /// with a soft keyboard hangs off this: the engine decides *what* is focused, the host decides how to
+    /// raise an IME for it. Desktop hosts that already own a hardware keyboard can ignore it.
+    /// </summary>
+    public event Action<string?>? FocusChanged;
+
+    /// <summary>The current text of the focused control, or null when nothing is focused.</summary>
+    public string? FocusedText => FocusedId is { } id ? Find(id)?.TextProp() : null;
+
+    /// <summary>True when the focused control masks its content, so a host can match its IME.</summary>
+    public bool FocusedIsSecure => FocusedId is { } id && Find(id)?.Type == "SecureField";
+
+    /// <summary>True when the focused control accepts newlines (a host should offer a return key, not "done").</summary>
+    public bool FocusedIsMultiline => FocusedId is { } id && Find(id)?.Type == "TextEditor";
+
+    /// <summary>Drop keyboard focus (a host calls this when its IME closes).</summary>
+    public void ClearFocus() => FocusedId = null;
+
+    /// <summary>Raised whenever the scene changes (a patch was applied); the host should repaint.</summary>
+    public event Action? Invalidate;
+
+    // Captured at construction (on the host's UI thread) so work that completes on a background thread —
+    // notably ImageLoader's fetches — can raise Invalidate where the host can safely act on it.
+    readonly SynchronizationContext? _ui = SynchronizationContext.Current;
+
+    /// <summary>Raise <see cref="Invalidate"/>, marshalling to the UI thread when called from elsewhere.</summary>
+    public void RequestRepaint()
+    {
+        if (_ui is null || _ui == SynchronizationContext.Current) Invalidate?.Invoke();
+        else _ui.Post(_ => Invalidate?.Invoke(), null);
+    }
+
+    public void SetEventHandler(Action<string, string?> handler) => _handler = handler;
+
+    /// <summary>Raise an event as if it came from a control (what hit-testing / recognizers call).</summary>
+    public void Emit(string id, string? value) => _handler?.Invoke(id, value);
+
+    public void Render(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        foreach (var op in doc.RootElement.GetProperty("ops").EnumerateArray())
+        {
+            switch (op.GetProperty("op").GetString())
+            {
+                case "replace":
+                    _root = VisualNode.Build(op.GetProperty("node"), this);
+                    break;
+                case "updateProps":
+                    Find(op.GetProperty("id").GetString()!)?.UpdateProps(op.GetProperty("props"), op.GetProperty("modifiers"));
+                    break;
+                case "setChildren":
+                    Find(op.GetProperty("id").GetString()!)?.SetChildren(op.GetProperty("children"));
+                    break;
+            }
+        }
+        Invalidate?.Invoke();
+    }
+
+    /// <summary>Lay out then paint the current scene into <paramref name="canvas"/> filling <paramref name="size"/>.</summary>
+    public void Draw(ICanvas canvas, Size size, bool dark)
+    {
+        canvas.Clear(Theme.Background(dark));
+        if (_root is null) return;
+        _lastSize = size;
+        _root.Measure(size);
+        _root.Arrange(new Rect(0, 0, size.Width, size.Height));
+        _root.Draw(canvas, dark);
+
+        // Overlays (Sheet/Alert/Menu/pushed nav) paint full-window on top, post-order so an outer
+        // presentation lands above an inner one.
+        var window = new Rect(0, 0, size.Width, size.Height);
+        foreach (var n in Overlays(_root)) n.PaintOverlay(canvas, window, dark);
+    }
+
+    /// <summary>Dispatch a pointer tap; returns true if a node handled it (host should then repaint).</summary>
+    public bool DispatchPointer(Point point)
+    {
+        if (_root is null) return false;
+        var window = new Rect(0, 0, _lastSize.Width, _lastSize.Height);
+        // Topmost overlay first (reverse of paint order).
+        foreach (var n in OverlaysTopFirst(_root))
+            if (n.HitTestOverlay(point, window)) { Invalidate?.Invoke(); return true; }
+
+        var handled = _root.HitTest(point);
+        if (handled) Invalidate?.Invoke(); // engine-local changes (tab/menu/nav) need a repaint too
+        return handled;
+    }
+
+    static IEnumerable<VisualNode> Overlays(VisualNode n)
+    {
+        // Only descend into what's actually on screen (e.g. the selected tab) so a presentation in a
+        // hidden tab doesn't bleed over the visible one.
+        foreach (var c in n.VisibleOverlayChildren())
+            foreach (var o in Overlays(c))
+                yield return o;
+        if (n.HasActiveOverlay) yield return n;
+
+        // An overlay's *content* is a separate subtree (a pushed nav destination, a Sheet's body), so it
+        // is not reached by the Children walk above. Anything it presents in turn — a Menu, a colour
+        // popover, a Sheet from inside a pushed page — has to be collected too, and *after* this node so
+        // it paints above the page that owns it. Without this those presentations silently never appeared.
+        foreach (var c in n.OverlayContentRoots())
+            foreach (var o in Overlays(c))
+                yield return o;
+    }
+
+    static IEnumerable<VisualNode> OverlaysTopFirst(VisualNode n) => Overlays(n).Reverse();
+
+    /// <summary>Scroll the innermost scrollable under <paramref name="point"/> by <paramref name="dy"/> px.</summary>
+    public bool Scroll(Point point, float dy)
+    {
+        // Search the presented overlay first, exactly as gestures do — a pushed nav destination's ScrollView
+        // hangs off the overlay node, not off _root's children, so scrolling a pushed page needs this.
+        if (GestureTarget(point)?.ScrollableAt(point) is not { } node) return false;
+        ScrollBy(node, dy);
+        return true;
+    }
+
+    // Shared by the wheel path (Scroll) and the touch path (PanScroll) so pull-to-refresh and
+    // incremental load fire the same way under a finger as under a wheel.
+    void ScrollBy(VisualNode node, float dy)
+    {
+        // Pull-to-refresh: dragging down while already at the top of a refreshable list.
+        if (node.ScrollOffset <= 0 && dy < 0 && node.Props.GetValueOrDefault("refreshable") as bool? == true)
+            Emit(node.Id, List.RefreshValue);
+
+        node.ScrollOffset = Math.Max(0, node.ScrollOffset + dy); // clamped to content on next layout
+
+        // Incremental load: scrolled within the threshold of the end of a list that asked for it.
+        if (node.Props.GetValueOrDefault("reachEndThreshold") is double threshold
+            && node.ScrollMax > 0 && node.ScrollOffset >= node.ScrollMax - threshold)
+            Emit(node.Id, List.LoadMoreValue);
+
+        Invalidate?.Invoke();
+    }
+
+    /// <summary>The laid-out frame of a node by id (valid after a <see cref="Paint"/> pass). For tests/tooling.</summary>
+    public bool TryGetFrame(string id, out Rect frame)
+    {
+        var node = Find(id);
+        frame = node?.Frame ?? default;
+        return node is not null;
+    }
+
+    /// <summary>Advance all active implicit animations by <paramref name="dt"/>s. Returns true while animating
+    /// (the host should keep repainting); false when everything has settled.</summary>
+    public bool Tick(double dt)
+    {
+        var active = _root?.Tick(dt) ?? false;
+        if (active) Invalidate?.Invoke();
+        return active;
+    }
+
+    /// <summary>Fire a long-press at a point (host resolves the hold from a pointer stream).</summary>
+    public bool LongPress(Point point)
+    {
+        var handled = Dispatch(point, "onLongPress", null);
+        if (handled) Invalidate?.Invoke();
+        return handled;
+    }
+
+    /// <summary>Fire a directional swipe at a point (host resolves direction from a drag).</summary>
+    public bool Swipe(Point point, string direction)
+    {
+        var handled = Dispatch(point, "onSwipe", direction);
+        if (handled) Invalidate?.Invoke();
+        return handled;
+    }
+
+    // Every gesture must search the presented overlays before the base scene, exactly as DispatchPointer
+    // does — an overlay's content (a pushed nav destination, a Sheet body) is a separate tree hanging off
+    // the overlay node, not part of _root's children.
+    /// <summary>The subtree a gesture at <paramref name="p"/> should search: topmost overlay content, else the scene.</summary>
+    VisualNode? GestureTarget(Point p)
+    {
+        if (_root is null) return null;
+        foreach (var overlay in OverlaysTopFirst(_root))
+            if (overlay.OverlayContentAt(p) is { } content)
+                return content;
+        return _root;
+    }
+
+    bool Dispatch(Point p, string modType, string? direction)
+        => GestureTarget(p)?.DispatchGesture(p, modType, direction) ?? false;
+
+    // F1 continuous drag/pinch. The host feeds a raw pointer stream; the engine captures the target node
+    // at Began and routes subsequent Changed/Ended to it, emitting the shared drag grammar.
+    VisualNode? _dragTarget;
+    VisualNode? _magnifyTarget;
+
+    /// <summary>Feed a continuous drag. <paramref name="phase"/>: begin captures the target; change/end reuse it.</summary>
+    public bool Drag(Point point, GesturePhase phase, float tx, float ty, float vx, float vy)
+    {
+        if (phase == GesturePhase.Began) _dragTarget = GestureTarget(point)?.NodeWithModAt(point, "onDrag");
+        if (_dragTarget?.ModEvent("onDrag") is not { } ev) return false;
+        var ph = phase switch { GesturePhase.Began => "b", GesturePhase.Ended => "e", _ => "c" };
+        Emit(ev, string.Format(CultureInfo.InvariantCulture, "{0};{1},{2};{3},{4};{5},{6}",
+            ph, tx, ty, point.X, point.Y, vx, vy));
+        if (phase == GesturePhase.Ended) _dragTarget = null;
+        Invalidate?.Invoke();
+        return true;
+    }
+
+    // A touch host has no wheel and no toolkit recognizers, so two things a mouse got for free have to be
+    // resolved from the raw pointer stream as well: scrubbing a continuous control, and panning a scroll
+    // view. PointerRouter tries .OnDrag first, then these, in that order.
+    VisualNode? _scrubTarget;
+    VisualNode? _panTarget;
+
+    /// <summary>
+    /// Capture a continuous control (a <c>Slider</c>) under <paramref name="point"/> and set it from that
+    /// position. Returns false when there is none, so the caller can try panning instead.
+    /// </summary>
+    public bool BeginScrub(Point point)
+    {
+        _scrubTarget = GestureTarget(point)?.ScrubbableAt(point);
+        if (_scrubTarget is null) return false;
+        _scrubTarget.ScrubTo(point);
+        Invalidate?.Invoke();
+        return true;
+    }
+
+    /// <summary>Track a live scrub. The captured control keeps it even once the finger leaves its bounds.</summary>
+    public void Scrub(Point point)
+    {
+        if (_scrubTarget is null) return;
+        _scrubTarget.ScrubTo(point);
+        Invalidate?.Invoke();
+    }
+
+    /// <summary>End a scrub started by <see cref="BeginScrub"/>.</summary>
+    public void EndScrub() => _scrubTarget = null;
+
+    /// <summary>
+    /// Capture the innermost scrollable under <paramref name="point"/> for finger panning. Returns false
+    /// when nothing there scrolls. Capturing does <em>not</em> consume the press — the router only starts
+    /// panning once the finger passes its tap slop, so a tap on a row still taps that row.
+    /// </summary>
+    public bool BeginPan(Point point)
+    {
+        _panTarget = GestureTarget(point)?.ScrollableAt(point);
+        return _panTarget is not null;
+    }
+
+    /// <summary>
+    /// Pan the captured scrollable by <paramref name="dy"/> px of content travel (positive scrolls toward
+    /// the end). Kept separate from <see cref="Scroll"/> so a pan sticks to the view it started on rather
+    /// than re-hit-testing under a moving finger.
+    /// </summary>
+    public void PanScroll(float dy)
+    {
+        if (_panTarget is not null) ScrollBy(_panTarget, dy);
+    }
+
+    /// <summary>End a pan started by <see cref="BeginPan"/>.</summary>
+    public void EndPan() => _panTarget = null;
+
+    /// <summary>The scroll offset of a node by id (valid after a <see cref="Paint"/> pass). For tests/tooling.</summary>
+    public float ScrollOffsetOf(string id) => Find(id)?.ScrollOffset ?? 0;
+
+    /// <summary>
+    /// Centre of the <paramref name="index"/>th swatch in an open ColorPicker popover (valid after a
+    /// <see cref="Paint"/> pass). For tests/tooling — the popover is engine-drawn chrome, so there is no
+    /// node to hit-test against.
+    /// </summary>
+    public bool TryGetSwatchCenter(string id, int index, out Point center)
+    {
+        center = default;
+        if (Find(id) is not { } node) return false;
+        return node.TryGetSwatchCenter(index, out center);
+    }
+
+    /// <summary>Feed a continuous pinch. <paramref name="phase"/>: begin captures the target; scale is cumulative.</summary>
+    public bool Magnify(Point point, GesturePhase phase, float scale)
+    {
+        if (phase == GesturePhase.Began) _magnifyTarget = GestureTarget(point)?.NodeWithModAt(point, "onMagnify");
+        if (_magnifyTarget?.ModEvent("onMagnify") is not { } ev) return false;
+        Emit(ev, scale.ToString(CultureInfo.InvariantCulture));
+        if (phase == GesturePhase.Ended) _magnifyTarget = null;
+        Invalidate?.Invoke();
+        return true;
+    }
+
+    /// <summary>Append typed text to the focused text control (routes through its C# binding).</summary>
+    public void InsertText(string s)
+    {
+        if (FocusedId is null || Find(FocusedId) is not { } node) return;
+        Emit(FocusedId, node.TextProp() + s);
+    }
+
+    /// <summary>
+    /// Replace the focused control's whole value. This is what a host backed by a real IME uses — a
+    /// system keyboard reports the *resulting* string (including autocorrect, dictation, paste, and
+    /// selection edits), not the individual keystrokes <see cref="InsertText"/> assumes.
+    /// </summary>
+    public void SetFocusedText(string text)
+    {
+        if (FocusedId is null || Find(FocusedId) is not { } node) return;
+        if (node.TextProp() == text) return;      // echo of our own patch — don't loop
+        Emit(FocusedId, text);
+    }
+
+    /// <summary>Delete the last character of the focused text control.</summary>
+    public void DeleteBackward()
+    {
+        if (FocusedId is null || Find(FocusedId) is not { } node) return;
+        var cur = node.TextProp();
+        if (cur.Length > 0) Emit(FocusedId, cur[..^1]);
+    }
+
+    VisualNode? Find(string id)
+    {
+        var node = _root;
+        if (node is null) return null;
+        var parts = id.Split('.');
+        if (parts[0] != node.Id) return null;
+        for (var i = 1; i < parts.Length; i++)
+        {
+            var idx = int.Parse(parts[i]);
+            if (idx < 0 || idx >= node.Children.Count) return null;
+            node = node.Children[idx];
+        }
+        return node;
+    }
+}

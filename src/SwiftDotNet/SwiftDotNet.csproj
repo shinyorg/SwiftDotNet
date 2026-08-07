@@ -3,7 +3,9 @@
   <PropertyGroup>
     <!-- Base (platform-neutral Core). Apple TFMs need a Mac; the Windows TFM needs Windows;
          Android builds anywhere. Linux/GTK stays a separate project (it shares the net10.0 TFM). -->
-    <TargetFrameworks>net10.0;net10.0-android</TargetFrameworks>
+    <!-- netstandard2.1 is the Unity target: Unity 6's scripting runtime is netstandard2.1, and CoreCLR
+         is not something to build on yet. It carries no platform code — see docs/backends/unity.md. -->
+    <TargetFrameworks>net10.0;net10.0-android;netstandard2.1</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(TargetFrameworks);net10.0-ios;net10.0-macos;net10.0-tvos</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
 
@@ -32,6 +34,13 @@
     <Compile Remove="Platforms/**/*.cs" />
   </ItemGroup>
 
+  <!-- Unity target: hot reload rides on System.Reflection.Metadata.MetadataUpdateHandler, which does not
+       exist before .NET 5. Unity has its own domain-reload story, so the file is simply excluded rather
+       than stubbed into something that would silently never fire. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <Compile Remove="Core/HotReload.cs" />
+  </ItemGroup>
+
   <!-- Hosting/DI (Core/Hosting/**). Taken by the root library on purpose: SwiftProgram.CreateSwiftApp()
        is the framework's front door, and the UseX() seam has to live where the sibling libraries
        (Controls, Maps, Camera, Skia) can extend it. The render path stays free of these types — it binds
@@ -52,7 +61,9 @@
   <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'android'">
     <Compile Include="Platforms/Android/**/*.cs" />
   </ItemGroup>
-  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'windows'">
+  <!-- TFM-string conditioned, not $(TargetPlatformIdentifier): that property defaults to 'windows' for a
+       non-.NET5+ TFM, which would compile the whole WinUI backend into the netstandard2.1 (Unity) build. -->
+  <ItemGroup Condition="$(TargetFramework.Contains('-windows'))">
     <Compile Include="Platforms/Windows/**/*.cs" />
   </ItemGroup>
 
@@ -75,8 +86,12 @@
     <PackageReference Include="Xamarin.AndroidX.Activity.Compose" Version="1.13.0.1" />
   </ItemGroup>
 
-  <!-- Windows: WinUI 3 / Windows App SDK. -->
-  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'windows'">
+  <!-- Windows: WinUI 3 / Windows App SDK.
+
+       Conditioned on the TFM string rather than $(TargetPlatformIdentifier): for a non-.NET5+ TFM such as
+       netstandard2.1 the SDK defaults that property to 'windows', which silently pulled the Windows App
+       SDK into the Unity target and failed its "requires .NET 6.0" check. -->
+  <ItemGroup Condition="$(TargetFramework.Contains('-windows'))">
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.*" />
   </ItemGroup>
 

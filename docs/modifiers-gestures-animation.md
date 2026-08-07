@@ -192,7 +192,7 @@ new Rectangle()
 | GTK | `GestureDrag` / `GestureZoom` (drag velocity is unavailable and sent as 0) |
 | Web | pointer events; pinch = two live pointers, plus a ctrl+wheel trackpad path |
 | WinUI | manipulation events (**uncompiled** — see [Windows](backends/windows.md)) |
-| Skia | **nothing supplies these** — a self-drawing backend has no recognizers. Hosts must feed [`SkiaPointerRouter`](../src/SwiftDotNet.Skia/SkiaPointerRouter.cs); a host that doesn't gets tap-only. |
+| Skia | **nothing supplies these** — a self-drawing backend has no recognizers. Hosts must feed [`SkiaPointerRouter`](../src/SwiftDotNet.Graphics/PointerRouter.cs); a host that doesn't gets tap-only. |
 | TUI | **none** — a terminal reports button press/release and wheel, not drag paths or pinch. `.OnTapGesture` maps to pointer press plus Enter-when-focused; the continuous gestures are no-ops. |
 
 ## Animation

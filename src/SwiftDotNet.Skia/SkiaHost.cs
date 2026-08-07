@@ -9,7 +9,7 @@ namespace SwiftDotNet;
 /// </summary>
 public interface ISkiaHost
 {
-    /// <summary>True when the OS is in dark appearance (drives <see cref="SkiaTheme"/> resolution).</summary>
+    /// <summary>True when the OS is in dark appearance (drives <see cref="Graphics.Theme"/> resolution).</summary>
     bool Dark { get; }
 
     /// <summary>Request a repaint (the engine calls this after applying a patch).</summary>

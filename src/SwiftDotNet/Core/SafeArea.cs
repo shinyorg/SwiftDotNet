@@ -72,7 +72,13 @@ public static class SafeArea
     [SupportedOSPlatformGuard("android")]
     [UnsupportedOSPlatformGuard("maccatalyst")]
     public static bool IsSupported =>
+#if NETSTANDARD2_1
+        // The Unity target: OperatingSystem's platform probes are .NET 5+, and Unity reports its own safe
+        // area through Screen.safeArea anyway — its host feeds Report() directly rather than being detected.
+        false;
+#else
         (OperatingSystem.IsIOS() && !OperatingSystem.IsMacCatalyst()) || OperatingSystem.IsAndroid();
+#endif
 
     /// <summary>
     /// The insets most recently reported by the host. All zero until the first report arrives — the

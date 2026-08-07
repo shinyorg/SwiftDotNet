@@ -65,10 +65,46 @@ GtkRenderers.Register("NativeRating", ctx => {
 });
 
 // WinUI — WinRenderers.Register(type, ctx => FrameworkElement)
-// Skia  — SkiaRenderers.Register(type, ISkiaRenderer)  (Measure + Paint)
 // Web   — WebRenderers.Register(type, WebRenderer delegate)
 // TUI   — TuiRenderers.Register(type, ctx => Visual)
+
+// Self-drawing (Skia / WebGPU / Unity) — one registry for all three:
+//   VisualRenderers.Register(type, IVisualRenderer)   (Measure + Paint)
 ```
+
+### Self-drawing backends: `IVisualRenderer` vs `ISkiaRenderer`
+
+Because a self-drawing backend owns the pixels, a renderer must both **measure** itself (there is no native
+control with an intrinsic size) and **paint** itself — the self-drawing analog of GTK's `Create`/`Update`
+pair.
+
+Prefer [`IVisualRenderer`](../src/SwiftDotNet.Graphics/VisualRenderers.cs) for new code. It draws through
+the rasterizer-neutral [`ICanvas`](../src/SwiftDotNet.Graphics/ICanvas.cs), so the same renderer works on
+Skia, WebGPU and Unity:
+
+```csharp
+using SwiftDotNet.Graphics;
+
+sealed class RatingRenderer : IVisualRenderer
+{
+    public Size Measure(VisualRenderContext ctx, Size available) => new(available.Width, 44);
+
+    public void Paint(VisualRenderContext ctx, ICanvas canvas, Rect rect)
+    {
+        var filled = (int)(ctx.Number("value") ?? 0);
+        for (var i = 0; i < 5; i++)
+            canvas.DrawCircle(rect.Left + 22 + i * 32, rect.MidY, 10,
+                Paint.Fill(i < filled ? Theme.Accent : Theme.Separator(dark: false)));
+    }
+}
+
+VisualRenderers.Register("NativeRating", new RatingRenderer());
+```
+
+[`ISkiaRenderer`](../src/SwiftDotNet.Skia/SkiaRenderers.cs) remains fully supported — `SkiaRenderers.Register`
+bridges it onto the same registry — but it hands you a raw `SKCanvas`, so it is **inherently Skia-only**: a
+renderer registered through it draws nothing on a non-Skia canvas rather than guessing. Use it when you
+genuinely need Skia-specific drawing (a `SKPath`, a shader), and accept that those nodes go blank elsewhere.
 
 On the [terminal backend](backends/tui.md) this seam does double duty: it is also how you reach the
 Terminal.UI controls the DSL has no node type for — `Table`, `DataGridControl`, `TreeView`, `CodeEditor`,

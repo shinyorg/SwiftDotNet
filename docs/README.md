@@ -2,8 +2,9 @@
 
 **SwiftUI for .NET — everywhere.** Write declarative UI once in C# and render it as *real* native UI on
 every platform: SwiftUI on iOS/macOS/tvOS, Jetpack Compose on Android, GTK4 on Linux, WinUI 3 on Windows,
-and HTML/DOM on the Web — plus a self-drawing SkiaSharp backend for a pixel-identical look anywhere,
-and a terminal backend for anywhere with a TTY and no display server.
+and HTML/DOM on the Web — plus self-drawing backends (SkiaSharp, or a from-scratch WebGPU rasterizer) for a
+pixel-identical look anywhere, a Unity host, and a terminal backend for anywhere with a TTY and no display
+server.
 
 This is the documentation set. Start with **[Getting Started](getting-started.md)**, then read
 **[Architecture](architecture.md)** to understand how one C# view tree becomes native UI on every backend.
@@ -45,6 +46,8 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 - **[Windows](backends/windows.md)** (WinUI 3, pure C#)
 - **[Web](backends/web.md)** (Blazor WebAssembly → HTML/DOM)
 - **[Skia](backends/skia.md)** (self-drawing SkiaSharp toolkit)
+- **[WebGPU](backends/webgpu.md)** (self-drawing, from-scratch GPU rasterizer — no Skia)
+- **[Unity](backends/unity.md)** (the Skia engine drawn into a Unity `Texture2D`)
 - **[Terminal / TUI](backends/tui.md)** (XenoAtom.Terminal.UI, pure C#)
 
 ### Companions & planning
@@ -63,6 +66,8 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded — **never compiled**, no tests |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp)** | ✅ Verified (macOS window, Silk.NET desktop, headless PNG, and iOS sim + Android emulator via the MAUI host) |
+| **Any (WebGPU)** | **Self-drawn, on the GPU** | **Pure C# (wgpu-native, no Skia)** | ✅ Verified on Metal via headless pixel readback; Vulkan/D3D12 unexercised |
+| **Unity** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine + Unity host)** | 🧩 .NET side builds for netstandard2.1; host MonoBehaviour **never compiled** |
 | **Any (terminal)** | **Characters in a TTY** | **Pure C# (XenoAtom.Terminal.UI)** | ✅ Verified headlessly on macOS (35 CI tests); not yet driven by hand in a live terminal |
 
 > The top-level [`README.md`](../README.md) is the marketing/overview entry point; these docs are the

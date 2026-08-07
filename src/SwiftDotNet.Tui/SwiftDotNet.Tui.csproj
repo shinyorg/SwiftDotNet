@@ -10,6 +10,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+    <!-- For the shared pure-managed PNG decoder. Graphics is dependency-free, so this pulls in no
+         rasterizer — the terminal backend still draws only with characters. -->
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
   </ItemGroup>
 
   <!-- Terminal backend: XenoAtom.Terminal.UI is a retained-mode, bindable widget toolkit, so this is a

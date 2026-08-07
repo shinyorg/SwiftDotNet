@@ -20,8 +20,8 @@ public static class ViewLifecycleDispatcher
     /// <summary>Raise <c>OnCreated</c>: observers (which include the <c>[Inject]</c> fill), then the view.</summary>
     public static void Created(View view, IServiceProvider services)
     {
-        ArgumentNullException.ThrowIfNull(view);
-        ArgumentNullException.ThrowIfNull(services);
+        Throw.IfNull(view);
+        Throw.IfNull(services);
 
         foreach (var observer in Observers(services))
             observer.OnCreated(view);
@@ -31,8 +31,8 @@ public static class ViewLifecycleDispatcher
     /// <summary>Raise <c>OnAppearing</c>: observers, then the view.</summary>
     public static void Appearing(View view, IServiceProvider services)
     {
-        ArgumentNullException.ThrowIfNull(view);
-        ArgumentNullException.ThrowIfNull(services);
+        Throw.IfNull(view);
+        Throw.IfNull(services);
 
         foreach (var observer in Observers(services))
             observer.OnAppearing(view);
@@ -42,8 +42,8 @@ public static class ViewLifecycleDispatcher
     /// <summary>Raise <c>OnDisappearing</c>: the view, then observers.</summary>
     public static void Disappearing(View view, IServiceProvider services)
     {
-        ArgumentNullException.ThrowIfNull(view);
-        ArgumentNullException.ThrowIfNull(services);
+        Throw.IfNull(view);
+        Throw.IfNull(services);
 
         view.OnDisappearing();
         foreach (var observer in Observers(services))
@@ -53,8 +53,8 @@ public static class ViewLifecycleDispatcher
     /// <summary>Raise <c>OnDestroyed</c>: the view, then observers.</summary>
     public static void Destroyed(View view, IServiceProvider services)
     {
-        ArgumentNullException.ThrowIfNull(view);
-        ArgumentNullException.ThrowIfNull(services);
+        Throw.IfNull(view);
+        Throw.IfNull(services);
 
         view.OnDestroyed();
         foreach (var observer in Observers(services))
