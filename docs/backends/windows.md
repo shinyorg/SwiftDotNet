@@ -88,6 +88,14 @@ rest of this backend.
   than faked. `keyboard`→`InputScope` and `maxLength`→`MaxLength` do work.
 - **A repeating `.Repeating()` animation does not loop.** WinUI gets only a `RepositionThemeTransition`, so
   `SkeletonView`'s shimmer and `BadgeView`'s pulse are static.
+- **`.Keyframes(…)` is written but never compiled.** A
+  [keyframe timeline](../modifiers-gestures-animation.md#keyframe-animations) maps to a `Storyboard` of
+  `DoubleAnimationUsingKeyFrames` — one animation per track, each stop a `LinearDoubleKeyFrame` or
+  `SplineDoubleKeyFrame` so per-segment easing survives, with `RepeatBehavior`/`AutoReverse` carrying the
+  loop and `FillBehavior.HoldEnd` holding the final stop. Transform tracks get their own `ScaleTransform` /
+  `RotateTransform` / `TranslateTransform` in the group so the storyboard can bind to them directly rather
+  than to an indexed child. `Width`/`Height` set `EnableDependentAnimation` (they aren't independently
+  animatable). Like everything else on this page it is **🧩 scaffolded**: it has never been built or run.
 - **`.Material` is a translucent tint**, not a real backdrop blur.
 - **Modifiers are applied at build time only** — `UpdateProps` does not re-run `ApplyModifiers`, so a
   modifier whose value changes after the first render will not repaint. ZStack alignment is the exception;

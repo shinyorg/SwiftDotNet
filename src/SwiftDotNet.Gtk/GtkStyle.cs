@@ -174,6 +174,9 @@ static class GtkStyle
                     if (size > 0) sb.Append($"font-size:{size}px;font-weight:{weight};");
                     break;
                 case "animation":
+                    // A keyframe timeline is driven from C# on the frame clock (see GtkNode.TickKeyframes)
+                    // and owns opacity while it plays — a CSS pulse on the same node would fight it.
+                    if (modifiers.Any(k => k["type"] as string == "keyframes")) break;
                     // GTK4 has no declarative animation engine, but its CSS engine DOES implement both
                     // `transition` and `@keyframes` + the `animation` shorthand, over the properties GTK
                     // exposes to CSS (color/background/border/border-radius/box-shadow/opacity). Non-CSS
@@ -204,11 +207,24 @@ static class GtkStyle
     /// SkeletonView's shimmer and BadgeView's pulse (whose <c>.ScaleEffect(1.0)</c> is identity anyway).
     /// LIMIT: only opacity loops. GTK CSS has no <c>transform</c>, so a looping scale/rotate is not
     /// expressible here even though one-shot scale/rotate now works via a Gsk transform (see GtkNode).
+    /// A <c>.Keyframes(…)</c> timeline is not subject to that limit — it bypasses CSS entirely and is
+    /// sampled on the frame clock in <c>GtkNode.TickKeyframes</c>, which can reach every property.
     /// </summary>
     public static string BuildKeyframes(List<Dictionary<string, object?>> modifiers, string loopName)
         => modifiers.Any(m => m["type"] as string == "animation" && m.ContainsKey("repeatCount"))
+            && !modifiers.Any(m => m["type"] as string == "keyframes")
             ? $"@keyframes {loopName} {{ from {{ opacity:1; }} to {{ opacity:0.4; }} }}"
             : "";
+
+    /// <summary>The <see cref="AnimationCurve"/> a wire curve token names, defaulting to ease-in-out.</summary>
+    public static AnimationCurve CurveFor(string? token) => token switch
+    {
+        "linear" => AnimationCurve.Linear,
+        "easeIn" => AnimationCurve.EaseIn,
+        "easeOut" => AnimationCurve.EaseOut,
+        "spring" => AnimationCurve.Spring,
+        _ => AnimationCurve.EaseInOut,
+    };
 
     static string Timing(string? curve) => curve switch
     {

@@ -319,6 +319,33 @@ sealed class AnimationModifier : Modifier
     }
 }
 
+/// <summary>
+/// Attaches a multi-track keyframe timeline (mirrors SwiftUI's <c>KeyframeAnimator</c>). Unlike
+/// <see cref="AnimationModifier"/>, which interpolates <em>between whatever the modifiers happen to be</em>
+/// when a trigger changes, this carries the whole shape of the animation on the wire, so a backend can
+/// drive several properties along independent curves.
+/// </summary>
+sealed class KeyframesModifier : Modifier
+{
+    readonly KeyframeTimeline _timeline;
+    public KeyframesModifier(KeyframeTimeline timeline) => _timeline = timeline;
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+    {
+        var d = new Dictionary<string, object>
+        {
+            ["type"] = "keyframes",
+            // The whole timeline packed into one string — the patch protocol carries only flat scalars.
+            ["tracks"] = _timeline.EncodeTracks(),
+            ["duration"] = _timeline.TotalDuration,
+            ["delay"] = _timeline.StartDelay,
+            ["curve"] = _timeline.DefaultCurve.Token(),
+            ["trigger"] = _timeline.Trigger,
+        };
+        if (_timeline.Repeat is { } rc) { d["repeatCount"] = (double)rc; d["autoreverse"] = _timeline.AutoReverse ? "true" : "false"; }
+        return d;
+    }
+}
+
 /// <summary>Dims and blocks interaction on a view (and its subtree), mirroring SwiftUI's <c>.disabled()</c>.</summary>
 sealed class DisabledModifier : Modifier
 {

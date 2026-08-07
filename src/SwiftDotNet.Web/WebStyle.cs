@@ -67,6 +67,54 @@ static class WebStyle
 
     static string Px(double v) => v.ToString(CultureInfo.InvariantCulture) + "px";
 
+    /// <summary>
+    /// The generated <c>@keyframes</c> rule for one keyframe timeline. Tracks are baked to stops where every
+    /// animated property has a value (a CSS rule can't give two properties different timing functions), with
+    /// the easing already folded into the sampled values — so the browser only ever interpolates linearly and
+    /// the result matches the Graphics engine frame for frame.
+    /// </summary>
+    public static string KeyframesRule(string tracks, string? defaultCurve)
+    {
+        var parsed = KeyframeWire.Parse(tracks);
+        if (parsed.Count == 0) return "";
+
+        var sb = new StringBuilder();
+        sb.Append('@').Append("keyframes ").Append(KeyframeWire.RuleName(tracks)).Append('{');
+        foreach (var (time, values) in KeyframeWire.Bake(parsed, CurveFor(defaultCurve)))
+        {
+            sb.Append((time * 100).ToString("0.##", CultureInfo.InvariantCulture)).Append("%{");
+            var transform = new StringBuilder();
+            foreach (var (property, value) in values)
+            {
+                var v = value.ToString("0.####", CultureInfo.InvariantCulture);
+                switch (property)
+                {
+                    case "opacity": sb.Append("opacity:").Append(v).Append(';'); break;
+                    case "width": sb.Append("width:").Append(v).Append("px;"); break;
+                    case "height": sb.Append("height:").Append(v).Append("px;"); break;
+                    case "scale": transform.Append("scale(").Append(v).Append(") "); break;
+                    case "scaleX": transform.Append("scaleX(").Append(v).Append(") "); break;
+                    case "scaleY": transform.Append("scaleY(").Append(v).Append(") "); break;
+                    case "rotation": transform.Append("rotate(").Append(v).Append("deg) "); break;
+                    case "offsetX": transform.Append("translateX(").Append(v).Append("px) "); break;
+                    case "offsetY": transform.Append("translateY(").Append(v).Append("px) "); break;
+                }
+            }
+            if (transform.Length > 0) sb.Append("transform:").Append(transform.ToString().TrimEnd()).Append(';');
+            sb.Append('}');
+        }
+        return sb.Append('}').ToString();
+    }
+
+    static AnimationCurve CurveFor(string? token) => token switch
+    {
+        "linear" => AnimationCurve.Linear,
+        "easeIn" => AnimationCurve.EaseIn,
+        "easeOut" => AnimationCurve.EaseOut,
+        "spring" => AnimationCurve.Spring,
+        _ => AnimationCurve.EaseInOut,
+    };
+
     /// <summary>Inline CSS for a node's modifiers. shapeFill routes foregroundColor to background.</summary>
     public static string Modifiers(List<Dictionary<string, object?>> modifiers, bool shapeFill)
     {
@@ -124,6 +172,9 @@ static class WebStyle
                     if (m.GetValueOrDefault("value") is string ranchor) origin = OriginCss(ranchor);
                     break;
                 case "animation":
+                    // Both write `animation:`, and a later declaration in an inline style wins — so when a
+                    // real timeline is present the canned pulse steps aside rather than clobbering it.
+                    if (modifiers.Any(k => k["type"] as string == "keyframes")) break;
                     // A repeating animation maps to a CSS @keyframes loop; a one-shot maps to a transition.
                     var dur = N(m, "duration", 0.3).ToString(CultureInfo.InvariantCulture);
                     var delay = N(m, "delay", 0).ToString(CultureInfo.InvariantCulture);
@@ -136,6 +187,20 @@ static class WebStyle
                     }
                     else
                         sb.Append($"transition:all {dur}s {TimingFunction(m.GetValueOrDefault("curve") as string)} {delay}s;");
+                    break;
+                case "keyframes":
+                    // A timeline gets its own generated @keyframes rule (emitted once per distinct timeline
+                    // by SwiftDotNetView), so unlike `.Repeating()` this animates exactly what the tracks say.
+                    if (m.GetValueOrDefault("tracks") is not string tracks || tracks.Length == 0) break;
+                    var kdur = N(m, "duration", 1).ToString(CultureInfo.InvariantCulture);
+                    var kdelay = N(m, "delay", 0).ToString(CultureInfo.InvariantCulture);
+                    var kiter = m.GetValueOrDefault("repeatCount") is double krc
+                        ? (krc < 0 ? "infinite" : ((int)krc).ToString(CultureInfo.InvariantCulture))
+                        : "1";
+                    var kdir = (m.GetValueOrDefault("autoreverse") as string) == "true" ? "alternate" : "normal";
+                    // `linear` because the eased shape is already baked into the generated stops, and
+                    // `forwards` so a play-once timeline holds its final stop instead of snapping back.
+                    sb.Append($"animation:{KeyframeWire.RuleName(tracks)} {kdur}s linear {kdelay}s {kiter} {kdir} forwards;");
                     break;
                 case "foregroundColor":
                     if (Color(m.GetValueOrDefault("value") as string) is { } fc)

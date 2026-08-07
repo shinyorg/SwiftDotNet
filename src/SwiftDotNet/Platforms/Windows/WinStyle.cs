@@ -1,5 +1,6 @@
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.UI;
 
 // Core declares a static `Color` class in this same namespace (SwiftDotNet), which shadows the
@@ -99,6 +100,29 @@ static class WinStyle
         "body" => (16, FontWeights.Normal),
         "caption" => (12, FontWeights.Normal),
         _ => null,
+    };
+
+    /// <summary>The <see cref="AnimationCurve"/> a wire curve token names, defaulting to ease-in-out.</summary>
+    public static AnimationCurve CurveFor(string? token) => token switch
+    {
+        "linear" => AnimationCurve.Linear,
+        "easeIn" => AnimationCurve.EaseIn,
+        "easeOut" => AnimationCurve.EaseOut,
+        "spring" => AnimationCurve.Spring,
+        _ => AnimationCurve.EaseInOut,
+    };
+
+    /// <summary>
+    /// A curve as the cubic control points of a WinUI <c>KeySpline</c> — the only easing a keyframed
+    /// storyboard can express. Spring gets an overshooting spline (control y &gt; 1), the closest a
+    /// bezier gets to the engine's decaying settle.
+    /// </summary>
+    public static KeySpline SplineFor(AnimationCurve curve) => curve switch
+    {
+        AnimationCurve.EaseIn => new KeySpline { ControlPoint1 = new(0.42, 0), ControlPoint2 = new(1, 1) },
+        AnimationCurve.EaseOut => new KeySpline { ControlPoint1 = new(0, 0), ControlPoint2 = new(0.58, 1) },
+        AnimationCurve.Spring => new KeySpline { ControlPoint1 = new(0.34, 1.56), ControlPoint2 = new(0.64, 1) },
+        _ => new KeySpline { ControlPoint1 = new(0.42, 0), ControlPoint2 = new(0.58, 1) },
     };
 
     public static string Emoji(string name) => name switch

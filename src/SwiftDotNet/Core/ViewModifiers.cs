@@ -254,6 +254,32 @@ public static class ViewModifiers
         return view;
     }
 
+    /// <summary>
+    /// Drives this view along a multi-track keyframe timeline — mirrors SwiftUI's
+    /// <c>keyframeAnimator(initialValue:content:keyframes:)</c>. Each <see cref="Prop"/> gets its own
+    /// track of stops with its own curves, so several properties can animate on independent shapes over
+    /// one shared clock:
+    /// <code>
+    /// view.Keyframes(k => k
+    ///     .Track(Prop.Opacity, t => t.At(0, 1).At(0.5, 0.3, Anim.EaseOut()).At(1, 1))
+    ///     .Track(Prop.Scale,   t => t.At(0, 1).At(0.6, 1.2, Anim.Spring()).At(1, 1))
+    ///     .Duration(1.2)
+    ///     .Repeating());
+    /// </code>
+    /// Stop times are fractions of <c>Duration</c>, and values are <em>absolute</em> — a track overrides
+    /// any static <c>.Opacity()</c>/<c>.ScaleEffect()</c>/<c>.Rotation()</c> on the same view while it
+    /// plays. Without <c>.Repeating()</c> the timeline plays once, replaying whenever <c>.On(value)</c>
+    /// changes.
+    /// </summary>
+    public static T Keyframes<T>(this T view, Action<KeyframeTimeline> build) where T : View
+    {
+        var timeline = new KeyframeTimeline();
+        build(timeline);
+        // An empty timeline would serialize to a modifier every backend has to special-case; drop it here.
+        if (!timeline.IsEmpty) view.Modifiers.Add(new KeyframesModifier(timeline));
+        return view;
+    }
+
     public static T NavigationTitle<T>(this T view, string title) where T : View
     {
         view.Modifiers.Add(new NavigationTitleModifier(title));

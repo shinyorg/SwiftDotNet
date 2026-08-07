@@ -210,6 +210,70 @@ sealed partial class VisualNode
     bool AutoReverse => Mod("animation")?.GetValueOrDefault("autoreverse") as string == "true";
     bool Repeating => RepeatCount is not null && !_pulseDone;
 
+    // ---- keyframe timelines (.Keyframes(k => …)) ---------------------------
+    // Unlike the pulse above, a timeline carries the whole shape of the animation on the wire, so this
+    // drives real per-property values rather than a canned opacity fade. Tracks are parsed once per
+    // distinct wire string and sampled on the same clock every frame.
+    List<(string Property, List<Keyframe> Stops)>? _kfTracks;
+    string? _kfWire;
+    string _kfTrigger = "";
+    double _kfElapsed;
+    bool _kfDone, _kfArmed;
+
+    List<(string Property, List<Keyframe> Stops)>? Keyframes()
+    {
+        var m = Mod("keyframes");
+        if (m is null) return null;
+        var wire = m.GetValueOrDefault("tracks") as string ?? "";
+        if (wire != _kfWire) { _kfWire = wire; _kfTracks = KeyframeWire.Parse(wire); }
+        return _kfTracks;
+    }
+
+    /// <summary>
+    /// (Re)arms the timeline on first sight and whenever its <c>on:</c> trigger changes — a repeating
+    /// timeline just runs, a one-shot replays from the top.
+    /// </summary>
+    void UpdateKeyframes()
+    {
+        var m = Mod("keyframes");
+        if (m is null) return;
+        var trig = m.GetValueOrDefault("trigger") as string ?? "";
+        if (!_kfArmed) { _kfArmed = true; _kfTrigger = trig; return; }
+        if (trig == _kfTrigger) return;
+        _kfTrigger = trig;
+        _kfElapsed = 0;
+        _kfDone = false;
+    }
+
+    /// <summary>The current value of <paramref name="property"/>'s track, or null when the node has none.</summary>
+    double? Kf(string property)
+    {
+        var tracks = Keyframes();
+        if (tracks is null) return null;
+        var m = Mod("keyframes")!;
+        var phase = KeyframeWire.Phase(
+            _kfElapsed,
+            MNull(m, "duration") ?? 1,
+            MNull(m, "delay") ?? 0,
+            MNull(m, "repeatCount") is { } rc ? (int)rc : null,
+            m.GetValueOrDefault("autoreverse") as string == "true",
+            out _);
+        var fallback = CurveFor(m.GetValueOrDefault("curve") as string);
+        foreach (var (prop, stops) in tracks)
+            if (prop == property)
+                return KeyframeWire.Sample(stops, phase, fallback);
+        return null;
+    }
+
+    static AnimationCurve CurveFor(string? token) => token switch
+    {
+        "linear" => AnimationCurve.Linear,
+        "easeIn" => AnimationCurve.EaseIn,
+        "easeOut" => AnimationCurve.EaseOut,
+        "spring" => AnimationCurve.Spring,
+        _ => AnimationCurve.EaseInOut,
+    };
+
     // Detect a trigger change and (re)arm interpolation of the animatable props (opacity, frame height).
     void UpdateAnimation()
     {
@@ -268,6 +332,20 @@ sealed partial class VisualNode
             }
             else if (_animT < 1) { _animT = Math.Min(1, _animT + dt / _animDur); active = true; }
         }
+        // A keyframe timeline runs on its own clock alongside (not instead of) the implicit animation —
+        // the two drive disjoint properties whenever both are present.
+        if (Mod("keyframes") is { } kf && !_kfDone)
+        {
+            _kfElapsed += dt;
+            KeyframeWire.Phase(
+                _kfElapsed,
+                MNull(kf, "duration") ?? 1,
+                MNull(kf, "delay") ?? 0,
+                MNull(kf, "repeatCount") is { } krc ? (int)krc : null,
+                kf.GetValueOrDefault("autoreverse") as string == "true",
+                out _kfDone);
+            active = true;
+        }
         foreach (var c in Children) active |= c.Tick(dt);
         return active;
     }
@@ -293,6 +371,7 @@ sealed partial class VisualNode
     public Size Measure(Size available)
     {
         UpdateAnimation();
+        UpdateKeyframes();
         var pad = Padding();
         var inner = new Size(
             Math.Max(0, available.Width - pad.Horizontal),
@@ -308,7 +387,10 @@ sealed partial class VisualNode
         var outerW = outer.Width;
         var outerH = outer.Height;
         if (fw is { } w) outerW = (float)w;
-        if (Mod("animation") is not null && Mod("frame")?.ContainsKey("height") == true) outerH = AnimH;
+        // An explicit height track wins over the implicit-animation interpolator: it says exactly what the
+        // height should be at this instant, where AnimH only knows where it started and where it's headed.
+        if (Kf("height") is { } kh) outerH = (float)kh;
+        else if (Mod("animation") is not null && Mod("frame")?.ContainsKey("height") == true) outerH = AnimH;
         else if (fh is { } h) outerH = (float)h;
         if (Mod("align") is not null || FillsWidth) outerW = available.Width;
         outer = new Size(outerW, outerH);
@@ -1276,26 +1358,39 @@ sealed partial class VisualNode
         Mod("background")?.GetValueOrDefault("value") is string t ? Theme.Color(t, dark) : null;
 
     float RawOpacity => (float)(MNull(Mod("opacity"), "amount") ?? 1);
-    float Opacity() => AnimO;
+
+    // A keyframe track carries an *absolute* value, so where one exists it replaces the static modifier
+    // rather than scaling it — that is what makes `.Track(Prop.Opacity, …)` predictable next to a plain
+    // `.Opacity()`. The pulse (AnimO) still applies to nodes with no opacity track.
+    float Opacity() => Kf("opacity") is { } o ? (float)o : AnimO;
     bool IsDisabled => Mod("disabled")?.GetValueOrDefault("value") as string == "true";
     (double x, double y, string anchor)? Scale()
     {
         var m = Mod("scaleEffect");
-        if (m is null) return null;
-        return (MNull(m, "x") ?? 1, MNull(m, "y") ?? 1, m.GetValueOrDefault("value") as string ?? "center");
+        var uniform = Kf("scale");
+        var kx = Kf("scaleX") ?? uniform;
+        var ky = Kf("scaleY") ?? uniform;
+        if (m is null && kx is null && ky is null) return null;
+        var anchor = m?.GetValueOrDefault("value") as string ?? "center";
+        return (kx ?? MNull(m, "x") ?? 1, ky ?? MNull(m, "y") ?? 1, anchor);
     }
 
     // F4 transforms: translation (no layout effect) and rotation around an anchor.
     (double x, double y)? Offset()
     {
         var m = Mod("offset");
-        return m is null ? null : (MNull(m, "x") ?? 0, MNull(m, "y") ?? 0);
+        var kx = Kf("offsetX");
+        var ky = Kf("offsetY");
+        if (m is null && kx is null && ky is null) return null;
+        return (kx ?? MNull(m, "x") ?? 0, ky ?? MNull(m, "y") ?? 0);
     }
 
     (double degrees, string anchor)? Rotation()
     {
         var m = Mod("rotation");
-        return m is null ? null : (MNull(m, "degrees") ?? 0, m.GetValueOrDefault("value") as string ?? "center");
+        var kr = Kf("rotation");
+        if (m is null && kr is null) return null;
+        return (kr ?? MNull(m, "degrees") ?? 0, m?.GetValueOrDefault("value") as string ?? "center");
     }
 
     // F5 gradient background: painted in place of the flat background fill when present.
@@ -1369,11 +1464,15 @@ sealed partial class VisualNode
             (float)(MNull(m, "bottom") ?? 0));
     }
 
+    // A width/height track drives layout, so unlike the transforms it has to land here rather than in the
+    // paint pass — Measure reads this and the arranged rect follows.
     (double? w, double? h) FrameSize()
     {
         var m = Mod("frame");
-        if (m is null) return (null, null);
-        return (MNull(m, "width"), MNull(m, "height"));
+        var kw = Kf("width");
+        var kh = Kf("height");
+        if (m is null) return (kw, kh);
+        return (kw ?? MNull(m, "width"), kh ?? MNull(m, "height"));
     }
 
     // Cross-axis (or Z) positioning of a child of size `size` within [start, start+extent].

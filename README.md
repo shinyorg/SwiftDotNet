@@ -120,7 +120,13 @@ Two ways to add your own control:
   `.animation(_:value:)`. Specs via `Anim.Linear/EaseIn/EaseOut/EaseInOut(duration)` and `Anim.Spring()`.
   Maps to real native animation — SwiftUI `.animation`, Compose `animateContentSize`/`animateFloatAsState`,
   WinUI theme transitions, GTK/Web CSS `transition`; springs are native where available and degrade to a
-  bezier (Web) or ease-in-out (GTK). `.Repeating()` adds self-playing loops (shimmer/pulse). Explicit
+  bezier (Web) or ease-in-out (GTK). `.Repeating()` adds self-playing loops (shimmer/pulse).
+- **Keyframe animations**: `.Keyframes(k => k.Track(Prop.Opacity, t => t.At(0, 1).At(0.5, 0.3)).Duration(1.2))`
+  — multi-track timelines with independent per-property stops and per-segment curves, mirroring SwiftUI's
+  `keyframeAnimator`. Maps to a real `KeyframeAnimator` (SwiftUI), a `keyframes<Float>` spec (Compose), a
+  generated `@keyframes` rule (Web), the frame clock (GTK), the engine's own clock (Skia/WebGPU/Unity) and a
+  keyframed `Storyboard` (WinUI, uncompiled). No-op on the TUI. See
+  [Modifiers, Gestures & Animation](docs/modifiers-gestures-animation.md#keyframe-animations). Explicit
   `Animate.Run` transactions and enter/leave `.Transition(…)` are later phases — see the
   [Roadmap](docs/roadmap.md).
 - **Alignment**: `VStack.Alignment(HorizontalAlignment)`, `HStack.Alignment(VerticalAlignment)`,

@@ -103,7 +103,7 @@ A terminal's unit is the **character cell**, not the pixel, so every geometric m
 | `.Disabled` | `IsEnabled` |
 | `.Opacity` | Blended into the colour itself — cells have no alpha. Below 0.05 the node is hidden. |
 | `.OnTapGesture` | Pointer press (needs mouse reporting) **and** Enter when focused |
-| **No-ops** | `.CornerRadius`, `.Offset`, `.ScaleEffect`, `.Rotation`, `.Shadow`, `.Material` (flat tint instead), `.Animation`, `.OnLongPress`, `.OnSwipe`, `.OnDrag`, `.OnMagnify` |
+| **No-ops** | `.CornerRadius`, `.Offset`, `.ScaleEffect`, `.Rotation`, `.Shadow`, `.Material` (flat tint instead), `.Animation`, [`.Keyframes`](../modifiers-gestures-animation.md#keyframe-animations), `.OnLongPress`, `.OnSwipe`, `.OnDrag`, `.OnMagnify` |
 
 Gradients collapse to their **first stop** — a cell has one background colour.
 

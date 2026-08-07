@@ -73,7 +73,17 @@ silently dropped the first. That's what let `ImageViewer` pan and pinch coexist.
   `animation-direction:alternate`) using the shared `sdn-pulse` keyframes, which fade `opacity` 1 → 0.4.
   Because CSS keyframes must be declared ahead of time, **every** repeating animation renders as that same
   opacity pulse regardless of which property the C# nominally animates. Skia, GTK and Compose deliberately
-  match this so the effect reads identically everywhere.
+  match this so the effect reads identically everywhere. **A
+  [keyframe timeline](../modifiers-gestures-animation.md#keyframe-animations) has none of this limitation** —
+  it carries real values, so it gets a real rule.
+- **`.Keyframes(…)` generates one `@keyframes` rule per distinct timeline.** The rule is named from a hash of
+  the timeline's wire string (`sdn-kf-xxxxxxxx`), so identical timelines on many nodes share it, and
+  [`SwiftDotNetView`](../../src/SwiftDotNet.Web/SwiftDotNetView.cs) walks the tree to emit every rule into the
+  host `<style>` *before* any node references it. Because one CSS rule can't give two properties different
+  timing functions, the tracks are flattened to stops that already carry the eased shape and the animation
+  runs `linear` — so the browser reproduces the same curve the Graphics engine draws. `forwards` holds the
+  final stop. A `.Keyframes(…)` on the same node suppresses the `sdn-pulse` declaration, since both write
+  `animation:` and the later one would silently win.
 
 ## Running
 

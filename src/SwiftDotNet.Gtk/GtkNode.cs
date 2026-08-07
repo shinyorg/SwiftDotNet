@@ -826,6 +826,7 @@ sealed class GtkNode
         }
 
         SyncTransform();
+        SyncKeyframes();
         ApplyCss();
     }
 
@@ -839,6 +840,88 @@ sealed class GtkNode
         AddCss(_content, body, keyframes);
     }
 
+    // ---- keyframe timelines (.Keyframes(k => …)) ------------------------------
+    //
+    // GTK CSS animates only the handful of properties GTK exposes to it — no transform, no frame size — so
+    // rather than generate a @keyframes rule, the timeline is driven from C# on the widget's frame clock and
+    // sampled with the shared Core sampler. That gives GTK the *full* property set and makes it play
+    // identically to the Graphics engine, at the cost of one tick callback per animated node.
+    ulong _kfStart;
+    string _kfTrigger = "";
+    bool _kfTicking;
+    string? _kfWire;
+    List<(string Property, List<Keyframe> Stops)>? _kfTracks;
+    // Sampled transform components, written each tick and folded into the Gsk transform by ApplyTransform.
+    double? _kfScaleX, _kfScaleY, _kfRotation, _kfOffsetX, _kfOffsetY;
+
+    void SyncKeyframes()
+    {
+        var m = Mod("keyframes");
+        if (m is null) return;
+
+        var trigger = m.GetValueOrDefault("trigger") as string ?? "";
+        if (_kfTicking)
+        {
+            // A changed trigger replays a one-shot timeline from the top.
+            if (trigger != _kfTrigger) { _kfTrigger = trigger; _kfStart = 0; }
+            return;
+        }
+        _kfTicking = true;
+        _kfTrigger = trigger;
+
+        // The Gtk.Fixed transform wrapper has to exist *now*, while the parent hasn't packed this node yet —
+        // creating it on the first tick would swap `Widget` after the parent already holds `_content`.
+        var wire = m.GetValueOrDefault("tracks") as string ?? "";
+        if (wire.Contains("scale") || wire.Contains("rotation") || wire.Contains("offset")) EnsureTransformHost();
+
+        _content.AddTickCallback((_, clock) => { TickKeyframes(clock); return true; });
+    }
+
+    void TickKeyframes(Gdk.FrameClock clock)
+    {
+        var m = Mod("keyframes");
+        if (m is null) return;
+        if (m.GetValueOrDefault("tracks") is not string wire || wire.Length == 0) return;
+        if (wire != _kfWire) { _kfWire = wire; _kfTracks = KeyframeWire.Parse(wire); _kfStart = 0; }
+
+        var now = (ulong)clock.GetFrameTime();      // monotonic, microseconds
+        if (_kfStart == 0) _kfStart = now;
+        var phase = KeyframeWire.Phase(
+            (now - _kfStart) / 1_000_000.0,
+            Num(m, "duration") ?? 1,
+            Num(m, "delay") ?? 0,
+            Num(m, "repeatCount") is { } rc ? (int)rc : null,
+            m.GetValueOrDefault("autoreverse") as string == "true",
+            out _);
+
+        var fallback = GtkStyle.CurveFor(m.GetValueOrDefault("curve") as string);
+        double? w = null, h = null;
+        var uniform = default(double?);
+        _kfScaleX = _kfScaleY = _kfRotation = _kfOffsetX = _kfOffsetY = null;
+        foreach (var (property, stops) in _kfTracks!)
+        {
+            var v = KeyframeWire.Sample(stops, phase, fallback);
+            switch (property)
+            {
+                case "opacity": _content.Opacity = Math.Clamp(v, 0, 1); break;
+                case "width": w = v; break;
+                case "height": h = v; break;
+                case "scale": uniform = v; break;
+                case "scaleX": _kfScaleX = v; break;
+                case "scaleY": _kfScaleY = v; break;
+                case "rotation": _kfRotation = v; break;
+                case "offsetX": _kfOffsetX = v; break;
+                case "offsetY": _kfOffsetY = v; break;
+            }
+        }
+        _kfScaleX ??= uniform;
+        _kfScaleY ??= uniform;
+
+        if (w is not null || h is not null)
+            _content.SetSizeRequest(w is { } dw ? (int)dw : -1, h is { } dh ? (int)dh : -1);
+        if (_transformHost is not null) ApplyTransform();
+    }
+
     // ---- F4 transforms: .ScaleEffect / .Rotation ------------------------------
     //
     // GTK4 widgets carry no transform property, but Gtk.Fixed can apply an arbitrary GskTransform to a
@@ -849,21 +932,21 @@ sealed class GtkNode
 
     void SyncTransform()
     {
-        var scale = Mod("scaleEffect");
-        var rotation = Mod("rotation");
-        if (scale is null && rotation is null) return;
-
-        if (_transformHost is null)
-        {
-            _transformHost = Gtk.Fixed.New();
-            _transformHost.Put(_content, 0, 0);
-            Widget = _transformHost;
-            // The anchor depends on the allocated size, which isn't known until the first layout pass —
-            // recompute whenever it changes, otherwise a scale/rotate would pivot around a stale centre.
-            _content.OnMap += (_, _) => ApplyTransform();
-            _content.OnNotify += (_, a) => { if (a.Pspec.GetName() is "width-request" or "height-request") ApplyTransform(); };
-        }
+        if (Mod("scaleEffect") is null && Mod("rotation") is null) return;
+        EnsureTransformHost();
         ApplyTransform();
+    }
+
+    void EnsureTransformHost()
+    {
+        if (_transformHost is not null) return;
+        _transformHost = Gtk.Fixed.New();
+        _transformHost.Put(_content, 0, 0);
+        Widget = _transformHost;
+        // The anchor depends on the allocated size, which isn't known until the first layout pass —
+        // recompute whenever it changes, otherwise a scale/rotate would pivot around a stale centre.
+        _content.OnMap += (_, _) => ApplyTransform();
+        _content.OnNotify += (_, a) => { if (a.Pspec.GetName() is "width-request" or "height-request") ApplyTransform(); };
     }
 
     void ApplyTransform()
@@ -879,12 +962,22 @@ sealed class GtkNode
         // disagree, matching the order the DSL applies them.
         var (ax, ay) = GtkStyle.AnchorPoint((scale ?? rotation)?.GetValueOrDefault("value") as string, w, h);
 
-        // translate(anchor) · rotate · scale · translate(-anchor) — pivot about the anchor, not the origin.
-        // Gir.Core types every Gsk.Transform combinator as nullable (the C API returns NULL for the identity
-        // transform); the null-forgiving operators just carry the chain through that.
-        var t = Gsk.Transform.New()!.Translate(new Graphene.Point { X = (float)ax, Y = (float)ay })!;
-        if (rotation is not null) t = t.Rotate((float)(Num(rotation, "degrees") ?? 0))!;
-        if (scale is not null) t = t.Scale((float)(Num(scale, "x") ?? 1), (float)(Num(scale, "y") ?? 1))!;
+        // A keyframe track carries an absolute value, so where one exists it replaces the static modifier
+        // (the same precedence every other backend gives it).
+        var sx = _kfScaleX ?? (scale is null ? null : Num(scale, "x")) ?? 1;
+        var sy = _kfScaleY ?? (scale is null ? null : Num(scale, "y")) ?? 1;
+        var deg = _kfRotation ?? (rotation is null ? null : Num(rotation, "degrees")) ?? 0;
+
+        // translate(offset) · translate(anchor) · rotate · scale · translate(-anchor) — pivot about the
+        // anchor, not the origin, and shift the whole thing by any offset track. Gir.Core types every
+        // Gsk.Transform combinator as nullable (the C API returns NULL for the identity transform); the
+        // null-forgiving operators just carry the chain through that.
+        var t = Gsk.Transform.New()!;
+        if (_kfOffsetX is not null || _kfOffsetY is not null)
+            t = t.Translate(new Graphene.Point { X = (float)(_kfOffsetX ?? 0), Y = (float)(_kfOffsetY ?? 0) })!;
+        t = t.Translate(new Graphene.Point { X = (float)ax, Y = (float)ay })!;
+        if (rotation is not null || _kfRotation is not null) t = t.Rotate((float)deg)!;
+        if (scale is not null || _kfScaleX is not null || _kfScaleY is not null) t = t.Scale((float)sx, (float)sy)!;
         t = t.Translate(new Graphene.Point { X = (float)-ax, Y = (float)-ay })!;
 
         _transformHost.SetChildTransform(_content, t);
@@ -933,6 +1026,7 @@ sealed class GtkNode
         // Re-apply CSS-driven modifiers (fill/border/etc. may have changed) and any transform, whose
         // amount is itself animatable (BadgeView pulses .ScaleEffect).
         SyncTransform();
+        SyncKeyframes();
         ApplyCss();
     }
 

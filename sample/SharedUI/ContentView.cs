@@ -224,7 +224,33 @@ public sealed class ContentView : View
                     .ScaleEffect(_pulsing.Value ? 1.4 : 1.0)
                     .Opacity(_pulsing.Value ? 0.6 : 1.0)
                     .Animation(Anim.EaseInOut(0.7).Repeating(autoreverse: true), on: _pulsing.Value)
-            ).Frame(height: 100)
+            ).Frame(height: 100),
+
+            new Divider(),
+
+            // 4) Keyframe timeline: independent per-property tracks on one clock. The scale track
+            //    overshoots on a spring while opacity dips on an ease-out — a shape `.Animation` can't
+            //    express, since it only knows the two endpoints.
+            new Text("Keyframes — independent tracks").Font(Font.Headline),
+            new Text("Opacity dips and recovers while scale overshoots; one clock, two curves.")
+                .Font(Font.Caption).ForegroundColor(Color.Secondary),
+            new ZStack(
+                new RoundedRectangle(18).Frame(80, 80).ForegroundColor(Color.Accent)
+                    .Keyframes(k => k
+                        .Track(Prop.Opacity, t => t
+                            .At(0.0, 1.0)
+                            .At(0.5, 0.3, Anim.EaseOut())
+                            .At(1.0, 1.0))
+                        .Track(Prop.Scale, t => t
+                            .At(0.0, 1.0)
+                            .At(0.6, 1.25, Anim.Spring())
+                            .At(1.0, 1.0))
+                        .Track(Prop.Rotation, t => t
+                            .At(0.0, 0)
+                            .At(1.0, 360, Anim.Linear()))
+                        .Duration(2.0)
+                        .Repeating())
+            ).Frame(height: 120)
         ).Padding(20).NavigationTitle("Animation");
 
     // ── Layout ──────────────────────────────────────────────────────────────

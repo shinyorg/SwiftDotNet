@@ -96,6 +96,19 @@ See [Getting Started](../getting-started.md#ios-swiftui) for build/run commands.
   See [Safe area](../modifiers-gestures-animation.md#safe-area-ios--android-only).
 - **Maps:** MapKit ships as a separate companion xcframework (`SwiftDotNetMaps`), registered via
   `AppleMaps.Register()` — it stays out of the core bridge. See [Maps](../maps.md).
+- **Keyframe timelines use a real `KeyframeAnimator`**, so SwiftUI owns the clock (the deployment floor is
+  already iOS 17 / macOS 14 / tvOS 17, which is exactly what `KeyframeAnimator` needs — no availability
+  guard). Three things the implementation is deliberately shaped around, all in
+  [`Bridge.swift`](../../native/SwiftDotNetBridge/Sources/SwiftDotNetBridge/Bridge.swift):
+  - **All eight property tracks are emitted unconditionally**, with untracked ones holding a constant. Eight
+    *optional* tracks is 2⁸ type combinations in the `keyframes` result builder, which blows the Swift
+    type-checker up so badly it can't even produce a diagnostic (`failed to produce diagnostic for
+    expression`). If you add a property, keep it unconditional.
+  - **`KFValues` hand-rolls `animatableData`** as a tree of `AnimatablePair`s. `KeyframeAnimator` requires
+    `Animatable`, and the default `animatableData` only exists for `VectorArithmetic` types.
+  - **`autoreverse` is a mirrored return leg**, not a flag — `KeyframeAnimator` only loops forwards. A
+    finite repeat count above 1 loops forever, since `repeating:` is all-or-nothing.
+  See [keyframe animations](../modifiers-gestures-animation.md#keyframe-animations).
 
 ## Hot reload
 

@@ -32,11 +32,12 @@ reconciliation); `ISwiftDispatcher` — mostly moot, since `SwiftApp` already ma
 `SynchronizationContext`, so the work is auditing backends that lack one.
 
 ### Animation
-Implicit `.Animation(spec, on:)` **shipped** (see
-[Modifiers, Gestures & Animation](modifiers-gestures-animation.md)). Remaining: explicit `Animate.Run(...)`
-transactions (needs render **batching** in `SwiftApp` — `State.Value` currently renders immediately per set)
-and enter/leave `.Transition(...)` (gated on reconciliation). Phases: 1 = implicit ✅, 2 = batching + explicit,
-3 = transitions.
+Implicit `.Animation(spec, on:)` **shipped**, and multi-track
+[`.Keyframes(…)` timelines](modifiers-gestures-animation.md#keyframe-animations) **shipped** on every backend
+except the TUI, which has no animation clock at all (WinUI's path is written but 🧩 scaffolded — never
+compiled). Remaining: explicit `Animate.Run(...)` transactions (needs render **batching** in `SwiftApp` —
+`State.Value` currently renders immediately per set) and enter/leave `.Transition(...)` (gated on
+reconciliation). Phases: 1 = implicit ✅, 1b = keyframes ✅, 2 = batching + explicit, 3 = transitions.
 
 ### Gestures & transforms
 `.ScaleEffect` **shipped**. Tap/long-press/swipe (one-shot) **shipped**. Remaining: continuous **pan/pinch**

@@ -78,6 +78,14 @@ The reusable host base is `SwiftDotNetActivity : ComponentActivity` (a `Componen
   is identity), and `SkeletonView`'s shimmer is a fading static gradient, not a travelling highlight. A
   `spring` curve combined with a repeat degrades to a tween — springs have no duration and can't feed
   `infiniteRepeatable`.
+- **`.Keyframes(…)` maps to a real `keyframes<Float>` spec per track** — see
+  [keyframe animations](../modifiers-gestures-animation.md#keyframe-animations). Each track becomes its own
+  `animateFloat` (looping ones on `rememberInfiniteTransition`, one-shots on an `Animatable` replayed by the
+  `on:` trigger), and opacity/transform/size land as `alpha`, `graphicsLayer`, `offset` and `width`/`height`.
+  Two wire-order details: Compose's `using` easing applies to the segment *starting* at a keyframe where the
+  wire records the curve a stop is *arrived* on, so each stop hands its curve to the one before it; and
+  `autoreverse` is emitted as a mirrored return leg rather than `RepeatMode.Reverse`, which would also
+  reverse each segment's easing. A timeline's opacity track takes over from the `.Repeating()` pulse.
 - **`Image.FromUrl`** loads dependency-free (coroutine + `URL.openConnection` + `BitmapFactory`, cached by
   URL in-process). No Coil dependency was added. **The bridge AAR's manifest declares
   `android.permission.INTERNET`**, which merges into every consuming app. No disk cache, no downsampling,

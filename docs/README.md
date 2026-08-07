@@ -27,7 +27,8 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 - **[Views & Controls](views-and-controls.md)** — the full vocabulary: layout, navigation & presentation,
   inputs, and display views.
 - **[Modifiers, Gestures & Animation](modifiers-gestures-animation.md)** — the universal modifier pass,
-  one-shot gestures, and implicit animation.
+  one-shot gestures, implicit animation, and multi-track
+  [keyframe timelines](modifiers-gestures-animation.md#keyframe-animations).
 - **[State & Data Binding](state-and-binding.md)** — `State<T>`, two-way bindings, and the re-render loop.
 - **[Collection View (`List`)](collection-view.md)** — keyed identity, recycling, virtualization, selection,
   grids, sections, refresh, and load-more.

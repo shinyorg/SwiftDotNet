@@ -64,6 +64,7 @@ struct ModifierData: Decodable, Equatable {
     let columnSpan: Double?
     let rowSpan: Double?
     let flags: String?         // layoutBounds: which of "xywh" are proportional
+    let tracks: String?        // keyframes: the whole timeline, `prop:t,v[,curve];…|prop:…`
 }
 
 final class WireNode: Decodable {
@@ -323,6 +324,224 @@ private func animationFor(_ m: ModifierData) -> SwiftUI.Animation {
     return delay > 0 ? base.delay(delay) : base
 }
 
+// MARK: - Keyframe timelines
+
+/// One decoded stop: an absolute value at a fraction of the timeline, and the curve it arrives on.
+private struct KFStop {
+    let time: Double
+    let value: Double
+    let curve: String?
+}
+
+/// The `keyframes` modifier decoded from the wire — see `SwiftDotNet.KeyframeWire` on the C# side.
+private struct KFTimeline {
+    var tracks: [(property: String, stops: [KFStop])] = []
+    var duration: Double = 1
+    var delay: Double = 0
+    var defaultCurve: String = "easeInOut"
+    var repeatCount: Int?
+    var autoreverse = false
+    var trigger: String = ""
+
+    func stops(_ property: String) -> [KFStop]? {
+        tracks.first { $0.property == property }?.stops
+    }
+}
+
+private typealias KFQuad = AnimatablePair<AnimatablePair<Double, Double>, AnimatablePair<Double, Double>>
+
+/// Every property a timeline can drive, in one animatable value. `width`/`height` use -1 for "no track",
+/// so an untracked size falls through to whatever `.frame()` the modifier chain already applied.
+/// `KeyframeAnimator` requires `Animatable`, and the default `animatableData` only exists for
+/// `VectorArithmetic` types — hence the hand-rolled pair tree.
+private struct KFValues: Equatable, Animatable {
+    var opacity: Double = 1
+    var scaleX: Double = 1
+    var scaleY: Double = 1
+    var rotation: Double = 0
+    var offsetX: Double = 0
+    var offsetY: Double = 0
+    var width: Double = -1
+    var height: Double = -1
+
+    var animatableData: AnimatablePair<KFQuad, KFQuad> {
+        get {
+            AnimatablePair(
+                AnimatablePair(AnimatablePair(opacity, scaleX), AnimatablePair(scaleY, rotation)),
+                AnimatablePair(AnimatablePair(offsetX, offsetY), AnimatablePair(width, height)))
+        }
+        set {
+            opacity = newValue.first.first.first
+            scaleX = newValue.first.first.second
+            scaleY = newValue.first.second.first
+            rotation = newValue.first.second.second
+            offsetX = newValue.second.first.first
+            offsetY = newValue.second.first.second
+            width = newValue.second.second.first
+            height = newValue.second.second.second
+        }
+    }
+}
+
+/// Parses `prop:t,v[,curve];…|prop:…`. Malformed segments are skipped, never thrown on — a bad stop must
+/// not take down a render.
+private func decodeKeyframes(_ m: ModifierData) -> KFTimeline? {
+    guard let wire = m.tracks, !wire.isEmpty else { return nil }
+    var timeline = KFTimeline()
+    timeline.duration = max(0.001, m.duration ?? 1)
+    timeline.delay = m.delay ?? 0
+    timeline.defaultCurve = m.curve ?? "easeInOut"
+    timeline.trigger = m.trigger ?? ""
+    if let rc = m.repeatCount {
+        timeline.repeatCount = Int(rc)
+        timeline.autoreverse = m.autoreverse == "true"
+    }
+
+    for trackSpec in wire.split(separator: "|") {
+        guard let colon = trackSpec.firstIndex(of: ":") else { continue }
+        let property = String(trackSpec[trackSpec.startIndex..<colon])
+        var stops: [KFStop] = []
+        for stopSpec in trackSpec[trackSpec.index(after: colon)...].split(separator: ";") {
+            let parts = stopSpec.split(separator: ",", omittingEmptySubsequences: false)
+            guard parts.count >= 2, let t = Double(parts[0]), let v = Double(parts[1]) else { continue }
+            stops.append(KFStop(time: t, value: v, curve: parts.count > 2 ? String(parts[2]) : nil))
+        }
+        if !stops.isEmpty { timeline.tracks.append((property, stops)) }
+    }
+    return timeline.tracks.isEmpty ? nil : timeline
+}
+
+/// The wire curve tokens as SwiftUI timing curves. `spring` becomes an overshooting bezier rather than a
+/// `SpringKeyframe` so every stop stays one concrete keyframe type (a track is built by iteration, which
+/// needs a homogeneous element); the shape still reads as a spring settle.
+private func unitCurveFor(_ token: String?) -> UnitCurve {
+    switch token {
+    case "linear": return .linear
+    case "easeIn": return .easeIn
+    case "easeOut": return .easeOut
+    case "spring": return .bezier(startControlPoint: .init(x: 0.34, y: 1.56), endControlPoint: .init(x: 0.64, y: 1))
+    default: return .easeInOut
+    }
+}
+
+/// `property`'s stops as `(value, segmentDuration, curve)` in seconds, mirrored back to the start when the
+/// timeline autoreverses — SwiftUI's `KeyframeAnimator` only loops forwards, so the return leg is spelled
+/// out as real keyframes.
+///
+/// A property with no track returns one segment holding `resting` for the whole cycle. That matters:
+/// emitting all eight tracks unconditionally keeps the `keyframes` builder a single concrete type. Eight
+/// *optional* tracks is 2^8 type combinations, which blows the type-checker up (it can't even produce a
+/// diagnostic).
+private func kfSegments(_ timeline: KFTimeline, _ property: String, _ resting: Double) -> [(Double, Double, UnitCurve)] {
+    let cycle = timeline.autoreverse ? timeline.duration * 2 : timeline.duration
+    // A uniform `scale` track feeds both axes.
+    let stops = timeline.stops(property)
+        ?? ((property == "scaleX" || property == "scaleY") ? timeline.stops("scale") : nil)
+    guard let stops, stops.count > 1 else { return [(resting, cycle, .linear)] }
+
+    var out: [(Double, Double, UnitCurve)] = []
+    for i in 1..<stops.count {
+        let span = (stops[i].time - stops[i - 1].time) * timeline.duration
+        out.append((stops[i].value, max(0.0001, span), unitCurveFor(stops[i].curve ?? timeline.defaultCurve)))
+    }
+    guard timeline.autoreverse else { return out }
+    for i in stride(from: stops.count - 2, through: 0, by: -1) {
+        let span = (stops[i + 1].time - stops[i].time) * timeline.duration
+        out.append((stops[i].value, max(0.0001, span), unitCurveFor(stops[i + 1].curve ?? timeline.defaultCurve)))
+    }
+    return out
+}
+
+/// The value each track starts on — also the resting value for properties with no track.
+private func kfInitial(_ timeline: KFTimeline) -> KFValues {
+    var v = KFValues()
+    for (property, stops) in timeline.tracks {
+        guard let first = stops.first else { continue }
+        switch property {
+        case "opacity": v.opacity = first.value
+        case "scale": v.scaleX = first.value; v.scaleY = first.value
+        case "scaleX": v.scaleX = first.value
+        case "scaleY": v.scaleY = first.value
+        case "rotation": v.rotation = first.value
+        case "offsetX": v.offsetX = first.value
+        case "offsetY": v.offsetY = first.value
+        case "width": v.width = first.value
+        case "height": v.height = first.value
+        default: break
+        }
+    }
+    return v
+}
+
+@ViewBuilder
+private func applyKeyframeValues(_ view: AnyView, _ v: KFValues) -> some View {
+    view
+        .frame(width: v.width < 0 ? nil : v.width, height: v.height < 0 ? nil : v.height)
+        .scaleEffect(x: v.scaleX, y: v.scaleY)
+        .rotationEffect(.degrees(v.rotation))
+        .offset(x: v.offsetX, y: v.offsetY)
+        .opacity(v.opacity)
+}
+
+/// Drives `view` along `timeline` with a real `KeyframeAnimator` — SwiftUI owns the clock, so the animation
+/// runs on the render server rather than being ticked from C#.
+private func keyframeAnimated(_ view: AnyView, _ timeline: KFTimeline) -> AnyView {
+    let initial = kfInitial(timeline)
+    // `repeatCount` counts cycles; SwiftUI's `repeating:` is all-or-nothing, so a finite count > 1 loops
+    // forever and a single pass plays once (documented degradation — see docs/backends/apple.md).
+    let repeats = timeline.repeatCount.map { $0 < 0 || $0 > 1 } ?? false
+
+    return AnyView(
+        KeyframeAnimator(initialValue: initial, repeating: repeats) { v in
+            applyKeyframeValues(view, v)
+        } keyframes: { _ in
+            KeyframeTrack(\KFValues.opacity) {
+                for (value, duration, curve) in kfSegments(timeline, "opacity", initial.opacity) {
+                    LinearKeyframe(value, duration: duration, timingCurve: curve)
+                }
+            }
+            KeyframeTrack(\KFValues.scaleX) {
+                for (value, duration, curve) in kfSegments(timeline, "scaleX", initial.scaleX) {
+                    LinearKeyframe(value, duration: duration, timingCurve: curve)
+                }
+            }
+            KeyframeTrack(\KFValues.scaleY) {
+                for (value, duration, curve) in kfSegments(timeline, "scaleY", initial.scaleY) {
+                    LinearKeyframe(value, duration: duration, timingCurve: curve)
+                }
+            }
+            KeyframeTrack(\KFValues.rotation) {
+                for (value, duration, curve) in kfSegments(timeline, "rotation", initial.rotation) {
+                    LinearKeyframe(value, duration: duration, timingCurve: curve)
+                }
+            }
+            KeyframeTrack(\KFValues.offsetX) {
+                for (value, duration, curve) in kfSegments(timeline, "offsetX", initial.offsetX) {
+                    LinearKeyframe(value, duration: duration, timingCurve: curve)
+                }
+            }
+            KeyframeTrack(\KFValues.offsetY) {
+                for (value, duration, curve) in kfSegments(timeline, "offsetY", initial.offsetY) {
+                    LinearKeyframe(value, duration: duration, timingCurve: curve)
+                }
+            }
+            KeyframeTrack(\KFValues.width) {
+                for (value, duration, curve) in kfSegments(timeline, "width", initial.width) {
+                    LinearKeyframe(value, duration: duration, timingCurve: curve)
+                }
+            }
+            KeyframeTrack(\KFValues.height) {
+                for (value, duration, curve) in kfSegments(timeline, "height", initial.height) {
+                    LinearKeyframe(value, duration: duration, timingCurve: curve)
+                }
+            }
+        }
+        // The `on:` trigger replays a one-shot timeline; `id` is the bluntest way to do that and costs
+        // nothing, since a repeating timeline never changes its trigger.
+        .id(timeline.trigger)
+    )
+}
+
 private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyView {
     var out = AnyView(view)
     for m in mods {
@@ -399,6 +618,8 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
                 // animatable modifiers applied earlier in the chain to their new values.
                 out = AnyView(out.animation(animationFor(m), value: m.trigger ?? ""))
             }
+        case "keyframes":
+            if let timeline = decodeKeyframes(m) { out = keyframeAnimated(out, timeline) }
         case "disabled":
             out = AnyView(out.disabled(m.value == "true"))
         case "navigationTitle":

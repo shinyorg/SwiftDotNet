@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Shapes;
 
 // Core declares View types (Grid, Button, Slider, ColorPicker, TabView, Rectangle) and the enums
@@ -623,6 +624,129 @@ sealed class WinNode
 
     // ---- modifiers -----------------------------------------------------------
 
+    /// <summary>
+    /// Runs a <c>.Keyframes(…)</c> timeline as a WinUI <see cref="Storyboard"/> of
+    /// <c>DoubleAnimationUsingKeyFrames</c> — one animation per track, each stop a
+    /// <c>SplineDoubleKeyFrame</c> (or <c>LinearDoubleKeyFrame</c>) so per-segment easing survives.
+    /// <para>
+    /// STATUS: scaffolded. WinUI can't be compiled or run from the repo's macOS build, so this path has
+    /// never executed — see <c>docs/backends/windows.md</c>.
+    /// </para>
+    /// </summary>
+    void ApplyKeyframes(
+        Dictionary<string, object?> mod,
+        Microsoft.UI.Xaml.Media.TransformGroup transforms,
+        ref string? transformOrigin)
+    {
+        if (mod.GetValueOrDefault("tracks") is not string wire || wire.Length == 0) return;
+        var tracks = KeyframeWire.Parse(wire);
+        if (tracks.Count == 0) return;
+
+        var duration = N(mod, "duration", 1);
+        var delay = N(mod, "delay", 0);
+        var fallback = WinStyle.CurveFor(mod.GetValueOrDefault("curve") as string);
+        var repeatCount = Num(mod, "repeatCount");
+        var autoreverse = (mod.GetValueOrDefault("autoreverse") as string) == "true";
+
+        // Transform tracks need their own transform objects to target: a Storyboard binds to a
+        // DependencyObject plus a property path, and pointing at an existing group's indexed child is far
+        // more brittle than owning the instance.
+        ScaleTransform? scale = null;
+        RotateTransform? rotate = null;
+        TranslateTransform? translate = null;
+        var storyboard = new Storyboard();
+
+        foreach (var (property, stops) in tracks)
+        {
+            DependencyObject target;
+            string path;
+            var dependent = false;
+            switch (property)
+            {
+                case "opacity": target = Inner; path = "Opacity"; break;
+                case "width": target = Inner; path = "Width"; dependent = true; break;
+                case "height": target = Inner; path = "Height"; dependent = true; break;
+                case "scale":
+                case "scaleX":
+                case "scaleY":
+                    scale ??= AddTransform(transforms, new ScaleTransform { ScaleX = 1, ScaleY = 1 });
+                    target = scale;
+                    path = property == "scaleY" ? "ScaleY" : "ScaleX";
+                    // A uniform `scale` track drives both axes, so it emits a second animation below.
+                    break;
+                case "rotation":
+                    rotate ??= AddTransform(transforms, new RotateTransform());
+                    target = rotate; path = "Angle";
+                    break;
+                case "offsetX":
+                case "offsetY":
+                    translate ??= AddTransform(transforms, new TranslateTransform());
+                    target = translate;
+                    path = property == "offsetY" ? "Y" : "X";
+                    break;
+                default: continue;
+            }
+
+            storyboard.Children.Add(KeyframeAnimation(stops, target, path, duration, delay, fallback, dependent));
+            if (property == "scale")
+                storyboard.Children.Add(KeyframeAnimation(stops, scale!, "ScaleY", duration, delay, fallback, false));
+        }
+
+        if (storyboard.Children.Count == 0) return;
+        transformOrigin ??= "center";
+        storyboard.AutoReverse = autoreverse;
+        // -1 = forever; a finite count repeats that many cycles. No repeat keys at all = play once.
+        storyboard.RepeatBehavior = repeatCount switch
+        {
+            null => new RepeatBehavior(1),
+            < 0 => RepeatBehavior.Forever,
+            var n => new RepeatBehavior(Math.Max(1, n.Value)),
+        };
+        // Hold the final stop rather than snapping back, matching every other backend.
+        storyboard.FillBehavior = FillBehavior.HoldEnd;
+        Inner.Loaded += (_, _) => storyboard.Begin();
+    }
+
+    static T AddTransform<T>(Microsoft.UI.Xaml.Media.TransformGroup group, T transform)
+        where T : Microsoft.UI.Xaml.Media.Transform
+    {
+        group.Children.Add(transform);
+        return transform;
+    }
+
+    /// <summary>One track as a keyframed double animation bound to <paramref name="target"/>.</summary>
+    static DoubleAnimationUsingKeyFrames KeyframeAnimation(
+        List<Keyframe> stops, DependencyObject target, string path,
+        double duration, double delay, AnimationCurve fallback, bool dependent)
+    {
+        var anim = new DoubleAnimationUsingKeyFrames
+        {
+            BeginTime = TimeSpan.FromSeconds(delay),
+            // Width/Height aren't independently animatable (they run on the UI thread, not the compositor),
+            // so WinUI refuses to animate them unless this is set.
+            EnableDependentAnimation = dependent,
+        };
+        foreach (var stop in stops)
+        {
+            var at = KeyTime.FromTimeSpan(TimeSpan.FromSeconds(stop.Time * duration));
+            // The curve records how a value *arrives*; a spline key frame is the closest WinUI equivalent,
+            // and linear needs no spline at all.
+            anim.KeyFrames.Add((stop.Curve ?? fallback) switch
+            {
+                AnimationCurve.Linear => new LinearDoubleKeyFrame { KeyTime = at, Value = stop.Value },
+                var c => new SplineDoubleKeyFrame
+                {
+                    KeyTime = at,
+                    Value = stop.Value,
+                    KeySpline = WinStyle.SplineFor(c),
+                },
+            });
+        }
+        Storyboard.SetTarget(anim, target);
+        Storyboard.SetTargetProperty(anim, path);
+        return anim;
+    }
+
     void ApplyModifiers()
     {
         // Shape fill from foregroundColor/background modifier.
@@ -781,6 +905,10 @@ sealed class WinNode
                     break;
             }
         }
+
+        // A `.Keyframes(…)` timeline contributes its own transforms, so it runs before the group is sealed.
+        var keyframes = Modifiers.FirstOrDefault(m => m["type"] as string == "keyframes");
+        if (keyframes is not null) ApplyKeyframes(keyframes, transforms, ref transformOrigin);
 
         if (transforms.Children.Count > 0)
         {

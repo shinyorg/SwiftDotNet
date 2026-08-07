@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
@@ -41,11 +42,26 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
         b.AddAttribute(_seq++, "style", "font-family:-apple-system,system-ui,sans-serif;min-height:100vh;");
         // Generic repeating-animation keyframes (F4): a subtle opacity pulse used by shimmer/pulse/spinner
         // effects declared via `.Animation(spec.Repeating(), …)`. Shipped by the library so any consumer gets it.
+        // CSS rules must be declared before they're referenced, so the tree is walked for `.Keyframes(…)`
+        // timelines first and each distinct one contributes its generated rule here.
         b.OpenElement(_seq++, "style");
-        b.AddMarkupContent(_seq++, "@keyframes sdn-pulse{from{opacity:1}to{opacity:.4}}");
+        var css = new StringBuilder("@keyframes sdn-pulse{from{opacity:1}to{opacity:.4}}");
+        if (_bridge.Root is { } styleRoot) CollectKeyframes(styleRoot, css, new HashSet<string>());
+        b.AddMarkupContent(_seq++, css.ToString());
         b.CloseElement();
         if (_bridge.Root is { } root) RenderNode(b, root);
         b.CloseElement();
+    }
+
+    /// <summary>
+    /// Walks the tree gathering one <c>@keyframes</c> rule per distinct timeline. Identical timelines on
+    /// many nodes (a list of pulsing badges) share a rule, since the name is derived from the wire string.
+    /// </summary>
+    static void CollectKeyframes(WebNode n, StringBuilder css, HashSet<string> seen)
+    {
+        if (n.Mod("keyframes")?.GetValueOrDefault("tracks") is string tracks && seen.Add(tracks))
+            css.Append(WebStyle.KeyframesRule(tracks, n.Mod("keyframes")!.GetValueOrDefault("curve") as string));
+        foreach (var c in n.Children) CollectKeyframes(c, css, seen);
     }
 
     void RenderNode(RenderTreeBuilder b, WebNode n)

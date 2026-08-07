@@ -19,7 +19,10 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.KeyframesSpec
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.repeatable
 import androidx.compose.animation.core.spring
@@ -226,6 +229,105 @@ private fun repeatFraction(mod: Map<String, Any?>, repeatCount: Double): Float {
 
 // The floor of the repeating opacity pulse — mirrors the Web backend's `sdn-pulse` keyframes (1 → .4).
 private const val PulseMinAlpha = 0.4f
+
+// MARK: - Keyframe timelines (.Keyframes(k => …)) ----------------------------
+//
+// A timeline carries the whole shape of the animation on the wire, so unlike the canned pulse above each
+// property maps to a real Compose `keyframes` spec — per-segment easing included.
+
+/** One decoded stop: an absolute value at a fraction of the timeline, and the curve it arrives on. */
+private data class KFStop(val time: Double, val value: Double, val curve: String?)
+
+/**
+ * Parses `prop:t,v[,curve];…|prop:…` — see `SwiftDotNet.KeyframeWire` on the C# side. Malformed segments
+ * are skipped rather than thrown on: a bad stop must not take down a render.
+ */
+private fun parseKeyframeTracks(wire: String): Map<String, List<KFStop>> {
+    if (wire.isEmpty()) return emptyMap()
+    val tracks = LinkedHashMap<String, List<KFStop>>()
+    for (trackSpec in wire.split("|")) {
+        val colon = trackSpec.indexOf(':')
+        if (colon <= 0) continue
+        val stops = trackSpec.substring(colon + 1).split(";").mapNotNull { stopSpec ->
+            val parts = stopSpec.split(",")
+            val t = parts.getOrNull(0)?.toDoubleOrNull()
+            val v = parts.getOrNull(1)?.toDoubleOrNull()
+            if (t == null || v == null) null else KFStop(t, v, parts.getOrNull(2))
+        }
+        if (stops.isNotEmpty()) tracks[trackSpec.substring(0, colon)] = stops
+    }
+    return tracks
+}
+
+/**
+ * One property's stops as a Compose `keyframes` spec. Compose's `using` easing applies to the segment
+ * *starting* at a keyframe, where the wire records the curve a stop is *arrived* on — so each stop hands
+ * its curve to the one before it. `autoreverse` is spelled out as a mirrored return leg, because
+ * `RepeatMode.Reverse` would also reverse each segment's easing.
+ */
+private fun keyframeSpecFor(
+    stops: List<KFStop>,
+    durationSeconds: Double,
+    defaultCurve: String?,
+    autoreverse: Boolean,
+): KeyframesSpec<Float> {
+    val cycleMs = (durationSeconds * 1000).toInt().coerceAtLeast(1)
+    return keyframes {
+        durationMillis = if (autoreverse) cycleMs * 2 else cycleMs
+        for ((i, stop) in stops.withIndex()) {
+            val at = (stop.time * cycleMs).toInt().coerceIn(0, durationMillis)
+            // The curve leading *out* of this stop is the next stop's.
+            val outgoing = stops.getOrNull(i + 1)?.curve ?: defaultCurve
+            stop.value.toFloat() at at using easingFor(outgoing)
+        }
+        if (!autoreverse) return@keyframes
+        for (i in stops.indices.reversed()) {
+            val at = ((2 - stops[i].time) * cycleMs).toInt().coerceIn(0, durationMillis)
+            val outgoing = stops.getOrNull(i - 1)?.curve ?: defaultCurve
+            stops[i].value.toFloat() at at using easingFor(outgoing)
+        }
+    }
+}
+
+/**
+ * The live value of one track. A repeating timeline rides `rememberInfiniteTransition`; a one-shot runs an
+ * `Animatable` that replays whenever the `on:` trigger changes.
+ */
+@Composable
+private fun keyframeTrackValue(mod: Map<String, Any?>, stops: List<KFStop>, autoreverse: Boolean): Float {
+    val spec = keyframeSpecFor(
+        stops,
+        numOf(mod["duration"]) ?: 1.0,
+        mod["curve"] as? String,
+        autoreverse,
+    )
+    val from = stops.first().value.toFloat()
+    val to = if (autoreverse) from else stops.last().value.toFloat()
+    val repeatCount = numOf(mod["repeatCount"])
+    val offset = StartOffset(((numOf(mod["delay"]) ?: 0.0) * 1000).toInt().coerceAtLeast(0))
+
+    if (repeatCount != null && repeatCount < 0) {
+        val transition = rememberInfiniteTransition(label = "sdnKeyframes")
+        return transition.animateFloat(
+            initialValue = from,
+            targetValue = to,
+            // The mirrored return leg is already in the spec, so this only ever restarts.
+            animationSpec = infiniteRepeatable(spec, RepeatMode.Restart, offset),
+            label = "sdnKeyframeTrack",
+        ).value
+    }
+
+    val anim = remember(mod) { Animatable(from) }
+    LaunchedEffect(mod, mod["trigger"]) {
+        anim.snapTo(from)
+        if (repeatCount != null && repeatCount > 1) {
+            anim.animateTo(to, repeatable(repeatCount.toInt(), spec, RepeatMode.Restart, offset))
+        } else {
+            anim.animateTo(to, spec)
+        }
+    }
+    return anim.value
+}
 
 private fun VNode.s(key: String): String = props[key]?.toString() ?: ""
 private fun VNode.n(key: String): Double? = numOf(props[key])
@@ -462,6 +564,13 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
     val repeatCount = animMod?.let { numOf(it["repeatCount"]) }
     var targetAlpha: Float? = null
 
+    // A `.Keyframes(…)` timeline drives real per-property values, so where one is present it owns the
+    // properties it declares — including alpha, which is why the pulse below stands down for them.
+    val kfMod = node.modifiers.firstOrNull { (it["type"] as? String) == "keyframes" }
+    val kfWire = kfMod?.get("tracks") as? String ?: ""
+    val kfTracks = remember(kfWire) { parseKeyframeTracks(kfWire) }
+    val kfAutoreverse = (kfMod?.get("autoreverse") as? String) == "true"
+
     for (mod in node.modifiers) {
         when (mod["type"]) {
             "padding" -> m = m.padding(
@@ -599,7 +708,54 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
         }
     }
 
-    if (animMod != null && repeatCount != null) {
+    // ---- keyframe timeline ---------------------------------------------------
+    // Sampled before the pulse/implicit-animation block so it can claim alpha from it. Each track is a
+    // separate @Composable animation; the conditionals are stable per node because they key off the wire
+    // string, which Compose re-remembers when it changes.
+    var kfAlpha: Float? = null
+    if (kfMod != null && kfTracks.isNotEmpty()) {
+        var scaleX: Float? = null
+        var scaleY: Float? = null
+        var rotation: Float? = null
+        var offsetX: Float? = null
+        var offsetY: Float? = null
+        var width: Float? = null
+        var height: Float? = null
+
+        kfTracks["opacity"]?.let { kfAlpha = keyframeTrackValue(kfMod, it, kfAutoreverse) }
+        kfTracks["scale"]?.let {
+            val v = keyframeTrackValue(kfMod, it, kfAutoreverse)
+            scaleX = v; scaleY = v
+        }
+        kfTracks["scaleX"]?.let { scaleX = keyframeTrackValue(kfMod, it, kfAutoreverse) }
+        kfTracks["scaleY"]?.let { scaleY = keyframeTrackValue(kfMod, it, kfAutoreverse) }
+        kfTracks["rotation"]?.let { rotation = keyframeTrackValue(kfMod, it, kfAutoreverse) }
+        kfTracks["offsetX"]?.let { offsetX = keyframeTrackValue(kfMod, it, kfAutoreverse) }
+        kfTracks["offsetY"]?.let { offsetY = keyframeTrackValue(kfMod, it, kfAutoreverse) }
+        kfTracks["width"]?.let { width = keyframeTrackValue(kfMod, it, kfAutoreverse) }
+        kfTracks["height"]?.let { height = keyframeTrackValue(kfMod, it, kfAutoreverse) }
+
+        if (scaleX != null || scaleY != null || rotation != null) {
+            m = m.graphicsLayer(
+                scaleX = scaleX ?: 1f,
+                scaleY = scaleY ?: 1f,
+                rotationZ = rotation ?: 0f,
+            )
+        }
+        // `offset` is a layout modifier rather than a graphicsLayer translation so it matches SwiftUI's
+        // `.offset` (which also doesn't re-measure) without double-applying inside the layer.
+        if (offsetX != null || offsetY != null) {
+            m = m.offset(x = (offsetX ?: 0f).dp, y = (offsetY ?: 0f).dp)
+        }
+        width?.let { m = m.width(it.dp) }
+        height?.let { m = m.height(it.dp) }
+    }
+
+    if (kfAlpha != null) {
+        // An opacity track carries an absolute value, so it replaces any static `.Opacity()` rather than
+        // scaling it — the same precedence every other backend gives a track.
+        m = m.alpha(kfAlpha!!)
+    } else if (animMod != null && repeatCount != null) {
         // Self-playing loop: the wire carries no from/to pair, so the cycle fades opacity down to
         // `PulseMinAlpha` and back — the same generic pulse the Web backend's `sdn-pulse` keyframes apply.
         // Any explicit `.opacity()` in the chain scales the pulse rather than being overwritten.

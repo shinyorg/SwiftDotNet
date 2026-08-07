@@ -36,6 +36,7 @@ new Text("Hi")
 | `.Align` | Fill width + align. |
 | `.GridSpan` / `.GridCell` | Cell placement inside a `Grid` — see [below](#grid-and-absolute-placement). |
 | `.LayoutBounds` | Rect inside an `AbsoluteLayout` — see [below](#grid-and-absolute-placement). |
+| `.Keyframes` | Multi-track keyframe timeline — see [below](#keyframe-animations). |
 | `.NavigationTitle` | Nav bar title. |
 | `.SafeAreaPadding` / `.IgnoresSafeArea` | System-chrome insets — **iOS/Android only**, see [below](#safe-area-ios--android-only). |
 
@@ -54,7 +55,7 @@ Because modifiers are a universal wrapper, `.Opacity` / `.Disabled` / `.ScaleEff
 >   `.Padding` are divided down to cells (8px per column, 16px per row by default, tunable via
 >   `TuiStyle.CellWidthPx`/`CellHeightPx`), `.Font` degrades to emphasis (bold/dim — a terminal has one
 >   glyph size), and `.Opacity` is blended into the colour because a cell has no alpha. `.CornerRadius`,
->   `.Offset`, `.ScaleEffect`, `.Rotation`, `.Shadow` and `.Animation` are honest no-ops; `.Material`
+>   `.Offset`, `.ScaleEffect`, `.Rotation`, `.Shadow`, `.Animation` and `.Keyframes` are honest no-ops; `.Material`
 >   renders a flat tint. A gradient collapses to its first stop.
 
 ## Grid and absolute placement
@@ -230,6 +231,81 @@ view.Animation(Anim.EaseInOut(1.0).Repeating(autoreverse: true), on: true);
 > animation on a *scale* or *colour* therefore still reads as an opacity pulse. GTK additionally cannot
 > loop a transform at all (its CSS has no `transform`), and **WinUI does not loop** — it gets only a
 > reposition transition, so shimmer and pulse are static there.
+>
+> **If you want a loop that animates something other than opacity, use a [keyframe
+> timeline](#keyframe-animations) instead** — it carries real values on the wire, so it has none of these
+> limits.
+
+## Keyframe animations
+
+`.Keyframes(…)` describes the whole *shape* of an animation rather than just its endpoints — mirroring
+SwiftUI's `keyframeAnimator(initialValue:content:keyframes:)`. Each property gets its **own track** with its
+own stops and its own per-segment curves, and all tracks share one clock:
+
+```csharp
+new Circle().Frame(64, 64).ForegroundColor(Color.Blue)
+    .Keyframes(k => k
+        .Track(Prop.Opacity, t => t
+            .At(0.0, 1.0)
+            .At(0.5, 0.3, Anim.EaseOut())
+            .At(1.0, 1.0))
+        .Track(Prop.Scale, t => t
+            .At(0.0, 1.0)
+            .At(0.6, 1.2, Anim.Spring())
+            .At(1.0, 1.0))
+        .Duration(1.2)
+        .Repeating());
+```
+
+**Stop times are fractions of `Duration`** (0–1), not seconds — so retiming an animation is one call. A
+stop's curve is how the value *arrives* at it from the previous stop; the first stop's curve is unused, and
+a stop with no curve uses `.Curve(…)` (default ease-in-out).
+
+### Timeline options
+
+| Call | |
+|------|--|
+| `.Track(Prop, t => …)` | Adds a property's track. Stops may be declared in any order — they're sorted by time. |
+| `.Duration(seconds)` | One cycle's length (default `1`). |
+| `.Delay(seconds)` | Waits before the first cycle. |
+| `.Curve(spec)` | Default curve for stops that don't name one. |
+| `.Repeating(count, autoreverse)` | Loops; `count: -1` (the default) is forever, `autoreverse: true` yo-yos. |
+| `.On(value)` | Replays a non-repeating timeline whenever `value` changes (the `on:` of `.Animation`). |
+
+### Animatable properties
+
+`Prop.Opacity`, `Prop.Scale` (uniform), `Prop.ScaleX`, `Prop.ScaleY`, `Prop.Rotation` (degrees),
+`Prop.OffsetX`, `Prop.OffsetY`, `Prop.Width`, `Prop.Height`.
+
+Track values are **absolute**, and a track **overrides** the static modifier for the property it drives —
+a `Prop.Opacity` track wins over `.Opacity(…)` on the same view while it plays. That's what makes the two
+composable: set the resting value with modifiers, and let tracks own only what animates.
+
+### Per-backend behavior
+
+| Backend | Maps to |
+|---|---|
+| SwiftUI (iOS/macOS/tvOS) | a real `KeyframeAnimator` with `LinearKeyframe(_:duration:timingCurve:)` per stop — SwiftUI owns the clock. ✅ Compiles for iOS device + simulator, tvOS device + simulator and macOS. |
+| Compose (Android) | one `keyframes<Float>` spec per track, looped with `rememberInfiniteTransition` / `Animatable`. ✅ Compiles. |
+| Skia / WebGPU / Unity | sampled on the engine's own clock in [`VisualNode`](../src/SwiftDotNet.Graphics/VisualNode.cs). ✅ Verified by tests on macOS. |
+| Web | a generated per-timeline `@keyframes` rule, emitted once into the host `<style>` and named from a hash of the timeline. |
+| GTK | driven from C# on the widget's `Gdk.FrameClock` (**not** CSS), so it reaches transforms and frame size too. |
+| WinUI | a `Storyboard` of `DoubleAnimationUsingKeyFrames`. 🧩 **Scaffolded** — never compiled, see [Windows](backends/windows.md). |
+| TUI | ❌ **no-op**, like `.Animation` — the terminal backend has no animation clock and no sub-cell transform. |
+
+### Gotchas
+
+- **`.Keyframes` and `.Animation` on the same view**: keyframes wins for the properties it declares. On Web
+  and GTK the canned pulse explicitly stands down so the two don't fight over the same CSS/opacity.
+- **Curves are baked on the CSS backends.** A CSS rule can't give two properties different timing
+  functions, so Web flattens the tracks to stops that already carry the eased shape and lets the browser
+  interpolate linearly between them. The result matches the engine; the generated rule is just longer.
+- **`spring` is an approximation off-Apple.** SwiftUI gets a real timing curve; Web/WinUI get an
+  overshooting bezier and the engine a decaying settle. All read as a spring; none are physically identical.
+- **`autoreverse` is spelled out, not flagged, on SwiftUI and Compose.** Both loop forwards only, so the
+  return leg is emitted as real mirrored keyframes — which is why a cycle there is `2 × Duration`.
+- **A finite `count` degrades on SwiftUI.** `KeyframeAnimator`'s `repeating:` is all-or-nothing, so any
+  count above 1 loops forever there.
 
 Explicit `Animate.Run(…)` transactions and enter/leave `.Transition(…)` are **later phases** — see the
 [Roadmap](roadmap.md).

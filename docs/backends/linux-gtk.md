@@ -89,6 +89,13 @@ Needs GTK4 native libs: macOS `brew install gtk4` (libs in `/opt/homebrew/lib`),
   GTK exposes to CSS. Like the Web backend's shared `sdn-pulse`, it loops `opacity` 1 → 0.4. A looping
   *scale* or *rotate* is not expressible (GTK CSS has no `transform`), even though one-shot transforms now
   work via the `Gtk.Fixed` route above.
+- **`.Keyframes(…)` bypasses CSS entirely and therefore has no such limit.** A
+  [keyframe timeline](../modifiers-gestures-animation.md#keyframe-animations) is driven from C# on the
+  widget's `Gdk.FrameClock` (`GtkNode.TickKeyframes`) and sampled with the shared Core sampler, so it reaches
+  **every** property — opacity, the `Gtk.Fixed` transform (scale/rotate/translate) and the frame size — and
+  plays frame-for-frame identically to the Graphics engine. Cost: one tick callback per animated node. The
+  `Gtk.Fixed` wrapper for a transform track is created while the node is being built, not on the first tick,
+  because swapping `Widget` after the parent has packed the node would not reparent it.
 - **`Image.FromUrl` is fetched asynchronously** and cached by URL string, so the widget renders empty for a
   frame and then fills in. Any failure (DNS, HTTP status, timeout, undecodable payload) is swallowed and the
   placeholder stays — it never throws.

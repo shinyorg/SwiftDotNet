@@ -63,7 +63,11 @@ scrollbar); **all inputs** tap-interactive (+ keyboard/drag from the window); na
 Sheet bottom-sheet, Alert modal, Menu popover); the custom-renderer registry; the full gesture set (tap,
 long-press, swipe, continuous drag, pinch — see [the router](#gestures-hosts-must-wire-the-pointer-router));
 and an implicit animation clock (one-shot opacity + height interpolation, plus self-playing
-`.Repeating()` loops). The [Collection View](../collection-view.md) is fully test-verified on Skia.
+`.Repeating()` loops, plus full
+[keyframe timelines](../modifiers-gestures-animation.md#keyframe-animations) — opacity, scale, rotation,
+offset and frame size, sampled per frame from the tracks on the wire; a `Prop.Width`/`Prop.Height` track
+drives `Measure`, not just the paint transform). The [Collection View](../collection-view.md) is fully
+test-verified on Skia.
 
 Skia is the **reference implementation** for [`Grid`](../views-and-controls.md#grid) and
 [`AbsoluteLayout`](../views-and-controls.md#absolutelayout): it owns the only from-scratch track-sizing
