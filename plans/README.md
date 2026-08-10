@@ -8,7 +8,7 @@ does today and the plan describes how it got there.
 A plan is deleted once it is fully implemented and its content lives in `docs/` (e.g. the Skia backend
 plan, removed 2026-07-19 — see [Skia backend](../docs/backends/skia.md)).
 
-## Status at a glance — 2026-07-20
+## Status at a glance — 2026-08-08
 
 | Plan | Status | What's left |
 |---|---|---|
@@ -19,6 +19,7 @@ plan, removed 2026-07-19 — see [Skia backend](../docs/backends/skia.md)).
 | [Safe area insets](safe-area-insets-plan.md) | **Implemented, unverified** | Device/simulator run (notched iOS sim + Android 15 emulator); RTL reconciliation; a sample that uses it; decide on the `SafeAreaRegions` name collision with MAUI. Docs: [Safe area](../docs/modifiers-gestures-animation.md#safe-area-ios--android-only) |
 | [Skia MAUI host](skia-maui-host-plan.md) | **Resolved** — iOS + Android verified, incl. touch scroll / slider / soft keyboard | Caret placement & selection; keyboard avoidance; pan inertia; automated coverage of the MAUI adapter; the Windows head. The "repaint defect" was a *sample* bug (a rebuilt stateful child), not a host bug. Docs: [Skia](../docs/backends/skia.md) |
 | [Accessibility & screen readers](accessibility-plan.md) | Draft — nothing built | Everything. Phase 1 (Core modifiers + the `$a11y` settings channel) is standalone; Phases 3–4 (the Skia accessibility tree + its iOS/Android host adapters) are where the real gap is — Skia is a single unlabelled rectangle to VoiceOver/TalkBack today |
+| [Game surface & real-time rendering](game-engine-plan.md) | Draft — nothing built | Everything. Phases 1–3 (a `Canvas` node, a `DisplayList` recorder, `.OnFrame(dt)` vsync, raw input, paths/blend/atlases) **supersede F8** and stand on their own for charts/signature pads; Phase 4 (`SwiftDotNet.Game`) is a separate bet to decide at the Phase-2 checkpoint. Key finding: `IBridge.Render` takes JSON on *every* backend, so the surface must bypass it entirely |
 | [Navigation service](navigation-service-plan.md) | ⏸ **Paused** | Everything. Would be the first consumer of `ViewScope` (built, no caller) |
 | [View construction seam](view-construction-seam.md) | Draft | Decision 1 — adopt the function form (`Text()` vs `new Text()`)? The `[Inject]` generator it once owned already shipped |
 | [Windows / Scenes (multi-window)](windows-plan.md) | Draft — nothing built | Step 0 is de-singletoning `SwiftApp`; then the Swift shim host-handle refactor |

@@ -72,6 +72,23 @@ contrast) in the shape of [`SafeArea`](../src/SwiftDotNet/Core/SafeArea.cs), and
 accessibility tree with `UIAccessibilityContainer` / `ExploreByTouchHelper` host adapters, since the Skia
 canvas is a single unlabelled rectangle to VoiceOver and TalkBack today.
 
+### Game surface & real-time rendering
+[`plans/game-engine-plan.md`](../plans/game-engine-plan.md) — draft, nothing built. Everything the framework
+does today is **declarative and native-owned**: `.Animation` and `.Keyframes` hand interpolation to
+SwiftUI/CSS/Compose and never report back, so there is no frame clock, no `update(dt)`, no immediate-mode
+drawing surface, and no keyboard/multi-touch input anywhere.
+
+The plan adds a `Canvas` node that is diffed **once** and thereafter bypasses
+[`IBridge`](../src/SwiftDotNet/Core/IBridge.cs) entirely — necessary because `IBridge.Render` takes a JSON
+string on *every* backend, including the pure-C# in-process ones, so no per-frame content can travel that
+path. Frames are recorded into a binary `DisplayList` in C# and replayed per backend (the same shape as
+Flutter's Dart→engine display list), which works across both the shim and interpreter routes. Phases: 1 =
+surface, 2 = `.OnFrame(dt)` + raw input, 3 = paths/blend modes/sprite atlases, 4 = a separate
+`SwiftDotNet.Game` library, 5 = the remaining backends. Phases 1–3 are justified by charts, signature pads
+and custom gauges on their own; they also **supersede F8** in
+[`plans/controls-missing-features-plan.md`](../plans/controls-missing-features-plan.md). Audio and a
+portable shader language are explicitly out of scope.
+
 ## Backend-specific next steps
 
 - **Windows** — compile + verify the WinUI 3 backend on a Windows host (expect minor API fixes). See
@@ -108,4 +125,5 @@ canvas is a single unlabelled rectangle to VoiceOver and TalkBack today.
 - **An arbitrary path primitive** in [`ICanvas`](../src/SwiftDotNet.Graphics/ICanvas.cs), behind a
   capability check rather than in the interface — adding it unconditionally would make every future
   self-drawing backend owe a full vector rasterizer. Skia gets it free; WebGPU would need something like
-  Vello.
+  Vello. Now scheduled as Phase 3 of the
+  [game surface plan](../plans/game-engine-plan.md), alongside blend modes and sprite atlases.

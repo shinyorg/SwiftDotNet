@@ -212,8 +212,16 @@ ParallaxCollectionView, Scheduler agenda, ChatView — **~9 controls**.
 - **Sequencing:** (a)+(b)+(c) are additive to `List` and unblock most; (d)+(e) are larger and can be a
   later wave (many controls work acceptably without true virtualization at small N).
 
-### F8 — DSL drawing surface (retained vector canvas)  ·  effort L
+### F8 — DSL drawing surface (retained vector canvas)  ·  effort L  ·  **superseded 2026-08-08**
 Unlocks: ColorPicker, SignaturePad, ImageEditor — **3 controls** (all Tier 2/3).
+
+> **Superseded by [Game surface & real-time rendering](game-engine-plan.md), Phases 1–3.** The constraint
+> below is half right: the draw *closure* can't cross, but its **output** can, as a flat binary command
+> buffer over the existing C ABI — which is how Flutter's Dart layer feeds its C++ engine. What that plan
+> rejects is serializing the command list into a node *prop*, since
+> [`IBridge.Render`](../src/SwiftDotNet/Core/IBridge.cs) takes JSON on **every** backend, including the
+> pure-C# in-process ones. SignaturePad and ImageEditor become consumers of that surface. The
+> build-ColorPicker-on-F5-gradients recommendation still stands and is unaffected.
 
 - **The constraint:** MAUI's `GraphicsView`/`IDrawable` is an **immediate-mode callback** that runs on
   the C# side; SwiftDotNet's renderer is *remote* (across the wire/native shim), so a draw closure can't
