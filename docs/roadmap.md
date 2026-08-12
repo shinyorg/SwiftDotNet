@@ -18,6 +18,26 @@ views keeping local state across renders via view-instance reconciliation. It un
 
 ## Open workstreams
 
+### Linux / Wayland backend — **scaffolded, unproven**
+See [Linux / Wayland](backends/wayland.md). The Skia backend now has a host that talks `xdg-shell` directly:
+client-side decorations, an shm swapchain, xkb input with compose and key repeat, fractional scaling,
+clipboard and IME. The protocol layer is shared with the .NET MAUI Wayland backend in the sibling
+`maui-wayland` repo.
+
+Everything compiles and the protocol tables are unit-tested (23 tests covering signature arity, cross-interface
+references and the native `wl_interface` struct layout), but **nothing has been run against a live
+compositor** — it was written on macOS. Remaining, in order:
+
+1. First run on GNOME/Mutter, KDE/KWin and a wlroots compositor. These three diverge on decorations,
+   fractional scale and layer-shell availability, so all three matter.
+2. Route `zwp_text_input_v3` into the Skia text controls — the platform layer surfaces preedit/commit already,
+   but `SkiaBridge` still only receives committed text from xkb.
+3. `wl_subsurface` overlays for `WebView` / `Map`, which no Skia host can paint.
+4. A GPU path (EGL or Vulkan + `zwp_linux_dmabuf_v1`); today it is CPU raster into shared memory.
+5. AT-SPI2 accessibility — the genuine cost of self-drawing on Linux, and the reason to keep the
+   [GTK4 backend](backends/linux-gtk.md) alongside it rather than replacing it.
+
+
 ### Dependency injection — **Phase 1 shipped**
 See [Hosting & Dependency Injection](hosting-and-di.md);
 design in [`plans/dependency-injection-proposal.md`](../plans/dependency-injection-proposal.md).

@@ -23,6 +23,7 @@ And **two routes** to get there (see [Architecture → the two backend routes](.
 | tvOS | SwiftUI | Same Swift shim (`#if os(tvOS)` fallbacks) | ✅ Verified on Apple TV sim | [Apple](apple.md) |
 | Android | Jetpack Compose | Kotlin shim (`.aar`, JNI) | ✅ Verified on emulator | [Android](android.md) |
 | Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop | [Linux/GTK](linux-gtk.md) |
+| Linux | Self-drawn on a native Wayland surface | Pure C# (libwayland/xkbcommon P/Invoke, no shim) | 🧩 Scaffolded — builds clean; **never run against a compositor** (protocol tables unit-tested) | [Linux/Wayland](wayland.md) |
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded — **never compiled**, no tests | [Windows](windows.md) |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome | [Web](web.md) |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp)** | ✅ Verified (macOS window + PNG) | [Skia](skia.md) |

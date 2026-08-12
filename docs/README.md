@@ -44,6 +44,7 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 - **[Apple — iOS / macOS / tvOS](backends/apple.md)** (SwiftUI)
 - **[Android](backends/android.md)** (Jetpack Compose)
 - **[Linux / GTK](backends/linux-gtk.md)** (GTK4, pure C#)
+- **[Linux / Wayland](backends/wayland.md)** (self-drawn Skia on a native Wayland surface, no GTK)
 - **[Windows](backends/windows.md)** (WinUI 3, pure C#)
 - **[Web](backends/web.md)** (Blazor WebAssembly → HTML/DOM)
 - **[Skia](backends/skia.md)** (self-drawing SkiaSharp toolkit)
@@ -64,6 +65,7 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 | tvOS | SwiftUI | Same Swift shim (`#if os(tvOS)` fallbacks) | ✅ Verified on Apple TV sim |
 | Android | Jetpack Compose | Kotlin shim (`.aar`, JNI) | ✅ Verified on emulator |
 | Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop |
+| Linux | Self-drawn on a native Wayland surface | Pure C# (libwayland/xkbcommon P/Invoke) | 🧩 Scaffolded — builds clean; never run against a compositor |
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded — **never compiled**, no tests |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp)** | ✅ Verified (macOS window, Silk.NET desktop, headless PNG, and iOS sim + Android emulator via the MAUI host) |

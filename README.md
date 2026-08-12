@@ -17,6 +17,7 @@ controls) and **self-drawing** (paint every pixel with SkiaSharp for a pixel-ide
 | tvOS | SwiftUI | Same Swift shim (`#if os(tvOS)` fallbacks) | ✅ Verified on Apple TV sim |
 | Android | Jetpack Compose | Kotlin shim (`.aar`, JNI) | ✅ Verified on emulator |
 | Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop |
+| Linux | Self-drawn on a native Wayland surface | Pure C# (libwayland/xkbcommon P/Invoke) | 🧩 Scaffolded — builds clean; never run against a compositor |
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded (needs Windows to build) |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp — no native controls)** | ✅ Verified (macOS window + headless PNG) |
@@ -213,6 +214,7 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 | `src/SwiftDotNet.Gtk` | `net10.0` | **Separate** (Linux/GTK shares the `net10.0` TFM with Core, so folding it in would force every neutral consumer to take the GTK dependency). Pure-C# GTK4 backend over Gir.Core; references the combined `SwiftDotNet`. |
 | `src/SwiftDotNet.Web` | `net10.0` (Razor lib) | **Separate** (Blazor has no distinct TFM either). Pure-C# **Blazor WebAssembly** backend — `SwiftDotNetView` renders the node tree to HTML/CSS via `RenderTreeBuilder`; DOM events call back into C#. |
 | `src/SwiftDotNet.Skia` | `net10.0` | **Separate** (self-drawing engine; SkiaSharp on every neutral consumer). Pure-C# **SkiaSharp** backend — `SkiaBridge` keeps a retained scene tree and paints/measures/hit-tests it directly on an `SKCanvas`. Layout, HarfBuzz text, scrolling, overlays, input/focus, animation clock, `SkiaRenderers` registry. Host-agnostic via `ISkiaHost`. |
+| `src/SwiftDotNet.Wayland` | `net10.0` | **Separate** (drags in `Wayland.Platform` and its libwayland/libxkbcommon P/Invoke, which only Linux can load). Hosts the **Skia** backend on a native Wayland surface — no GTK, no GLFW. Supplies only a canvas, title text, input translation and the animation tick; the protocol, windowing, decorations and buffers come from the shared `maui-wayland` repo. |
 | `src/SwiftDotNet.Tui` | `net10.0` | **Separate** (same reasoning as GTK — a terminal toolkit on every neutral consumer). Pure-C# **XenoAtom.Terminal.UI** backend — `TuiBridge` keeps a retained `Visual` tree and applies the same patches to it. Includes a hand-rolled PNG decoder and the image→character-art renderer, so it takes **no** image dependency. |
 | `src/SwiftDotNet.Tui.Graphics` | `net10.0` | **Optional** add-on: real Sixel/Kitty/iTerm2 images plus JPEG/WebP/GIF decode. Separate because it drags in SkiaSharp + native assets for three RIDs, which a terminal app shouldn't pay for unless it asks. |
 | `native/SwiftDotNetBridge` | Swift | `Bridge.swift` + build script → `build/SwiftDotNetBridge.xcframework` (SwiftUI interpreter; 5 slices — iOS device/sim, tvOS device/sim, macOS) |
@@ -364,6 +366,10 @@ dotnet run --project sample/SampleApp -f net10.0-windows10.0.19041.0
 # Linux/GTK — separate project; needs GTK4 (brew install gtk4 / apt install libgtk-4-1)
 dotnet run --project sample/SampleApp.Gtk
 
+# Linux/Wayland — self-drawn Skia on a raw Wayland surface, no GTK.
+# Needs a Wayland session + libwayland-client + libxkbcommon. Clone maui-wayland beside this repo.
+dotnet run --project sample/SampleApp.Wayland
+
 # Web (Blazor WASM) — separate project; runs the whole framework in the browser
 dotnet run --project sample/SampleApp.Web           # → http://localhost:5000
 ```
@@ -382,6 +388,7 @@ platforms; Windows is scaffolded pending a Windows build host:
 | Linux | GTK4 desktop | 325 real `Gtk.Widget`s, pure C# |
 | Web | Chrome (Blazor WASM) | Real HTML/DOM, pure C# |
 | Windows | — | WinUI 3 backend scaffolded, not yet compiled |
+| Linux (Wayland) | — | Self-drawn Wayland backend builds clean; never run against a compositor |
 
 The demo is organized MAUI-Shell-style — a **flyout menu** (a grouped `Form` inside a `NavigationStack`)
 whose rows push detail pages — and exercises the whole vocabulary across seven sections:

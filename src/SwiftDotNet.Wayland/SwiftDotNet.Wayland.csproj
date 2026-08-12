@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!-- The self-drawing Skia backend, running on a raw Wayland surface instead of GTK/Silk.NET. This project
+       adds only the host: SwiftDotNet.Graphics still owns layout, hit-testing, gestures and the animation
+       clock, exactly as it does under every other Skia host. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj" />
+  </ItemGroup>
+
+  <!-- Wayland.Platform lives in the sibling maui-wayland repo so the MAUI backend and this one share it.
+       Override WaylandPlatformRoot if the repos are not checked out side by side; once the packages ship,
+       swap this block for a PackageReference. -->
+  <PropertyGroup>
+    <WaylandPlatformRoot Condition="'$(WaylandPlatformRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\maui-wayland\src</WaylandPlatformRoot>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(WaylandPlatformRoot)\Wayland.Platform\Wayland.Platform.csproj')">
+    <ProjectReference Include="$(WaylandPlatformRoot)\Wayland.Platform\Wayland.Platform.csproj" />
+  </ItemGroup>
+
+  <Target Name="WarnMissingWaylandPlatform" BeforeTargets="BeforeBuild"
+          Condition="!Exists('$(WaylandPlatformRoot)\Wayland.Platform\Wayland.Platform.csproj')">
+    <Error Text="Wayland.Platform was not found at '$(WaylandPlatformRoot)'. Clone the maui-wayland repo beside SwiftDotNet, or build with -p:WaylandPlatformRoot=&lt;path-to&gt;/maui-wayland/src." />
+  </Target>
+
+</Project>
