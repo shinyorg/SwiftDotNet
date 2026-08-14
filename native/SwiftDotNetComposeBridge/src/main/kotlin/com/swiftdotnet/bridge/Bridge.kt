@@ -915,6 +915,7 @@ private fun RawNode(node: VNode) {
         "NavigationLink" -> NavigationLinkNode(node)
         "Sheet" -> SheetNode(node)
         "Alert" -> AlertNode(node)
+        "ActionSheet" -> ActionSheetNode(node)
 
         "WebView" -> WebViewNode(node)
         "Image" -> RasterImage(node)
@@ -1568,16 +1569,130 @@ private fun SheetNode(node: VNode) {
     }
 }
 
+/** One parsed entry of a dialog's flat `buttons` prop. */
+private data class DialogButtonSpec(val label: String, val role: String)
+
+/**
+ * Mirrors `DialogButtons.Parse` in Core: `label,role;label,role`, with `\` escaping the delimiters and
+ * itself. Malformed entries are skipped; an empty string yields a single "OK" so the dialog is always
+ * dismissable.
+ */
+private fun parseDialogButtons(encoded: String): List<DialogButtonSpec> {
+    val parsed = mutableListOf<DialogButtonSpec>()
+    val label = StringBuilder()
+    val role = StringBuilder()
+    var inRole = false
+    var escaped = false
+
+    fun flush() {
+        if (label.isNotEmpty() || role.isNotEmpty()) parsed.add(DialogButtonSpec(label.toString(), role.toString()))
+        label.clear()
+        role.clear()
+        inRole = false
+    }
+
+    for (c in encoded) {
+        if (escaped) {
+            (if (inRole) role else label).append(c)
+            escaped = false
+            continue
+        }
+        when {
+            c == '\\' -> escaped = true
+            c == ',' && !inRole -> inRole = true
+            c == ';' -> flush()
+            else -> (if (inRole) role else label).append(c)
+        }
+    }
+    flush()
+
+    return parsed.ifEmpty { listOf(DialogButtonSpec("OK", "cancel")) }
+}
+
+@Composable
+private fun DialogTextButton(node: VNode, index: Int, button: DialogButtonSpec, modifier: Modifier = Modifier) {
+    TextButton(onClick = { SwiftDotNetBridge.emit(node.id, index.toString()) }, modifier = modifier) {
+        Text(
+            button.label,
+            color = if (button.role == "destructive") MaterialTheme.colorScheme.error else Color.Unspecified,
+        )
+    }
+}
+
 @Composable
 private fun AlertNode(node: VNode) {
     node.children.getOrNull(0)?.let { NodeView(it) }
     if (node.b("presented")) {
+        val buttons = parseDialogButtons(node.s("buttons"))
+        // Material3 has two button slots. Up to two buttons map onto them (cancel takes the dismiss
+        // slot, which is also what the system back gesture reads as); beyond that they stack inside the
+        // confirm slot — Material's own overflow shape for a button row that no longer fits.
+        val stacked = buttons.size > 2
+        val cancel = buttons.indexOfFirst { it.role == "cancel" }
+        val dismiss = if (stacked || buttons.size < 2) -1 else if (cancel >= 0) cancel else 0
+        val confirm = if (stacked) -1 else buttons.indices.firstOrNull { it != dismiss } ?: -1
+
         AlertDialog(
             onDismissRequest = { SwiftDotNetBridge.emit(node.id, "false") },
-            confirmButton = { TextButton(onClick = { SwiftDotNetBridge.emit(node.id, "false") }) { Text("OK") } },
+            confirmButton = {
+                if (stacked) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        buttons.forEachIndexed { i, b -> DialogTextButton(node, i, b) }
+                    }
+                } else if (confirm >= 0) {
+                    DialogTextButton(node, confirm, buttons[confirm])
+                }
+            },
+            dismissButton = if (dismiss >= 0) {
+                { DialogTextButton(node, dismiss, buttons[dismiss]) }
+            } else null,
             title = { Text(node.s("title")) },
             text = { Text(node.s("message")) },
         )
+    }
+}
+
+/**
+ * An action sheet is a modal bottom sheet on Android — the Material equivalent of iOS's action sheet,
+ * and the shape a long option list needs. Options are full-width rows; the cancel-role button is kept in
+ * the list rather than detached, because Material sheets dismiss by swipe and don't use a cancel row.
+ */
+@Composable
+private fun ActionSheetNode(node: VNode) {
+    node.children.getOrNull(0)?.let { NodeView(it) }
+    if (node.b("presented")) {
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { SwiftDotNetBridge.emit(node.id, "false") },
+            sheetState = sheetState,
+        ) {
+            Column(Modifier.padding(bottom = 24.dp)) {
+                if (node.s("title").isNotEmpty()) {
+                    Text(
+                        node.s("title"),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    )
+                }
+                if (node.s("message").isNotEmpty()) {
+                    Text(
+                        node.s("message"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp),
+                    )
+                }
+                parseDialogButtons(node.s("buttons")).forEachIndexed { i, b ->
+                    Text(
+                        b.label,
+                        color = if (b.role == "destructive") MaterialTheme.colorScheme.error else Color.Unspecified,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { SwiftDotNetBridge.emit(node.id, i.toString()) }
+                            .padding(horizontal = 24.dp, vertical = 14.dp),
+                    )
+                }
+            }
+        }
     }
 }
 

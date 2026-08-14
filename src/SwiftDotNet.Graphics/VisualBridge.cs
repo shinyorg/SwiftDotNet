@@ -324,6 +324,18 @@ public class VisualBridge : IBridge
         return node.TryGetSwatchCenter(index, out center);
     }
 
+    /// <summary>
+    /// Centre of the <paramref name="index"/>th button on a presented Alert / ActionSheet (valid after a
+    /// <see cref="Paint"/> pass). For tests/tooling — like the swatch popover, the dialog is engine-drawn
+    /// chrome with no node of its own to hit-test against.
+    /// </summary>
+    public bool TryGetDialogButtonCenter(string id, int index, out Point center)
+    {
+        center = default;
+        if (Find(id) is not { } node) return false;
+        return node.TryGetDialogButtonCenter(index, out center);
+    }
+
     /// <summary>Feed a continuous pinch. <paramref name="phase"/>: begin captures the target; scale is cumulative.</summary>
     public bool Magnify(Point point, GesturePhase phase, float scale)
     {

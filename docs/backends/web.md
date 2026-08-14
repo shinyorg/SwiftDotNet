@@ -32,7 +32,7 @@ bordered rows, `DisclosureGroup`→button + conditional, `TabView`→tab-bar but
 `Menu`→`details`/`summary`, `TextField`/`SecureField`→`<input type=text/password>`, `TextEditor`→`textarea`,
 `Toggle`→`<input type=checkbox>`, `Slider`→`<input type=range>`, `Stepper`→`<input type=number>`,
 `Picker`→`<select>`, `DatePicker`/`ColorPicker`→native inputs, `NavigationStack`/`Link`→header + content +
-local stack, `Sheet`/`Alert`→fixed overlay `div`, `Image`/`Label`→emoji `span`, `ProgressView`/`Gauge`→
+local stack, `Sheet`/`Alert`/`ActionSheet`→fixed overlay `div` (the action sheet bottom-anchored, with full-width rows), `Image`/`Label`→emoji `span`, `ProgressView`/`Gauge`→
 `<progress>`, `Link`→`<a>`, shapes→`div` + border-radius + bg.
 
 **Modifiers → inline CSS** (padding/background/border/cornerRadius/shadow/opacity/foregroundColor/font/frame/

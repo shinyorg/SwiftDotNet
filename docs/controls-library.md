@@ -29,6 +29,47 @@ new VStack(
     new Fab("plus", () => Toast.Show("Added")))
 ```
 
+## The `Dialog` service — alert / confirm / prompt / action sheet
+
+[`Dialog`](../src/SwiftDotNet.Controls/Dialog.cs) is the imperative, **in-app** counterpart to the core
+[`Alert`/`ActionSheet` views](views-and-controls.md#alerts--action-sheets). It draws its own card over an
+`Overlay` scrim, so it looks identical everywhere and can be called from anywhere — no `State<bool>` to
+thread, no view to attach to. It needs an [`OverlayHost`](global-styles.md) root.
+
+```csharp
+Dialog.Alert("Heads up", "Saved to your drafts.");
+
+Dialog.Confirm("Delete?", "This cannot be undone.",
+    ok => Toast.Show(ok ? "Deleted" : "Cancelled"), confirm: "Delete", destructive: true);
+
+Dialog.Prompt("Rename", "What should we call it?",
+    name => { if (name is not null) Rename(name); },      // null == cancelled
+    initialValue: "Untitled", placeholder: "Name");
+
+Dialog.ActionSheet("Share this draft", new[] { "Copy link", "Email", "Discard" },
+    index => { if (index >= 0) Share(index); },           // -1 == cancelled
+    message: "Pick a destination.", destructiveIndex: 2);
+```
+
+Which one to reach for:
+
+| | `Dialog.*` (Controls) | `Alert` / `ActionSheet` (Core) |
+|---|---|---|
+| Style | In-app card, identical on every backend | The platform's real native dialog |
+| Call shape | Imperative, from anywhere | Declarative, bound to a `State<bool>` |
+| Text input | ✅ `Dialog.Prompt` | ❌ — no native alert exposes a portable text field |
+| System dismissal (Esc, back) | ✗ — the buttons are the only exits | ✅ |
+
+**Gotchas:**
+
+- **`Prompt` reports `null` for cancel and `""` for a submitted-empty field** — the two stay
+  distinguishable on purpose. Same idea in `ActionSheet`, where cancel is `-1` rather than a valid index.
+- **Neither dismisses on a scrim tap.** A modal decision must go through a button, otherwise the callback
+  would never fire and the caller would wait forever on a result that isn't coming. `ActionSheet`'s Cancel
+  row is the way out.
+- `Dialog.ActionSheet` is bottom-anchored, so like every positioned overlay it depends on the backend
+  honouring `ZStack`'s `alignment` prop (see the gotcha at the end of this page).
+
 ## What each control depends on
 
 | Control(s) | Core primitives they need |
@@ -36,6 +77,7 @@ new VStack(
 | `Slider`, `RangeSlider`, `ColorPicker`, `FloatingPanel`, `SwipeContainer`, `ReorderableList` | `.OnDrag`, `.Offset`, `.Shadow` |
 | `ImageViewer` | `.OnDrag`, `.OnMagnify`, `.ScaleEffect`, raster + URL `Image` |
 | `Toast`, `Dialog`, `LoadingOverlay`, `DurationPicker` | `Overlay`/`OverlayHost` → **`ZStack` + `alignment`**, `.Shadow` |
+| `Dialog.Prompt` | the above, plus a bound `TextField` |
 | `SkeletonView` | gradient `.Background`, repeating `.Animation` |
 | `BadgeView` | `.Offset`, `.ScaleEffect`, repeating `.Animation` |
 | `FabMenu` | `.Rotation`, `.Shadow` |

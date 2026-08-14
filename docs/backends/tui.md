@@ -65,7 +65,7 @@ three desktop RIDs**, which no terminal app should pay for unless it asks. See
 | `DatePicker` | `TextBox` accepting `yyyy-MM-dd` |
 | `ColorPicker` | `ColorPicker` with its palette shown |
 | `NavigationStack` / `NavigationLink` | `DockLayout` (title bar + `ContentSwitcher`); Esc or Back pops |
-| `Sheet` / `Alert` | `Dialog` in the root `WindowLayer` |
+| `Sheet` / `Alert` / `ActionSheet` | `Dialog` in the root `WindowLayer` (Alert's buttons in a row, ActionSheet's in a column) |
 | `ProgressView` | `ProgressBar`, or `Spinner` when indeterminate |
 | `Gauge` | `ProgressBar`, normalised across min…max |
 | `Divider` | `Rule` |

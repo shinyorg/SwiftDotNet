@@ -71,7 +71,9 @@ Needs GTK4 native libs: macOS `brew install gtk4` (libs in `/opt/homebrew/lib`),
   verify visually on real Linux.
 - `GtkBridge.Host` must **not** center (`Halign`/`Valign`) or content collapses to natural size; set the root
   widget `Hexpand`/`Vexpand=true` in the `replace` path to fill.
-- `Alert` is a modal `Gtk.Window` — `Gtk.AlertDialog.New` is a variadic constructor that Gir.Core skips.
+- `Alert` / `ActionSheet` are both a modal `Gtk.Window` — `Gtk.AlertDialog.New` is a variadic constructor
+  that Gir.Core skips. An `Alert`'s buttons sit in an end-aligned row; an `ActionSheet`'s stack vertically,
+  since GTK has no action-sheet idiom. Destructive-role buttons get the `destructive-action` CSS class.
 - Gir.Core specifics: optional modifier keys need `GetValueOrDefault` (not the indexer);
   `grid.RowSpacing`/`ColumnSpacing` are `int`; `TextBuffer.GetStartIter`/`GetEndIter` are `out` params;
   `Gtk.Calendar.GetDate()` returns a `GLib.DateTime` (`.ToUnix()`).

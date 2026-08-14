@@ -67,6 +67,14 @@ public sealed class SkiaBridge : VisualBridge
         center = default;
         return false;
     }
+
+    /// <summary>Centre of a button on a presented Alert / ActionSheet. For tests/tooling.</summary>
+    public bool TryGetDialogButtonCenter(string id, int index, out SKPoint center)
+    {
+        if (TryGetDialogButtonCenter(id, index, out Graphics.Point p)) { center = SkiaCanvas.ToSk(p); return true; }
+        center = default;
+        return false;
+    }
 }
 
 /// <summary>

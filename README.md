@@ -96,7 +96,7 @@ Two ways to add your own control:
   `AbsoluteLayout` (point or proportional bounds), `List` (+ `List.ForEach`),
   `Form`, `Section`, `Group`, `Spacer`, `Divider`
 - **Navigation & presentation**: `NavigationStack`, `NavigationLink`, `TabView` (+ `.Paged()` carousel),
-  `Tab`, `Sheet`, `Alert`, `DisclosureGroup`, `Menu`
+  `Tab`, `Sheet`, `Alert`, `ActionSheet`, `DisclosureGroup`, `Menu`
 - **Inputs (two-way bound)**: `TextField`, `SecureField`, `TextEditor`, `Toggle`, `Slider`,
   `Stepper`, `Picker`, `DatePicker`, `ColorPicker`
 - **Display**: `Text`, `Label`, `Image` (SF Symbols), `ProgressView`, `Gauge`, `Link`,
@@ -399,7 +399,7 @@ whose rows push detail pages — and exercises the whole vocabulary across seven
 - **Media**: Carousel (paged `TabView` with page dots), Indicators (ProgressView, Gauge), WebView, Maps.
 - **Data**: Lists & Selection (`List` + selection), Disclosure & Menus (DisclosureGroup + Menu).
 - **Styling**: Global Styles (environment cascade, reusable bundles, ambient control style, Theme).
-- **Navigation**: Sheets & Alerts — NavigationLink (push verified), Link, Sheet, Alert.
+- **Navigation**: Sheets & Alerts — NavigationLink (push verified), Link, Sheet, Alert (multi-button), ActionSheet.
 - Interactions confirmed live on each backend: flyout navigation push/pop, Menu action, and
   Button/TextField/Toggle/Slider bindings — including the full **event → C# `State` → re-render** round-trip
   (e.g. tapping a star updates the composite `Rating` to "5/5" in the browser).

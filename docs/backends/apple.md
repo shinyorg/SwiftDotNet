@@ -96,6 +96,12 @@ See [Getting Started](../getting-started.md#ios-swiftui) for build/run commands.
   See [Safe area](../modifiers-gestures-animation.md#safe-area-ios--android-only).
 - **Maps:** MapKit ships as a separate companion xcframework (`SwiftDotNetMaps`), registered via
   `AppleMaps.Register()` — it stays out of the core bridge. See [Maps](../maps.md).
+- **Alert / ActionSheet buttons need a dismissal guard.** SwiftUI dismisses the dialog *itself* when a
+  button is tapped, which fires the same `onChange(of: presented)` that a scrim dismissal does — so the
+  index the button emitted would be followed by a spurious `"false"`. `AlertNode`/`ActionSheetNode` record
+  the chosen index in a `@State` and let whichever of the two runs second stay quiet; the order between
+  the button action and the dismissal is not documented, so neither side may assume it goes first. See
+  [Alerts & action sheets](../views-and-controls.md#alerts--action-sheets).
 - **Keyframe timelines use a real `KeyframeAnimator`**, so SwiftUI owns the clock (the deployment floor is
   already iOS 17 / macOS 14 / tvOS 17, which is exactly what `KeyframeAnimator` needs — no availability
   guard). Three things the implementation is deliberately shaped around, all in

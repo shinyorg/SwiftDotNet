@@ -310,6 +310,16 @@ composable: set the resting value with modifiers, and let tracks own only what a
 Explicit `Animate.Run(…)` transactions and enter/leave `.Transition(…)` are **later phases** — see the
 [Roadmap](roadmap.md).
 
+## Presentation modifiers
+
+`.Sheet`, `.Alert`, `.ConfirmationDialog` and `.ActionSheet` read like modifiers but are not part of the
+modifier pass — each one **wraps** the view in the corresponding presentation node instead of appending to
+`node.modifiers`. That is what lets them stack (one view can own several dialogs) and why they don't appear
+in any backend's `applyModifiers`. They live in
+[`PresentationModifiers.cs`](../src/SwiftDotNet/Core/Views/PresentationModifiers.cs); see
+[Alerts & action sheets](views-and-controls.md#alerts--action-sheets) for the shape and the per-backend
+mapping.
+
 ## Related
 
 - [Views & Controls](views-and-controls.md) — what you apply these to.

@@ -101,7 +101,7 @@ sealed class WinNode
         "NavigationStack" => _nav!.Build(Children.Count > 0 ? Children[0].Element : Text("")),
         "NavigationLink" => MakeNavLink(),
         "Sheet" => Children.Count > 0 ? Children[0].Element : Text(""),
-        "Alert" => Children.Count > 0 ? Children[0].Element : Text(""),
+        "Alert" or "ActionSheet" => Children.Count > 0 ? Children[0].Element : Text(""),
         "WebView" => MakeWebView(),
         "Image" => MakeImage(),
         "Label" => MakeLabel(),
@@ -1001,8 +1001,8 @@ sealed class WinNode
             case "Slider": SyncSlider(); break;
             case "DisclosureGroup": ((Expander)Inner).IsExpanded = Bool("expanded"); break;
             case "TabView": SyncTabView(); break;
-            case "Sheet": SyncDialog(ref _sheet, sheet: true); break;
-            case "Alert": SyncDialog(ref _alert, sheet: false); break;
+            case "Sheet": SyncSheetDialog(); break;
+            case "Alert" or "ActionSheet": SyncAlertDialog(); break;
             default: _customRenderer?.Update(Inner, RenderCtx()); break;
         }
     }
@@ -1012,29 +1012,123 @@ sealed class WinNode
 
     ContentDialog? _sheet;
     ContentDialog? _alert;
+    // Set by a button click so Closed reports the choice; ContentDialog.Closed fires for both paths.
+    string? _dialogResult;
 
-    void SyncDialog(ref ContentDialog? dialog, bool sheet)
+    void SyncSheetDialog()
     {
         if (Bool("presented"))
         {
-            if (dialog is not null) return;
-            dialog = new ContentDialog
+            if (_sheet is not null) return;
+            _sheet = new ContentDialog
             {
                 XamlRoot = _bridge.Host.XamlRoot,
-                Title = sheet ? "" : Str("title"),
-                Content = sheet && Children.Count > 1 ? Children[1].Element : (object)Str("message"),
-                PrimaryButtonText = sheet ? "Close" : "OK",
+                Title = "",
+                Content = Children.Count > 1 ? Children[1].Element : (object)"",
+                PrimaryButtonText = "Close",
             };
-            var captured = dialog;
-            dialog.PrimaryButtonClick += (_, _) => _bridge.Emit(Id, "false");
-            dialog.Closed += (_, _) => _bridge.Emit(Id, "false");
-            _ = captured.ShowAsync();
+            _sheet.PrimaryButtonClick += (_, _) => _bridge.Emit(Id, "false");
+            _sheet.Closed += (_, _) => { _sheet = null; _bridge.Emit(Id, "false"); };
+            _ = _sheet.ShowAsync();
         }
-        else if (dialog is not null)
+        else if (_sheet is not null)
         {
-            dialog.Hide();
-            dialog = null;
+            _sheet.Hide();
+            _sheet = null;
         }
+    }
+
+    /// <summary>
+    /// Alert and ActionSheet both land on <see cref="ContentDialog"/> — Windows has no action-sheet idiom,
+    /// and a ContentDialog with a stacked choice list is what the Fluent guidelines point at.
+    ///
+    /// ContentDialog only has three built-in button slots, so up to three buttons map onto
+    /// Primary/Secondary/Close (cancel takes the Close slot, which is also what Esc triggers). Beyond that
+    /// the buttons move into the content as a stacked list, because silently dropping the fourth option
+    /// would be worse than losing the native button chrome.
+    /// </summary>
+    void SyncAlertDialog()
+    {
+        if (!Bool("presented"))
+        {
+            if (_alert is not null) { _alert.Hide(); _alert = null; }
+            return;
+        }
+        if (_alert is not null) return;
+
+        var buttons = DialogButtons.Parse(Str("buttons"));
+        var cancel = DialogButtons.CancelIndex(buttons);
+        var stacked = buttons.Count > 3 || Type == "ActionSheet";
+
+        _alert = new ContentDialog
+        {
+            XamlRoot = _bridge.Host.XamlRoot,
+            Title = Str("title"),
+        };
+        _dialogResult = null;
+
+        // The cancel button takes the close slot either way — that slot is what Esc and the title-bar
+        // dismiss map to, so leaving it empty would make the dialog's only exit report no choice at all.
+        if (cancel >= 0)
+        {
+            _alert.CloseButtonText = buttons[cancel].Label;
+            _alert.CloseButtonClick += (_, _) => _dialogResult = cancel.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (stacked)
+        {
+            var panel = new StackPanel { Spacing = 8 };
+            if (Str("message").Length > 0)
+                panel.Children.Add(new TextBlock { Text = Str("message"), TextWrapping = TextWrapping.Wrap });
+            for (var i = 0; i < buttons.Count; i++)
+            {
+                if (i == cancel) continue;
+                var index = i;   // capture
+                var button = new WinButton
+                {
+                    Content = buttons[i].Label,
+                    HorizontalAlignment = WinHorizontalAlignment.Stretch,
+                };
+                button.Click += (_, _) =>
+                {
+                    _dialogResult = index.ToString(CultureInfo.InvariantCulture);
+                    _alert?.Hide();
+                };
+                panel.Children.Add(button);
+            }
+            _alert.Content = panel;
+        }
+        else
+        {
+            _alert.Content = Str("message");
+            // Fill the remaining slots in the order Fluent reads them: primary, then secondary.
+            var slot = 0;
+            for (var i = 0; i < buttons.Count; i++)
+            {
+                if (i == cancel) continue;
+                var index = i;   // capture
+                if (slot++ == 0)
+                {
+                    _alert.PrimaryButtonText = buttons[i].Label;
+                    _alert.PrimaryButtonClick += (_, _) => _dialogResult = index.ToString(CultureInfo.InvariantCulture);
+                    _alert.DefaultButton = ContentDialogButton.Primary;
+                }
+                else
+                {
+                    _alert.SecondaryButtonText = buttons[i].Label;
+                    _alert.SecondaryButtonClick += (_, _) => _dialogResult = index.ToString(CultureInfo.InvariantCulture);
+                }
+            }
+        }
+
+        _alert.Closed += (_, _) =>
+        {
+            _alert = null;
+            var result = _dialogResult ?? "false";   // dismissed with Esc / light-dismiss
+            _dialogResult = null;
+            _bridge.Emit(Id, result);
+        };
+        _ = _alert.ShowAsync();
     }
 
     public void SetChildren(JsonElement children)

@@ -1,3 +1,4 @@
+using System.Globalization;
 using SwiftDotNet;
 
 namespace SwiftDotNet.Graphics;
@@ -10,7 +11,14 @@ namespace SwiftDotNet.Graphics;
 /// </summary>
 sealed partial class VisualNode
 {
-    Rect _menuRect, _sheetPanel, _alertBox, _alertOk, _navBack, _swatchRect;
+    Rect _menuRect, _sheetPanel, _alertBox, _navBack, _swatchRect;
+
+    /// <summary>
+    /// Laid-out button rects for the presented Alert / ActionSheet, index-aligned with the parsed
+    /// <c>buttons</c> prop. Written by the paint pass and read by the hit-test, so a tap always lands on
+    /// the button that was actually drawn — the same paint-defines-geometry contract the swatch grid uses.
+    /// </summary>
+    readonly List<Rect> _dialogButtons = new();
 
     /// <summary>The lift shared by every floating popover (Menu, ColorPicker swatches).</summary>
     static readonly Shadow PopoverShadow = new(0, 4, 8, new Color(0, 0, 0, 60));
@@ -18,7 +26,7 @@ sealed partial class VisualNode
     internal bool HasActiveOverlay => Type switch
     {
         "Sheet" => Bool("presented") && Children.Count > 1,
-        "Alert" => Bool("presented"),
+        "Alert" or "ActionSheet" => Bool("presented"),
         "Menu" => MenuOpen,
         "ColorPicker" => MenuOpen,
         "NavigationStack" => PushedContent is not null,
@@ -31,6 +39,7 @@ sealed partial class VisualNode
         {
             case "Sheet": PaintSheet(canvas, window, dark); break;
             case "Alert": PaintAlert(canvas, window, dark); break;
+            case "ActionSheet": PaintActionSheet(canvas, window, dark); break;
             case "Menu": PaintMenu(canvas, window, dark); break;
             case "ColorPicker": PaintSwatches(canvas, window, dark); break;
             case "NavigationStack": PaintPushed(canvas, window, dark); break;
@@ -45,8 +54,12 @@ sealed partial class VisualNode
                 if (!_sheetPanel.Contains(p)) { _bridge.Emit(Id, "false"); return true; } // scrim dismiss
                 Children[1].HitTest(p);
                 return true;
-            case "Alert":
-                if (_alertOk.Contains(p) || !_alertBox.Contains(p)) { _bridge.Emit(Id, "false"); return true; }
+            case "Alert" or "ActionSheet":
+                // Index-aligned with the parsed buttons, so the payload IS the chosen button's index;
+                // anything outside the card is a choice-free dismissal.
+                for (var i = 0; i < _dialogButtons.Count; i++)
+                    if (_dialogButtons[i].Contains(p)) { _bridge.Emit(Id, i.ToString(CultureInfo.InvariantCulture)); return true; }
+                if (!_alertBox.Contains(p)) _bridge.Emit(Id, "false");
                 return true;
             case "Menu":
                 if (_menuRect.Contains(p))
@@ -130,6 +143,17 @@ sealed partial class VisualNode
         content.Draw(canvas, dark);
     }
 
+    const float DialogButtonHeight = 44;
+
+    /// <summary>The tint a dialog button's role reads as — matching the platform alerts' convention.</summary>
+    static Color RoleColor(DialogRole role) =>
+        role == DialogRole.Destructive ? new Color(0xFF, 0x3B, 0x30) : Theme.Accent;
+
+    /// <summary>
+    /// A centered alert card: title, wrapped message, then the buttons. Two buttons sit side by side
+    /// (the iOS convention); one, or three or more, stack vertically — a row of four would be unreadable
+    /// at 300pt wide.
+    /// </summary>
     void PaintAlert(ICanvas canvas, Rect window, bool dark)
     {
         Scrim(canvas, window);
@@ -138,12 +162,16 @@ sealed partial class VisualNode
         var msgFont = Theme.MakeFont("body", Fonts);
         var msgLines = TextLayout.Wrap(Str("message"), msgFont, w - 40, Fonts);
         var lh = msgFont.Metrics.Descent - msgFont.Metrics.Ascent;
-        var h = 28 + 24 + msgLines.Count * lh + 20 + 44;
+
+        var buttons = DialogButtons.Parse(Str("buttons"));
+        var sideBySide = buttons.Count == 2;
+        var buttonBlock = (sideBySide ? 1 : buttons.Count) * DialogButtonHeight;
+        var h = 28 + 24 + msgLines.Count * lh + 20 + buttonBlock;
+
         _alertBox = new Rect(window.MidX - w / 2, window.MidY - h / 2, window.MidX + w / 2, window.MidY + h / 2);
         var box = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
         canvas.DrawRoundRect(_alertBox, 14, 14, box);
 
-        var y = _alertBox.Top + 20 - titleFont.Metrics.Ascent;
         DrawBlock(canvas, new() { Str("title") }, new Rect(_alertBox.Left, _alertBox.Top + 20, _alertBox.Right, _alertBox.Top + 44), titleFont, dark ? Colors.White : Colors.Black, "center");
         var my = _alertBox.Top + 52;
         foreach (var line in msgLines)
@@ -151,10 +179,98 @@ sealed partial class VisualNode
             DrawBlock(canvas, new() { line }, new Rect(_alertBox.Left, my, _alertBox.Right, my + lh), msgFont, new Color(0x8E, 0x8E, 0x93), "center");
             my += lh;
         }
-        _alertOk = new Rect(_alertBox.Left, _alertBox.Bottom - 44, _alertBox.Right, _alertBox.Bottom);
+
+        _dialogButtons.Clear();
         var sep = new Paint { Color = Theme.Separator(dark), StrokeWidth = 1 };
-        canvas.DrawLine(_alertOk.Left, _alertOk.Top, _alertOk.Right, _alertOk.Top, sep);
-        DrawCentered(canvas, "OK", _alertOk, Theme.MakeFont("headline", Fonts), Theme.Accent);
+        var font = Theme.MakeFont("headline", Fonts);
+        var top = _alertBox.Bottom - buttonBlock;
+        canvas.DrawLine(_alertBox.Left, top, _alertBox.Right, top, sep);
+
+        for (var i = 0; i < buttons.Count; i++)
+        {
+            var rect = sideBySide
+                ? new Rect(i == 0 ? _alertBox.Left : _alertBox.MidX, top,
+                           i == 0 ? _alertBox.MidX : _alertBox.Right, _alertBox.Bottom)
+                : new Rect(_alertBox.Left, top + i * DialogButtonHeight, _alertBox.Right, top + (i + 1) * DialogButtonHeight);
+            _dialogButtons.Add(rect);
+            if (i > 0)
+            {
+                if (sideBySide) canvas.DrawLine(rect.Left, rect.Top, rect.Left, rect.Bottom, sep);
+                else canvas.DrawLine(rect.Left, rect.Top, rect.Right, rect.Top, sep);
+            }
+            DrawCentered(canvas, buttons[i].Label, rect, font, RoleColor(buttons[i].Role));
+        }
+    }
+
+    /// <summary>
+    /// A bottom-anchored choice list — the iOS action sheet shape. Cancel-role buttons are pulled out
+    /// into their own detached card below the options, which is what makes an action sheet read as
+    /// "pick one of these, or back out" rather than as a long undifferentiated list.
+    /// </summary>
+    void PaintActionSheet(ICanvas canvas, Rect window, bool dark)
+    {
+        Scrim(canvas, window);
+        var buttons = DialogButtons.Parse(Str("buttons"));
+        var cancel = DialogButtons.CancelIndex(buttons);
+
+        var titleFont = Theme.MakeFont("caption", Fonts);
+        var font = Theme.MakeFont("body", Fonts);
+        var title = Str("title");
+        var message = Str("message");
+        const float pad = 10, gap = 8;
+        var w = Math.Min(360f, window.Width - 2 * pad);
+
+        var headerLines = new List<string>();
+        if (title.Length > 0) headerLines.AddRange(TextLayout.Wrap(title, titleFont, w - 32, Fonts));
+        if (message.Length > 0) headerLines.AddRange(TextLayout.Wrap(message, titleFont, w - 32, Fonts));
+        var headerLh = titleFont.Metrics.Descent - titleFont.Metrics.Ascent;
+        var headerH = headerLines.Count == 0 ? 0 : headerLines.Count * headerLh + 16;
+
+        var optionCount = buttons.Count - (cancel >= 0 ? 1 : 0);
+        var optionsH = headerH + optionCount * DialogButtonHeight;
+        var cancelH = cancel >= 0 ? DialogButtonHeight + gap : 0;
+        var totalH = optionsH + cancelH;
+
+        var left = window.MidX - w / 2;
+        var bottom = window.Bottom - pad;
+        var optionsTop = bottom - totalH;
+        var optionsRect = new Rect(left, optionsTop, left + w, optionsTop + optionsH);
+        // The whole stack counts as "inside" for hit-testing, so a tap on the gap between the two cards
+        // isn't read as a scrim dismissal.
+        _alertBox = new Rect(left, optionsTop, left + w, bottom);
+
+        var surface = new Paint { Color = Theme.Surface(dark), IsAntialias = true };
+        canvas.DrawRoundRect(optionsRect, 14, 14, surface);
+
+        var hy = optionsRect.Top + 8;
+        foreach (var line in headerLines)
+        {
+            DrawBlock(canvas, new() { line }, new Rect(optionsRect.Left, hy, optionsRect.Right, hy + headerLh), titleFont, new Color(0x8E, 0x8E, 0x93), "center");
+            hy += headerLh;
+        }
+
+        _dialogButtons.Clear();
+        for (var i = 0; i < buttons.Count; i++) _dialogButtons.Add(default);
+
+        var sep = new Paint { Color = Theme.Separator(dark), StrokeWidth = 1 };
+        var y = optionsRect.Top + headerH;
+        var drawn = 0;
+        for (var i = 0; i < buttons.Count; i++)
+        {
+            if (i == cancel) continue;
+            var rect = new Rect(optionsRect.Left, y, optionsRect.Right, y + DialogButtonHeight);
+            _dialogButtons[i] = rect;
+            if (drawn > 0 || headerH > 0) canvas.DrawLine(rect.Left, rect.Top, rect.Right, rect.Top, sep);
+            DrawCentered(canvas, buttons[i].Label, rect, font, RoleColor(buttons[i].Role));
+            y += DialogButtonHeight;
+            drawn++;
+        }
+
+        if (cancel < 0) return;
+        var cancelRect = new Rect(left, bottom - DialogButtonHeight, left + w, bottom);
+        canvas.DrawRoundRect(cancelRect, 14, 14, surface);
+        _dialogButtons[cancel] = cancelRect;
+        DrawCentered(canvas, buttons[cancel].Label, cancelRect, Theme.MakeFont("headline", Fonts), Theme.Accent);
     }
 
     void PaintMenu(ICanvas canvas, Rect window, bool dark)
@@ -218,6 +334,21 @@ sealed partial class VisualNode
             };
             canvas.DrawRoundRect(Rect.Inflate(cell, 3, 3), 13, 13, ring);
         }
+    }
+
+    /// <summary>
+    /// Centre of the <paramref name="index"/>th button on the presented Alert / ActionSheet. For
+    /// tests/tooling — like the swatch grid, the dialog is engine-drawn chrome with no node to hit-test
+    /// against, so its geometry is only knowable after a paint pass.
+    /// </summary>
+    internal bool TryGetDialogButtonCenter(int index, out Point center)
+    {
+        center = default;
+        if (Type is not ("Alert" or "ActionSheet") || !Bool("presented")) return false;
+        if (index < 0 || index >= _dialogButtons.Count) return false;
+        var rect = _dialogButtons[index];
+        center = new Point(rect.MidX, rect.MidY);
+        return true;
     }
 
     /// <summary>Centre of a laid-out swatch in the open popover. For tests/tooling.</summary>

@@ -35,6 +35,9 @@ public sealed class ContentView : View
     // Nav
     readonly State<bool> _sheet = State(false);
     readonly State<bool> _alert = State(false);
+    readonly State<bool> _confirm = State(false);
+    readonly State<bool> _actionSheet = State(false);
+    readonly State<string> _lastChoice = State("(nothing yet)");
 
     // Animation / gestures (transforms + continuous drag/pinch)
     readonly State<bool> _transformed = State(false);
@@ -485,25 +488,38 @@ public sealed class ContentView : View
 
     // ── Navigation ──────────────────────────────────────────────────────────
 
-    // Sheets + alerts. This page already lives inside the flyout's NavigationStack, so it presents a nested
-    // Form of push/sheet/alert/link demos directly — no second NavigationStack needed.
+    // Sheets, alerts and action sheets. This page already lives inside the flyout's NavigationStack, so it
+    // presents a nested Form of push/sheet/alert/link demos directly — no second NavigationStack needed.
+    //
+    // The three dialogs stack as fluent modifiers rather than nested constructors, which is what the
+    // .Alert / .ConfirmationDialog / .Sheet presentation modifiers are for.
     View NavPage() =>
-        new Alert(_alert, "Hello 👋", "This alert came from C# state.",
-            new Sheet(_sheet,
-                new Form(
-                    new NavigationLink("Go to details ›",
-                        new VStack(
-                            new Text("Details").Font(Font.LargeTitle),
-                            new Text("Pushed onto the navigation stack.").ForegroundColor(Color.Secondary)
-                        ).Padding().NavigationTitle("Details")),
-                    new Button("Present a sheet", () => _sheet.Value = true),
-                    new Button("Show an alert", () => _alert.Value = true),
-                    new Link("Visit apple.com", "https://apple.com")
-                ).NavigationTitle("Sheets & Alerts"),
+        new Form(
+                new NavigationLink("Go to details ›",
+                    new VStack(
+                        new Text("Details").Font(Font.LargeTitle),
+                        new Text("Pushed onto the navigation stack.").ForegroundColor(Color.Secondary)
+                    ).Padding().NavigationTitle("Details")),
+                new Button("Present a sheet", () => _sheet.Value = true),
+                new Button("Show an alert (one button)", () => _alert.Value = true),
+                new Button("Confirm a delete (two buttons)", () => _confirm.Value = true),
+                new Button("Show an action sheet", () => _actionSheet.Value = true),
+                new Text($"Last choice: {_lastChoice.Value}").Font(Font.Caption).ForegroundColor(Color.Secondary),
+                new Link("Visit apple.com", "https://apple.com")
+            ).NavigationTitle("Sheets & Alerts")
+            .Sheet(_sheet,
                 new VStack(
                     new Text("Sheet content").Font(Font.Title),
                     new Text("Rendered from C#, presented by SwiftUI.").ForegroundColor(Color.Secondary),
                     new Button("Close", () => _sheet.Value = false)
-                ).Padding(24)
-            ));
+                ).Padding(24))
+            .Alert(_alert, "Hello 👋", "This alert came from C# state.")
+            .Alert(_confirm, "Delete draft?", "This cannot be undone.",
+                AlertButton.Destructive("Delete", () => _lastChoice.Value = "Deleted"),
+                AlertButton.Cancel("Keep", () => _lastChoice.Value = "Kept"))
+            .ConfirmationDialog(_actionSheet, "Share this draft", "Pick a destination.",
+                new AlertButton("Copy link", () => _lastChoice.Value = "Copied link"),
+                new AlertButton("Email", () => _lastChoice.Value = "Emailed"),
+                AlertButton.Destructive("Discard", () => _lastChoice.Value = "Discarded"),
+                AlertButton.Cancel());
 }

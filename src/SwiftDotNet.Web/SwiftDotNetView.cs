@@ -106,6 +106,7 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
             case "NavigationLink": NavigationLink(b, n); break;
             case "Sheet": Overlay(b, n, isSheet: true); break;
             case "Alert": Overlay(b, n, isSheet: false); break;
+            case "ActionSheet": Overlay(b, n, isSheet: false, actionSheet: true); break;
 
             case "WebView": WebFrame(b, n); break;
             case "Label": Label(b, n); break;
@@ -624,31 +625,67 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
         StateHasChanged();
     }
 
-    void Overlay(RenderTreeBuilder b, WebNode n, bool isSheet)
+    /// <summary>
+    /// Sheet / Alert / ActionSheet. All three are a scrim plus a card; they differ in what fills the card
+    /// (a content subtree vs. title + message) and where it sits (centered vs. bottom-anchored for an
+    /// action sheet, which is the only cue a DOM has that the choices are a list rather than a question).
+    /// Buttons come from the flat <c>buttons</c> prop and emit their index.
+    /// </summary>
+    void Overlay(RenderTreeBuilder b, WebNode n, bool isSheet, bool actionSheet = false)
     {
         // body (child 0)
         if (n.Children.Count > 0) RenderNode(b, n.Children[0]);
         if (!n.B("presented")) return;
 
+        var align = actionSheet ? "flex-end" : "center";
         b.OpenElement(_seq++, "div");
-        b.AddAttribute(_seq++, "style", "position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:1000;");
+        b.AddAttribute(_seq++, "style", $"position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:{align};justify-content:center;z-index:1000;");
         b.OpenElement(_seq++, "div");
-        b.AddAttribute(_seq++, "style", "background:#fff;border-radius:14px;padding:24px;min-width:280px;max-width:90%;display:flex;flex-direction:column;gap:12px;");
+        b.AddAttribute(_seq++, "style", actionSheet
+            ? "background:#fff;border-radius:14px;padding:12px;margin-bottom:12px;min-width:280px;max-width:90%;display:flex;flex-direction:column;gap:4px;"
+            : "background:#fff;border-radius:14px;padding:24px;min-width:280px;max-width:90%;display:flex;flex-direction:column;gap:12px;");
+
         if (isSheet)
         {
             if (n.Children.Count > 1) RenderNode(b, n.Children[1]);
+            DialogButton(b, n, "Close", "cancel", "false", stretch: false);
         }
         else
         {
-            b.OpenElement(_seq++, "b"); b.AddContent(_seq++, n.S("title")); b.CloseElement();
-            b.OpenElement(_seq++, "div"); b.AddContent(_seq++, n.S("message")); b.CloseElement();
+            if (n.S("title").Length > 0) { b.OpenElement(_seq++, "b"); b.AddContent(_seq++, n.S("title")); b.CloseElement(); }
+            if (n.S("message").Length > 0) { b.OpenElement(_seq++, "div"); b.AddContent(_seq++, n.S("message")); b.CloseElement(); }
+
+            var buttons = DialogButtons.Parse(n.S("buttons"));
+            // An alert's buttons read as a trailing row; an action sheet's as a full-width stack.
+            if (!actionSheet)
+            {
+                b.OpenElement(_seq++, "div");
+                b.AddAttribute(_seq++, "style", "display:flex;gap:8px;justify-content:flex-end;");
+            }
+            for (var i = 0; i < buttons.Count; i++)
+                DialogButton(b, n, buttons[i].Label, buttons[i].Role.Token(),
+                    i.ToString(CultureInfo.InvariantCulture), stretch: actionSheet);
+            if (!actionSheet) b.CloseElement();
         }
+
+        b.CloseElement();
+        b.CloseElement();
+    }
+
+    void DialogButton(RenderTreeBuilder b, WebNode n, string label, string role, string payload, bool stretch)
+    {
+        var (bg, fg) = role switch
+        {
+            "destructive" => ("#FF3B30", "#fff"),
+            "cancel" => ("#F2F2F7", "#1C1C1E"),
+            _ => ("#007AFF", "#fff"),
+        };
         b.OpenElement(_seq++, "button");
-        b.AddAttribute(_seq++, "style", "align-self:flex-end;cursor:pointer;padding:6px 16px;border-radius:8px;border:none;background:#007AFF;color:#fff;");
-        b.AddAttribute(_seq++, "onclick", EventCallback.Factory.Create(this, () => _bridge.Emit(n.Id, "false")));
-        b.AddContent(_seq++, isSheet ? "Close" : "OK");
-        b.CloseElement();
-        b.CloseElement();
+        b.AddAttribute(_seq++, "style",
+            $"cursor:pointer;padding:8px 16px;border-radius:8px;border:none;background:{bg};color:{fg};" +
+            (stretch ? "width:100%;" : ""));
+        b.AddAttribute(_seq++, "onclick", EventCallback.Factory.Create(this, () => _bridge.Emit(n.Id, payload)));
+        b.AddContent(_seq++, label);
         b.CloseElement();
     }
 

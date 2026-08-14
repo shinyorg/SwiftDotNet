@@ -17,6 +17,15 @@ public sealed class OverlaysSample : View
                     ok => Toast.Show(ok ? "Deleted" : "Cancelled"), confirm: "Delete", destructive: true))
             ).Spacing(12),
             new HStack(
+                new Button("Prompt", () => Dialog.Prompt("Rename", "What should we call it?",
+                    name => Toast.Show(name is null ? "Cancelled" : $"Renamed to “{name}”"),
+                    initialValue: "Untitled", placeholder: "Name")),
+                new Button("Action sheet", () => Dialog.ActionSheet("Share this draft",
+                    new[] { "Copy link", "Email", "Discard" },
+                    index => Toast.Show(index < 0 ? "Cancelled" : $"Chose option {index}"),
+                    message: "Pick a destination.", destructiveIndex: 2))
+            ).Spacing(12),
+            new HStack(
                 new Button("Loading (2s)", () => { var id = Loading.Show("Working…"); _ = HideAfter(id, 2); }),
                 new Button("Panel", () => FloatingPanel.Present(
                     new VStack(new Text("Bottom sheet").Font(Font.Headline),

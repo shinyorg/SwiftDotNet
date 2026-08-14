@@ -24,8 +24,9 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 ### Authoring UI
 - **[Hosting & Dependency Injection](hosting-and-di.md)** — `SwiftProgram.CreateSwiftApp()`, the builder,
   `[Inject]` services, view lifecycle, and the `UseX()` seam.
-- **[Views & Controls](views-and-controls.md)** — the full vocabulary: layout, navigation & presentation,
-  inputs, and display views.
+- **[Views & Controls](views-and-controls.md)** — the full vocabulary: layout, navigation & presentation
+  (including [alerts & action sheets](views-and-controls.md#alerts--action-sheets)), inputs, and display
+  views.
 - **[Modifiers, Gestures & Animation](modifiers-gestures-animation.md)** — the universal modifier pass,
   one-shot gestures, implicit animation, and multi-track
   [keyframe timelines](modifiers-gestures-animation.md#keyframe-animations).
@@ -36,8 +37,9 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
   modifier bundles, and design tokens (`Theme`).
 - **[Custom Controls](custom-controls.md)** — composite views (the common case) and custom native primitives
   via the renderer registry.
-- **[The Controls Library](controls-library.md)** — the `SwiftDotNet.Controls` companion package, what each
-  control depends on, and the honest per-backend support matrix.
+- **[The Controls Library](controls-library.md)** — the `SwiftDotNet.Controls` companion package, the
+  imperative [`Dialog` service](controls-library.md#the-dialog-service--alert--confirm--prompt--action-sheet),
+  what each control depends on, and the honest per-backend support matrix.
 
 ### Backends
 - **[Backends Overview](backends/README.md)** — the platform matrix and the two rendering families.

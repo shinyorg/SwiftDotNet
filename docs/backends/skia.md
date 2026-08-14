@@ -60,7 +60,8 @@ align/spacing);
 paint (Text/Label/Image/Button/Link/Divider/shapes/ProgressView/Gauge + background/border/shadow/cornerRadius/
 opacity/scaleEffect); text (HarfBuzz wrap + fallback + icon font + dark mode); scrolling (offset/clip/
 scrollbar); **all inputs** tap-interactive (+ keyboard/drag from the window); nav + overlays (nav bar, push,
-Sheet bottom-sheet, Alert modal, Menu popover); the custom-renderer registry; the full gesture set (tap,
+Sheet bottom-sheet, Alert modal — multi-button, roles tinted, hit-tested per button —
+ActionSheet bottom card with a detached cancel row, Menu popover); the custom-renderer registry; the full gesture set (tap,
 long-press, swipe, continuous drag, pinch — see [the router](#gestures-hosts-must-wire-the-pointer-router));
 and an implicit animation clock (one-shot opacity + height interpolation, plus self-playing
 `.Repeating()` loops, plus full

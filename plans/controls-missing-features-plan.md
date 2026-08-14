@@ -146,6 +146,11 @@ DurationPicker — **~6 controls**, and it is the *substrate* several others sit
 - **Problem:** these are invoked **from code** (`Toaster.Show(...)`), not declared in a `Body`. That
   clashes with the pure-declarative model. `Sheet`/`Alert` exist but are single, `State<bool>`-bound,
   fixed-chrome ([`Core/Views/Navigation.cs`](../src/SwiftDotNet/Core/Views/Navigation.cs)).
+  **Update:** shipped. `Dialog.Alert/Confirm/Prompt/ActionSheet` live in
+  [`Dialog.cs`](../src/SwiftDotNet.Controls/Dialog.cs), and the declarative side is no longer fixed-chrome
+  either — `Alert` takes an `AlertButton` list and `ActionSheet` joined it
+  ([`Core/Views/Dialogs.cs`](../src/SwiftDotNet/Core/Views/Dialogs.cs)). See
+  [the docs](../docs/views-and-controls.md#alerts--action-sheets).
 - **Core:** a root-level **overlay layer** — a `ZStack`-like top slot the runtime always renders above
   the root — backed by an observable ordered collection of overlay entries. An imperative
   `IOverlayService` (`Present(View, options)` / `Dismiss(id)`) writes to that collection and requests a

@@ -62,30 +62,4 @@ public sealed class Sheet : View
     }
 }
 
-/// <summary>Presents a standard alert (title, message, OK) when the bound flag is true. Child 0 is the body.</summary>
-public sealed class Alert : View
-{
-    readonly State<bool> _isPresented;
-    readonly string _title;
-    readonly string _message;
-    readonly View _body;
-
-    public Alert(State<bool> isPresented, string title, string message, View body)
-    {
-        _isPresented = isPresented;
-        _title = title;
-        _message = message;
-        _body = body;
-    }
-
-    internal override Node BuildNode(RenderContext ctx, string path)
-    {
-        var node = ctx.NewNode("Alert", path);
-        node.Props["presented"] = _isPresented.Value;
-        node.Props["title"] = _title;
-        node.Props["message"] = _message;
-        ctx.RegisterAction(node.Id, v => _isPresented.Value = v == "true");
-        node.Children.Add(_body.ToNode(ctx, path + ".0"));
-        return node;
-    }
-}
+// Alert and ActionSheet live in Dialogs.cs — they share the AlertButton wire encoding.

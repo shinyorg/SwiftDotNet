@@ -85,7 +85,7 @@ sealed partial class VisualNode
             case "NavigationStack":
                 if (Children.Count > 0) Children[0].Draw(canvas, dark); // pushed destination is drawn as an overlay
                 return;
-            case "Sheet" or "Alert":
+            case "Sheet" or "Alert" or "ActionSheet":
                 if (Children.Count > 0) Children[0].Draw(canvas, dark); // presented content is drawn as an overlay
                 return;
             case "Picker" or "Menu":

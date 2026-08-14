@@ -781,6 +781,8 @@ struct NodeView: View {
             SheetNode(node: node)
         case "Alert":
             AlertNode(node: node)
+        case "ActionSheet":
+            ActionSheetNode(node: node)
         case "WebView":
             WebViewNode(node: node)
         case "Image":
@@ -1303,18 +1305,114 @@ struct SheetNode: View {
     }
 }
 
+// MARK: - Dialog buttons
+
+/// One parsed entry of a dialog's flat `buttons` prop.
+struct DialogButtonSpec: Identifiable {
+    let id: Int
+    let label: String
+    let role: ButtonRole?
+}
+
+/// Mirrors `DialogButtons.Parse` in Core: `label,role;label,role`, with `\` escaping the delimiters
+/// and itself. Malformed entries are skipped; an empty string yields a single "OK" so the alert is
+/// always dismissable.
+func parseDialogButtons(_ encoded: String) -> [DialogButtonSpec] {
+    var parsed: [(String, String)] = []
+    var label = "", role = ""
+    var inRole = false, escaped = false
+
+    func flush() {
+        if !label.isEmpty || !role.isEmpty { parsed.append((label, role)) }
+        label = ""; role = ""; inRole = false
+    }
+
+    for c in encoded {
+        if escaped {
+            if inRole { role.append(c) } else { label.append(c) }
+            escaped = false
+            continue
+        }
+        switch c {
+        case "\\": escaped = true
+        case "," where !inRole: inRole = true
+        case ";": flush()
+        default: if inRole { role.append(c) } else { label.append(c) }
+        }
+    }
+    flush()
+
+    if parsed.isEmpty { parsed = [("OK", "cancel")] }
+    return parsed.enumerated().map { i, b in
+        DialogButtonSpec(id: i, label: b.0, role: b.1 == "cancel" ? .cancel : b.1 == "destructive" ? .destructive : nil)
+    }
+}
+
 struct AlertNode: View {
     let node: VNode
     @State private var presented = false
+    // The index a button click chose, so the automatic dismissal that follows doesn't also report a
+    // choice-free "false" — SwiftUI does not guarantee whether the action or the dismissal runs first,
+    // so whichever lands second sees this and stays quiet.
+    @State private var choice: String?
+
     var body: some View {
         bodyView
             .alert(node.props["title"]?.string ?? "", isPresented: $presented) {
-                Button("OK", role: .cancel) { }
+                ForEach(parseDialogButtons(node.props["buttons"]?.string ?? "")) { button in
+                    Button(button.label, role: button.role) {
+                        choice = String(button.id)
+                        emitEvent(node.id, String(button.id))
+                    }
+                }
             } message: {
                 SwiftUI.Text(node.props["message"]?.string ?? "")
             }
             .onAppear { presented = node.props["presented"]?.bool ?? false }
-            .onChange(of: presented) { _, v in emitEvent(node.id, v ? "true" : "false") }
+            .onChange(of: presented) { _, v in
+                if v { emitEvent(node.id, "true"); return }
+                if choice == nil { emitEvent(node.id, "false") }
+                choice = nil
+            }
+            .onChange(of: node.props["presented"]?.bool ?? false) { _, incoming in
+                if incoming != presented { presented = incoming }
+            }
+    }
+    @ViewBuilder private var bodyView: some View {
+        if !node.children.isEmpty { NodeView(node: node.children[0]) }
+    }
+}
+
+/// SwiftUI's `.confirmationDialog` — an action sheet on iOS, a popover-anchored menu on macOS. SwiftUI
+/// hoists the `.cancel`-role button into its own detached row itself, so the button list ships unsorted.
+struct ActionSheetNode: View {
+    let node: VNode
+    @State private var presented = false
+    @State private var choice: String?
+
+    var body: some View {
+        bodyView
+            .confirmationDialog(
+                node.props["title"]?.string ?? "",
+                isPresented: $presented,
+                titleVisibility: (node.props["title"]?.string ?? "").isEmpty ? .hidden : .visible
+            ) {
+                ForEach(parseDialogButtons(node.props["buttons"]?.string ?? "")) { button in
+                    Button(button.label, role: button.role) {
+                        choice = String(button.id)
+                        emitEvent(node.id, String(button.id))
+                    }
+                }
+            } message: {
+                let message = node.props["message"]?.string ?? ""
+                if !message.isEmpty { SwiftUI.Text(message) }
+            }
+            .onAppear { presented = node.props["presented"]?.bool ?? false }
+            .onChange(of: presented) { _, v in
+                if v { emitEvent(node.id, "true"); return }
+                if choice == nil { emitEvent(node.id, "false") }
+                choice = nil
+            }
             .onChange(of: node.props["presented"]?.bool ?? false) { _, incoming in
                 if incoming != presented { presented = incoming }
             }

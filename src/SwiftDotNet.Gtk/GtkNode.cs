@@ -91,7 +91,7 @@ sealed class GtkNode
         "NavigationStack" => _nav!.Build(Children[0].Widget),
         "NavigationLink" => MakeNavLink(),
         "Sheet" => Children.Count > 0 ? Children[0].Widget : Label(""),
-        "Alert" => Children.Count > 0 ? Children[0].Widget : Label(""),
+        "Alert" or "ActionSheet" => Children.Count > 0 ? Children[0].Widget : Label(""),
         "WebView" => MakeWebView(),
         "Image" => MakeImage(),
         "Label" => MakeLabel(),
@@ -1016,7 +1016,8 @@ sealed class GtkNode
             case "Toggle": SyncToggle(); break;
             case "Slider": SyncSlider(); break;
             case "Sheet": SyncSheet(); break;
-            case "Alert": SyncAlert(); break;
+            case "Alert": SyncAlert(sheet: false); break;
+            case "ActionSheet": SyncAlert(sheet: true); break;
             case "DisclosureGroup": ((Gtk.Expander)_content).SetExpanded(Bool("expanded")); break;
             case "TabView": SyncTabView(); break;
             case "ZStack": SyncZStackAlignment(); break;
@@ -1043,8 +1044,16 @@ sealed class GtkNode
     }
 
     Gtk.Window? _alert;
+    // Set by a button click so the close handler reports the choice rather than a bare dismissal — GTK
+    // has no "close with a result", and OnCloseRequest fires for the button path too.
+    string? _alertResult;
 
-    void SyncAlert()
+    /// <summary>
+    /// Alert and ActionSheet are the same modal window on GTK; only the button layout differs. GTK has no
+    /// action-sheet idiom, so an ActionSheet renders as a vertical button list (the shape a long option
+    /// list needs) while an Alert keeps the horizontal, end-aligned button row GNOME uses.
+    /// </summary>
+    void SyncAlert(bool sheet)
     {
         if (!Bool("presented"))
         {
@@ -1066,18 +1075,44 @@ sealed class GtkNode
         box.SetMarginEnd(24);
         var title = Gtk.Label.New(Str("title"));
         title.AddCssClass("title-3");
-        var message = Gtk.Label.New(Str("message"));
-        message.SetWrap(true);
-        var ok = Gtk.Button.NewWithLabel("OK");
-        ok.AddCssClass("suggested-action");
-        ok.Halign = Gtk.Align.End;
-        ok.OnClicked += (_, _) => _alert?.Close();
         box.Append(title);
-        box.Append(message);
-        box.Append(ok);
+        if (Str("message").Length > 0)
+        {
+            var message = Gtk.Label.New(Str("message"));
+            message.SetWrap(true);
+            box.Append(message);
+        }
+
+        var buttons = DialogButtons.Parse(Str("buttons"));
+        var row = Gtk.Box.New(sheet ? Gtk.Orientation.Vertical : Gtk.Orientation.Horizontal, 8);
+        row.Halign = sheet ? Gtk.Align.Fill : Gtk.Align.End;
+        for (var i = 0; i < buttons.Count; i++)
+        {
+            var index = i;   // capture
+            var button = Gtk.Button.NewWithLabel(buttons[i].Label);
+            switch (buttons[i].Role)
+            {
+                case DialogRole.Destructive: button.AddCssClass("destructive-action"); break;
+                case DialogRole.Default: button.AddCssClass("suggested-action"); break;
+            }
+            button.OnClicked += (_, _) =>
+            {
+                _alertResult = index.ToString(CultureInfo.InvariantCulture);
+                _alert?.Close();
+            };
+            row.Append(button);
+        }
+        box.Append(row);
         _alert.SetChild(box);
 
-        _alert.OnCloseRequest += (_, _) => { _alert = null; _bridge.Emit(Id, "false"); return false; };
+        _alert.OnCloseRequest += (_, _) =>
+        {
+            _alert = null;
+            var result = _alertResult ?? "false";   // no button → the window manager closed it
+            _alertResult = null;
+            _bridge.Emit(Id, result);
+            return false;
+        };
         _alert.Present();
     }
 

@@ -160,9 +160,75 @@ verified; GTK is unverified (no GTK runtime in CI) and Windows has never been co
 | `NavigationStack` + `NavigationLink` | Push navigation. |
 | `TabView` + `Tab` | Tabbed UI. `.Paged()` turns it into a swipeable carousel with page dots; `.SelectedIndex(State<int>)` binds the selection two-way; `.HidePageIndicator()`. |
 | `Sheet` | Modal presentation bound to a `State<bool>`. |
-| `Alert` | Modal alert bound to a `State<bool>`. |
+| `Alert` | Modal alert bound to a `State<bool>`, with one or more [`AlertButton`s](#alerts--action-sheets). |
+| `ActionSheet` | A list of choices bound to a `State<bool>` — SwiftUI's `.confirmationDialog`. |
 | `DisclosureGroup` | Expand/collapse section. |
 | `Menu` | Popover menu of actions. |
+
+### Alerts & action sheets
+
+`Alert` is a question with a small number of answers; `ActionSheet` is a list of options. Both take
+`AlertButton`s — a label, a `DialogRole` (`Default` / `Cancel` / `Destructive`), and an action — and both
+present while a bound `State<bool>` is true. The SwiftUI analogs are `.alert(_:isPresented:actions:)` and
+`.confirmationDialog(_:isPresented:)`.
+
+Attach them with the fluent presentation modifiers rather than nesting constructors — they stack, so one
+view can own several dialogs:
+
+```csharp
+new Form(
+        new Button("Delete draft", () => _confirm.Value = true),
+        new Button("Share",        () => _share.Value = true))
+    .Alert(_confirm, "Delete draft?", "This cannot be undone.",
+        AlertButton.Destructive("Delete", DeleteDraft),
+        AlertButton.Cancel("Keep"))
+    .ConfirmationDialog(_share, "Share this draft", "Pick a destination.",
+        new AlertButton("Copy link", CopyLink),
+        new AlertButton("Email", Email),
+        AlertButton.Destructive("Discard", Discard),
+        AlertButton.Cancel());
+```
+
+`.Alert` with no buttons is the one-button acknowledgement (`AlertButton.Ok()`), and `.ActionSheet` is an
+alias of `.ConfirmationDialog` for UIKit-shaped call sites. See
+[`PresentationModifiers.cs`](../src/SwiftDotNet/Core/Views/PresentationModifiers.cs) and
+[`Dialogs.cs`](../src/SwiftDotNet/Core/Views/Dialogs.cs).
+
+#### Per-backend behavior
+
+| Backend | `Alert` | `ActionSheet` |
+|---|---|---|
+| Apple (SwiftUI) | `.alert` with a `Button` per entry; roles map to `ButtonRole` | `.confirmationDialog` — a real action sheet; SwiftUI detaches the cancel row itself |
+| Android (Compose) | `AlertDialog`; ≤2 buttons take the confirm/dismiss slots, more stack in the confirm slot | `ModalBottomSheet` with full-width option rows |
+| GTK4 | Modal `Gtk.Window`, buttons in an end-aligned row | Same window, buttons stacked vertically (GTK has no action-sheet idiom) |
+| WinUI 3 | `ContentDialog`; cancel takes the Close slot, the next two take Primary/Secondary, the rest move into the content as a stack | Always the stacked-content form |
+| Web (Blazor) | Scrim + centered card, buttons in a trailing row | Scrim + **bottom-anchored** card, full-width option rows |
+| Skia / WebGPU / Wayland | Engine-drawn card; 2 buttons side by side, otherwise stacked | Engine-drawn bottom card with the cancel row detached below it |
+| Terminal (TUI) | `Dialog` window with a horizontal button row | Same window, vertical button list |
+
+**Fallbacks:** `DialogRole.Destructive` has no distinct rendering on the **terminal** (no colour convention
+for it) or on **WinUI** (`ContentDialog` has no destructive button style) — the role still orders the
+buttons and still reports correctly, it just isn't tinted. On **Compose** an `ActionSheet`'s cancel button
+stays inline in the list rather than detached, because Material bottom sheets dismiss by swipe.
+
+#### Gotchas
+
+- **The buttons cross the wire as one flat string.** `Node.Props` values are scalars, so the list is
+  encoded as `label,role;label,role` with `\` escaping the delimiters — see
+  [`DialogButtons`](../src/SwiftDotNet/Core/Views/Dialogs.cs). Every backend parses that same string;
+  labels containing `,` `;` `\` round-trip.
+- **The event payload is the button's index**, as a string. `"false"` means "dismissed without choosing"
+  (scrim tap, Esc, system back) and runs no action. An out-of-range index dismisses and runs nothing,
+  which is what keeps a stale tap from a re-rendered tree harmless.
+- **The flag is cleared before the action runs**, so an action may present another dialog without the
+  dismissal that triggered it clobbering the new one.
+- **Don't rely on button count above the platform's native slots.** Compose and WinUI both reflow past
+  2 and 3 buttons respectively; the buttons all still work, but the chrome changes shape.
+
+**Status:** ✅ Verified on Skia (`SkiaDialogTests` — paint geometry and per-button hit-testing) with the
+wire contract pinned by `DialogWireTests`. Apple typechecks (`swiftc -typecheck`) and Compose/GTK/Web/TUI
+compile; none of those are yet visually verified for the multi-button shape. Windows has never been
+compiled.
 
 ## Inputs (two-way bound)
 

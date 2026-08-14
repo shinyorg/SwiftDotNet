@@ -15,7 +15,9 @@ Section/Group/DisclosureGroup/TabView(+paged carousel)/Tab/Menu, all inputs, Nav
 Alert, Image/Label, ProgressView/Gauge, Link, shapes — plus the modifier set.
 
 - **Nav** = a lightweight `NavStack` via `CompositionLocal` + `Scaffold`/`TopAppBar`.
-- **Sheet** = `ModalBottomSheet`; **Alert** = `AlertDialog`.
+- **Sheet** = `ModalBottomSheet`; **Alert** = `AlertDialog`; **ActionSheet** = `ModalBottomSheet` with
+  full-width option rows. `AlertDialog` has two button slots, so an alert with more than two buttons stacks
+  them inside the confirm slot.
 - **SF Symbols** → an emoji map (avoids a material-icons dependency).
 - **Modifiers** apply via a `Modified()` wrapper (box modifiers + `CompositionLocalProvider` for font/color);
   shapes fill from the `foregroundColor` modifier.

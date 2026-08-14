@@ -59,7 +59,7 @@ sealed class TuiNode
 
     TuiNavController? _nav;          // NavigationStack only
     Dialog? _sheet;                  // Sheet only
-    Dialog? _alert;                  // Alert only
+    Dialog? _alert;                  // Alert / ActionSheet only
     Popup? _menu;                    // Menu only
     TabControl? _tabs;               // TabView only
 
@@ -141,7 +141,7 @@ sealed class TuiNode
         "NavigationStack" => _nav!.Build(Children.Count > 0 ? Children[0].Visual : Text("")),
         "NavigationLink" => MakeNavLink(),
         "Sheet" => Children.Count > 0 ? Children[0].Visual : Text(""),
-        "Alert" => Children.Count > 0 ? Children[0].Visual : Text(""),
+        "Alert" or "ActionSheet" => Children.Count > 0 ? Children[0].Visual : Text(""),
         "WebView" => MakeWebView(),
         "Image" => TuiImage.Create(this, _bridge),
         "Label" => MakeLabel(),
@@ -854,7 +854,8 @@ sealed class TuiNode
             case "TabView": SyncTabView(); break;
             case "ZStack": SyncZStackAlignment(); break;
             case "Sheet": SyncSheet(); break;
-            case "Alert": SyncAlert(); break;
+            case "Alert": SyncAlert(vertical: false); break;
+            case "ActionSheet": SyncAlert(vertical: true); break;
             case "Image": TuiImage.Update(this, _content, _bridge); break;
             default: _customRenderer?.Update(_content, RenderCtx()); break;
         }
@@ -960,7 +961,12 @@ sealed class TuiNode
         }
     }
 
-    void SyncAlert()
+    /// <summary>
+    /// Alert and ActionSheet share the terminal <c>Dialog</c>; only the button axis differs. There is no
+    /// destructive tint to give a role here — a terminal has no such convention — so the role only
+    /// decides the ordering the caller already chose. The tapped index is the emitted payload.
+    /// </summary>
+    void SyncAlert(bool vertical)
     {
         if (!Bool("presented"))
         {
@@ -974,20 +980,35 @@ sealed class TuiNode
         }
         if (_alert is not null) return;
 
-        var ok = new TButton(Text("OK")) { HorizontalAlignment = Align.End };
-        var body = new TVStack(Text(Str("message")), ok) { Spacing = 1 };
-        _alert = new Dialog(Text(Str("title")), body) { IsModal = true };
-        ok.Click(() =>
+        var buttons = DialogButtons.Parse(Str("buttons"));
+        var controls = new List<Visual>();
+        if (Str("message").Length > 0) controls.Add(Text(Str("message")));
+
+        var row = new List<Visual>();
+        for (var i = 0; i < buttons.Count; i++)
         {
-            var dialog = _alert;
-            _alert = null;
-            if (dialog is null) return;
-            dialog.Close();
-            _bridge.Windows.RemoveWindow(dialog);
-            _bridge.Emit(Id, "false");
-        });
+            var index = i;   // capture
+            var button = new TButton(Text(buttons[i].Label));
+            button.Click(() => CloseAlert(index.ToString(CultureInfo.InvariantCulture)));
+            row.Add(button);
+        }
+        controls.Add(vertical
+            ? new TVStack(row.ToArray()) { Spacing = 0 }
+            : new THStack(row.ToArray()) { Spacing = 2, HorizontalAlignment = Align.End });
+
+        _alert = new Dialog(Text(Str("title")), new TVStack(controls.ToArray()) { Spacing = 1 }) { IsModal = true };
         _bridge.Windows.AddWindow(_alert);
         _alert.Show();
+    }
+
+    void CloseAlert(string result)
+    {
+        var dialog = _alert;
+        _alert = null;
+        if (dialog is null) return;
+        dialog.Close();
+        _bridge.Windows.RemoveWindow(dialog);
+        _bridge.Emit(Id, result);
     }
 
     public void SetChildren(JsonElement children)

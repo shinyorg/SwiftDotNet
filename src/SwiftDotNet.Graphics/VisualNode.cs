@@ -471,7 +471,7 @@ sealed partial class VisualNode
             }
             case "NavigationLink":
                 return MeasureNavLink(inner);
-            case "Sheet" or "Alert":
+            case "Sheet" or "Alert" or "ActionSheet":
                 return Children.Count > 0 ? Children[0].Measure(inner) : new Size(0, 0);
             case "TabView":
             {
@@ -861,7 +861,7 @@ sealed partial class VisualNode
             case "NavigationLink":
                 if (Children.Count > 0) Children[0].Arrange(new Rect(_content.Left, _content.Top, _content.Right - 20, _content.Bottom));
                 break;
-            case "Sheet" or "Alert":
+            case "Sheet" or "Alert" or "ActionSheet":
                 if (Children.Count > 0) Children[0].Arrange(_content);
                 break;
             case "TabView":
@@ -1335,7 +1335,8 @@ sealed partial class VisualNode
         or "Toggle" or "Slider" or "Stepper" or "Picker" or "DatePicker" or "ColorPicker" or "Menu"
         or "DisclosureGroup" or "HStack" or "VStack" or "Group"
         or "ScrollView" or "List" or "Form" or "Section" or "ZStack" or "Grid" or "AbsoluteLayout"
-        or "Tab" or "TabView" or "NavigationStack" or "NavigationLink" or "Sheet" or "Alert";
+        or "Tab" or "TabView" or "NavigationStack" or "NavigationLink"
+        or "Sheet" or "Alert" or "ActionSheet";
 
     /// <summary>The rasterizer's font provider, reached through the bridge that owns this tree.</summary>
     IFontProvider Fonts => _bridge.Fonts;

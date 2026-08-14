@@ -55,7 +55,7 @@ Reusable host base: `SwiftDotNetApplication : Application`.
 `Menu`→`Button`+`MenuFlyout`, `TextField`→`TextBox`, `SecureField`→`PasswordBox`, `TextEditor`→`TextBox`
 (AcceptsReturn), `Toggle`→`ToggleSwitch`, `Slider`→`Slider`, `Stepper`→`NumberBox`, `Picker`→`ComboBox`,
 `DatePicker`→`CalendarDatePicker`, `ColorPicker`→`Button`+Flyout(`ColorPicker`), `NavigationStack`→a
-`WinNavController`, `Sheet`/`Alert`→`ContentDialog`, `ProgressView`→`ProgressBar`/`ProgressRing`,
+`WinNavController`, `Sheet`/`Alert`/`ActionSheet`→`ContentDialog`, `ProgressView`→`ProgressBar`/`ProgressRing`,
 `Link`→`HyperlinkButton`, shapes→`Rectangle`/`Ellipse`.
 
 **Modifiers** wrap the Inner control in a `Border` (padding/background/border/cornerRadius); foreground/font on
