@@ -30,6 +30,12 @@
         <!-- The ported controls library — pure composition over the core, driven headless in tests. -->
         <ProjectReference Include="..\..\src\SwiftDotNet.Controls\SwiftDotNet.Controls.csproj"/>
         <ProjectReference Include="..\..\src\SwiftDotNet.Controls.Camera\SwiftDotNet.Controls.Camera.csproj"/>
+        <!-- The live-surface vocabulary and the widget timeline model. Both are plain net10.0 and
+             platform-free by design, so the compact wire, the validator, the channel round trip and the
+             timeline selection rule are all exercised headlessly here - which matters more than usual,
+             because the platforms these target fail silently rather than throwing. -->
+        <ProjectReference Include="..\..\src\SwiftDotNet.Live\SwiftDotNet.Live.csproj"/>
+        <ProjectReference Include="..\..\src\SwiftDotNet.Widgets\SwiftDotNet.Widgets.csproj"/>
         <!-- The IDE-facing dev-tools channel (patch tap + socket protocol) and the preview host that
              rides on it. Both are plain net10.0, so they are testable on the same terms as Skia. -->
         <ProjectReference Include="..\..\src\SwiftDotNet.DevTools\SwiftDotNet.DevTools.csproj"/>

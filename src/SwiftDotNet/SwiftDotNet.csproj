@@ -31,6 +31,12 @@
     <UseWinUI>true</UseWinUI>
   </PropertyGroup>
 
+  <!-- The live-surface companion reuses the Brush wire grammar (Brush.Serialize is internal on purpose —
+       it is a wire detail, not API). Same escape hatch SwiftDotNet.Preview.Host already uses for tests. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="SwiftDotNet.Live" />
+  </ItemGroup>
+
   <!-- Core (Core/**) compiles for every TFM. Platform code is opted in per TFM. -->
   <ItemGroup>
     <Compile Remove="Platforms/**/*.cs" />

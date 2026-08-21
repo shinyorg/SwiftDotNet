@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The system-rendered surface vocabulary: Live Activities, rich notifications, Android Live Updates,
+    and (via SwiftDotNet.Widgets) home-screen widgets.
+
+    Plain net10.0 and platform-free by design — exactly the Maps split. This assembly only *describes*
+    a surface and serializes it; the drivers that talk to ActivityKit / NotificationManager live in the
+    companion SwiftDotNet.Live.Apple and SwiftDotNet.Live.Android packages, so an app that never shows a
+    widget never links ActivityKit.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- For Node / NodeJson / SwiftColor / SwiftFont / Brush. The live vocabulary reuses the core wire
+         value tokens verbatim so both interpreters parse colors and fonts the way they already do. -->
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -56,6 +56,9 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 
 ### Companions & planning
 - **[Maps](maps.md)** — the opt-in `SwiftDotNet.Maps` companion (MapKit / MapLibre).
+- **[Live Surfaces](live-surfaces.md)** — the `SwiftDotNet.Live` / `SwiftDotNet.Widgets` companions: iOS
+  Live Activities and the Dynamic Island, home-screen widgets, Android custom notifications and app
+  widgets, and Android 16 Live Updates. The first targets where **another process renders our tree**.
 - **[Roadmap](roadmap.md)** — open design questions and planned work, indexed against [`plans/`](../plans).
 
 ## Project status at a glance
@@ -74,6 +77,8 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 | **Any (WebGPU)** | **Self-drawn, on the GPU** | **Pure C# (wgpu-native, no Skia)** | ✅ Verified on Metal via headless pixel readback; Vulkan/D3D12 unexercised |
 | **Unity** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine + Unity host)** | 🧩 .NET side builds for netstandard2.1; host MonoBehaviour **never compiled** |
 | **Any (terminal)** | **Characters in a TTY** | **Pure C# (XenoAtom.Terminal.UI)** | ✅ Verified headlessly on macOS (35 CI tests); not yet driven by hand in a live terminal |
+
+| **Live surfaces** | **Live Activities, notifications, widgets** | **Restricted DSL + a Swift widget interpreter / a C# `RemoteViews` interpreter** | 🧩 Vocabulary, wire, validator & timeline ✅ verified headlessly (41 tests); both platform drivers **compile but have never run** |
 
 > The top-level [`README.md`](../README.md) is the marketing/overview entry point; these docs are the
 > reference. When they disagree, the docs are authoritative for detail and the README for the pitch.

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Home-screen / lock-screen widgets, on top of the SwiftDotNet.Live vocabulary.
+
+    Kept separate from SwiftDotNet.Live because the two answer different questions: Live carries the
+    view language and the app<->surface channel, Widgets adds the timeline model and the family fan-out.
+    An app that only shows Live Activities never needs any of this.
+
+    Plain net10.0 and platform-free — the drivers live in SwiftDotNet.Live.Apple / .Android.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Live\SwiftDotNet.Live.csproj" />
+  </ItemGroup>
+
+</Project>

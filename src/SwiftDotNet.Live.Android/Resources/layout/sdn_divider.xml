@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A hairline. A bare <View> is NOT on the RemoteViews whitelist, so this is an empty TextView. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/sdn_root"
+    android:layout_width="match_parent"
+    android:layout_height="1dp"
+    android:text="" />

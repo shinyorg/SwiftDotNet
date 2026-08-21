@@ -1,0 +1,22 @@
+<Project>
+
+  <!--
+    Declares the widget-subset Swift shim as a NativeReference.
+
+    Same constraint as SwiftDotNetBridge.targets: NativeReference items do not flow transitively from a
+    referenced library into the consuming app's native link step, so the app that produces the final
+    binary must declare it. Import this from the app .csproj:
+
+      <Import Project="..\..\src\SwiftDotNet.Live.Apple\SwiftDotNetLive.targets" />
+
+    The WIDGET EXTENSION target needs the same framework, but it is an Xcode target rather than a .NET
+    one, so it embeds SwiftDotNetWidgets.xcframework through Xcode's own "Frameworks and Libraries"
+    section. There is no way around that: a WidgetKit extension's @main WidgetBundle must be Swift.
+  -->
+  <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios'">
+    <NativeReference Include="$(MSBuildThisFileDirectory)..\..\build\SwiftDotNetWidgets.xcframework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
+
+</Project>

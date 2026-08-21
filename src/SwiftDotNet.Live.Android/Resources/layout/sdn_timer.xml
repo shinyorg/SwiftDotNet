@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LiveTimer. Chronometer ticks on its own, so a running countdown costs zero notify() calls. -->
+<Chronometer xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/sdn_root"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content" />

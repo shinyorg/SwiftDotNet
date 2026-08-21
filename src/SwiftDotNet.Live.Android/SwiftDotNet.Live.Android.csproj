@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Android driver for live surfaces: custom-content notifications, Android 16 Live Updates, and
+    app widgets.
+
+    There is no Kotlin here and no new .aar, which is worth explaining because it differs from every
+    other Android-facing piece of this repo. The Compose bridge exists because Compose is a
+    compiler-plugin toolkit that cannot be authored from C#. RemoteViews is the opposite: it is a
+    *serialized recipe* (a layout id plus a queue of setter calls) that SystemUI inflates in its own
+    process, and an AppWidgetProvider is a BroadcastReceiver in OUR process. So C# can build the whole
+    tree directly against Android.Widget.RemoteViews, and the primitive layouts ship as AndroidResource
+    from this library. Glance was rejected for the same reason the Compose bridge is not reused: it would
+    put the widget's content vocabulary back in Kotlin.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <!-- RemoteViews gained runtime sizing (setViewLayoutWidth/Height/Margin) and setColorStateList in
+         API 31. Everything below that has no runtime layout control at all, which is why the native
+         render mode declares 31 as its floor; LiveRenderMode.Bitmap is the API 24-30 answer. -->
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Widgets\SwiftDotNet.Widgets.csproj" />
+    <!-- LiveRenderMode.Bitmap renders a live tree with the shared engine rather than a second
+         rasterizer: the engine is already headless behind ICanvas, so Android only supplies a canvas. -->
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+  </ItemGroup>
+
+</Project>

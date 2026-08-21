@@ -25,6 +25,10 @@
     <ProjectReference Include="..\..\src\SwiftDotNet.Maps\SwiftDotNet.Maps.csproj" />
     <ProjectReference Include="..\..\src\SwiftDotNet.Controls\SwiftDotNet.Controls.csproj" />
     <ProjectReference Include="..\..\src\SwiftDotNet.Controls.Camera\SwiftDotNet.Controls.Camera.csproj" />
+    <!-- The live-surface vocabulary. Platform-free, so the shared sample can declare an activity and a
+         widget that every head compiles; only the iOS/Android heads can actually publish them. -->
+    <ProjectReference Include="..\..\src\SwiftDotNet.Live\SwiftDotNet.Live.csproj" />
+    <ProjectReference Include="..\..\src\SwiftDotNet.Widgets\SwiftDotNet.Widgets.csproj" />
   </ItemGroup>
 
 </Project>

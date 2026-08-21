@@ -109,6 +109,42 @@ and custom gauges on their own; they also **supersede F8** in
 [`plans/controls-missing-features-plan.md`](../plans/controls-missing-features-plan.md). Audio and a
 portable shader language are explicitly out of scope.
 
+### System-rendered surfaces — Live Activities, notifications, widgets — **implemented, unrun**
+[`plans/live-activities-plan.md`](../plans/live-activities-plan.md) and
+[`plans/widgets-plan.md`](../plans/widgets-plan.md) — both **built**; reference at
+[Live surfaces](live-surfaces.md).
+
+The two pure-C# libraries (`SwiftDotNet.Live`, `SwiftDotNet.Widgets`) are covered by 41 headless tests.
+The two platform drivers and the Swift shim **compile and have never been run** — no device, no emulator,
+no simulator. Remaining, in order: an emulator run of the `RemoteViews` interpreter; a simulator run of a
+widget extension against the App Group; the five factual unknowns the plans flag (widget memory budget,
+whether a custom `Layout` survives archiving, whether `LiveActivityIntent` really runs in-process, real
+`RemoteViews` parcel limits, the WidgetKit refresh budget); then widget configuration and a `dotnet new`
+template for the Xcode extension target.
+
+These are the first targets where **another process renders our tree**. A Live Activity's UI is built by a
+WidgetKit extension and archived by SpringBoard; an Android notification or app widget is a `RemoteViews`
+recipe inflated inside SystemUI. .NET cannot run in either renderer, so the existing drive loop — C# owns
+the tree and pushes patches through [`IBridge`](../src/SwiftDotNet/Core/IBridge.cs) — does not apply, and
+neither the SwiftUI nor the Compose shim can be reused as-is. What *does* transfer is the wire format
+(`WireNode` in the Swift bridge is already `Decodable`) and `SwiftApp`'s action dispatch.
+
+The result is a restricted `LiveView` vocabulary validated before every publish (the widget SwiftUI subset ∩
+the `RemoteViews` whitelist), a pure-Swift widget interpreter, a **C#** `RemoteViews` interpreter — the
+planned Kotlin one proved unnecessary, since a `RemoteViews` is a serialized recipe and an
+`AppWidgetProvider` runs in our own process — and a bitmap escape hatch that reuses the headless
+[`VisualBridge`](../src/SwiftDotNet.Graphics/VisualBridge.cs) path already in `SwiftDotNet.Graphics`. A
+shared `ISurfaceChannel` — a durable store-and-nudge **mailbox**, not a socket, because an iOS app and its
+extension are almost never alive at once — carries state out and actions back.
+
+The platforms are structurally asymmetric and the plans say so rather than papering over it: Android's
+`AppWidgetProvider` runs in *our* process (C# builds the `RemoteViews` directly; Glance is rejected), while
+Apple's extension has no .NET, so the app must pre-render every timeline entry into an App Group. Android
+work ships first because it needs no extension plumbing; the Apple half's real cost is that a consumer must
+add an Xcode widget-extension target and an App Group entitlement — there is no "just add a NuGet" story.
+Android 16 Live Updates (`Notification.ProgressStyle`) are modelled as **data**, not a view tree, because
+that is what they are.
+
 ## Backend-specific next steps
 
 - **Windows** — compile + verify the WinUI 3 backend on a Windows host (expect minor API fixes). See

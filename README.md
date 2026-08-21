@@ -67,6 +67,8 @@ Full docs live in **[`docs/`](docs/README.md)**. Quick links:
   [Terminal/TUI](docs/backends/tui.md)
 - Tooling: **[Rider Plugin & Dev Tools](docs/rider-plugin.md)** — run configurations, the live
   patch inspector, and the in-IDE Skia preview
+- **[Live Surfaces](docs/live-surfaces.md)** — iOS Live Activities & the Dynamic Island, home-screen
+  widgets, Android custom notifications & app widgets, Android 16 Live Updates
 - **[Maps](docs/maps.md)** · **[Roadmap](docs/roadmap.md)**
 
 ## Custom controls

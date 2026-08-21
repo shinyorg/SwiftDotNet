@@ -26,10 +26,20 @@ public class RetainedChildStateTests
     {
         var child = new GreetingChild();
         var bridge = new RecordingBridge();
-        SwiftApp.Run(new RetainingRoot(child), bridge);
+
+        // SwiftApp captures the ambient SynchronizationContext at Run and posts renders to it, and xUnit
+        // installs one of its own for every test. Without a pump we own, `child.Fire(...)` queues the
+        // render onto xUnit's scheduler and the assertion below races it -- passing only when the
+        // scheduler happens to drain first, which it does under light load and does not under heavy.
+        // Same hazard TuiTestHost documents; same fix.
+        var pump = new ManualPump();
+        using var _ = pump.Install();
+
+        SwiftApp.Run(new RetainingRoot(child), bridge);   // the initial render is synchronous
 
         bridge.Patches.Clear();
         child.Fire("Ada");
+        pump.Drain();
 
         Assert.Single(bridge.Patches);
         Assert.Contains("Hello, Ada!", bridge.Patches[0], StringComparison.Ordinal);
@@ -42,10 +52,18 @@ public class RetainedChildStateTests
         // instance that is no longer rendered and the diff comes back empty.
         var bridge = new RecordingBridge();
         var root = new RebuildingRoot();
+
+        // Pumped for the same reason as above. It matters more here than it looks: without draining, an
+        // empty Patches list would "pass" simply because the render had not run yet, so the test would
+        // hold even if the bug were fixed.
+        var pump = new ManualPump();
+        using var _ = pump.Install();
+
         SwiftApp.Run(root, bridge);
 
         bridge.Patches.Clear();
         root.LastBuiltChild!.Fire("Ada");
+        pump.Drain();
 
         Assert.Empty(bridge.Patches);
     }
@@ -74,6 +92,39 @@ public class RetainedChildStateTests
         Assert.True(bridge.TryGetFrame("0.0.0", out var greeting));
         Assert.True(greeting.Width > 0);
         Assert.Equal("Hello, Ada!", child.Greeting);
+    }
+}
+
+/// <summary>
+/// A <see cref="SynchronizationContext"/> that runs posted callbacks only when told to, so a render
+/// lands exactly where the test says it does rather than whenever xUnit's scheduler gets to it.
+/// </summary>
+file sealed class ManualPump : SynchronizationContext
+{
+    readonly Queue<(SendOrPostCallback Callback, object? State)> _queue = new();
+
+    public override void Post(SendOrPostCallback d, object? state) => _queue.Enqueue((d, state));
+
+    public IDisposable Install()
+    {
+        var previous = Current;
+        SetSynchronizationContext(this);
+        return new Restore(previous);
+    }
+
+    /// <summary>Runs everything queued so far.</summary>
+    public void Drain()
+    {
+        while (_queue.Count > 0)
+        {
+            var (callback, state) = _queue.Dequeue();
+            callback(state);
+        }
+    }
+
+    sealed class Restore(SynchronizationContext? previous) : IDisposable
+    {
+        public void Dispose() => SetSynchronizationContext(previous);
     }
 }
 

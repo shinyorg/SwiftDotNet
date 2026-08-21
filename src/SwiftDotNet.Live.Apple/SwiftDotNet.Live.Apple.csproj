@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Apple driver for live surfaces: Live Activities (ActivityKit) and widgets (WidgetKit).
+
+    Everything here goes through the SwiftDotNetWidgets xcframework, and it has to: neither WidgetKit nor
+    ActivityKit is bound in .NET for iOS. Both are Swift-only frameworks with no Objective-C surface to
+    project, so there is no binding to add and no P/Invoke to a system library that would work. The Swift
+    shim is not a convenience here, it is the only route.
+
+    iOS-only. ActivityKit does not exist elsewhere, and while WidgetKit does exist on macOS, nothing here
+    has been run there - adding the TFM would make the status tables dishonest.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-ios</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Widgets\SwiftDotNet.Widgets.csproj" />
+  </ItemGroup>
+
+</Project>

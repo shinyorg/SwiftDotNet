@@ -25,6 +25,10 @@
     <Project Path="src/SwiftDotNet.Tui/SwiftDotNet.Tui.csproj"/>
     <Project Path="src/SwiftDotNet.Tui.Graphics/SwiftDotNet.Tui.Graphics.csproj"/>
     <Project Path="src/SwiftDotNet.Maps/SwiftDotNet.Maps.csproj"/>
+    <Project Path="src/SwiftDotNet.Live/SwiftDotNet.Live.csproj"/>
+    <Project Path="src/SwiftDotNet.Widgets/SwiftDotNet.Widgets.csproj"/>
+    <Project Path="src/SwiftDotNet.Live.Android/SwiftDotNet.Live.Android.csproj"/>
+    <Project Path="src/SwiftDotNet.Live.Apple/SwiftDotNet.Live.Apple.csproj"/>
     <Project Path="src/SwiftDotNet.Controls/SwiftDotNet.Controls.csproj"/>
     <Project Path="src/SwiftDotNet.Controls.Camera/SwiftDotNet.Controls.Camera.csproj"/>
     <Project Path="src/SwiftDotNet.Maps.Web/SwiftDotNet.Maps.Web.csproj"/>
