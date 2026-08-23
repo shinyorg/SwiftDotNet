@@ -84,6 +84,17 @@ reconciliation.
 [`plans/native-view-access-plan.md`](../plans/native-view-access-plan.md) — tag-based access to a control's
 underlying native view (`.Tag` + per-backend `Customize` registries).
 
+### MAUI interop — **implemented, MAUI half unrun**
+[`plans/maui-interop-plan.md`](../plans/maui-interop-plan.md) · docs: [MAUI Interop](maui-interop.md). The
+platform-view seam (`IPlatformViewHost`) is in the engine with CI coverage, `MauiView` embeds a real MAUI
+control, and `WebView` finally punches through inside a MAUI app. What's left: **drive the sample's MAUI tab
+by hand** on the simulator and emulator — scroll tracking, per-control clipping, the overlay-suppression
+rule, and the IME hand-off between the shadow `Entry` and an embedded text control are all unverified; a
+`Map` platform-view renderer; an `IPlatformViewHost` for the non-MAUI Skia hosts (AppKit, Silk, WPF,
+WinForms) so `WebView`/`Map` work there too; and the guest direction (a MAUI control inside a SwiftUI or
+Compose tree) compiles on every platform but has never run — the WinUI third of it has never compiled,
+along with the rest of that backend.
+
 ### Accessibility & screen readers
 [`plans/accessibility-plan.md`](../plans/accessibility-plan.md) — nothing is built. Ten SwiftUI-style
 modifiers (`.AccessibilityLabel`/`Hint`/`Value`/`Hidden`/traits/grouping/actions), an `Accessibility`
@@ -147,8 +158,17 @@ that is what they are.
 
 ## Backend-specific next steps
 
-- **Windows** — compile + verify the WinUI 3 backend on a Windows host (expect minor API fixes). See
+- **Windows / WinUI 3** — compile + verify the WinUI 3 backend on a Windows host (expect minor API fixes).
+  It is now the only Windows backend that has never been through a compiler. See
   [Windows backend](backends/windows.md).
+- **Windows / WPF** — *run* it. The backend and its sample head compile on macOS and on a `windows-latest`
+  CI runner, but no window has ever been opened, so every runtime behaviour is intended rather than
+  verified. Known gaps to revisit once it runs: `.Animation` (implicit layout transitions) is a no-op,
+  `PasswordBox` has no placeholder, and `ColorPicker` offers a fixed palette rather than a full picker. See
+  [WPF backend](backends/wpf.md).
+- **Windows Forms** — *run* the Skia host. Same status as WPF: compiles, never run. There is deliberately
+  no native-control WinForms backend; see [WinForms](backends/winforms.md) for the reasoning, which is not
+  expected to change.
 - **Skia** — [accessibility bridge](../plans/accessibility-plan.md); `WebView`/`Map` native-overlay punch-through; caret placement and
   selection (the IME replaces the whole string, so edits always land at the end); keyboard avoidance; pan
   inertia/rubber-banding; dirty-rect repaint; the Windows MAUI head. The iOS/Android MAUI TFMs, the AndroidX

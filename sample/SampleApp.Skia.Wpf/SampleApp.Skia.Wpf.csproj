@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- net10.0-windows with UseWPF, but Skia draws it — NOT the native WPF backend. The explicit
+         declaration is what stops the derivation in msbuild/SwiftDotNet.Platform.targets calling this a
+         WPF head. Same reason SampleApp.Skia.Mac declares it. -->
+    <SwiftDotNetPlatform>skia</SwiftDotNetPlatform>
+    <OutputType>WinExe</OutputType>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <StartupObject>SwiftDotNet.Sample.Skia.Wpf.Program</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SwiftDotNet.Skia.Wpf\SwiftDotNet.Skia.Wpf.csproj" />
+    <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
+    <ProjectReference Include="..\SampleApp.Skia.Renderers\SampleApp.Skia.Renderers.csproj" />
+  </ItemGroup>
+
+</Project>

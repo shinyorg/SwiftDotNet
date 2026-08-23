@@ -14,7 +14,7 @@
   <PropertyGroup>
     <!-- The values the tooling understands. Kept here rather than in the .targets so a project can read
          the list without having reached the end of evaluation. -->
-    <SwiftDotNetKnownPlatforms>apple;android;gtk;windows;web;skia;skia-maui;tui</SwiftDotNetKnownPlatforms>
+    <SwiftDotNetKnownPlatforms>apple;android;gtk;windows;wpf;winforms;web;skia;skia-maui;tui</SwiftDotNetKnownPlatforms>
   </PropertyGroup>
 
 </Project>

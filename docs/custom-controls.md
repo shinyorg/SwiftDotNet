@@ -145,6 +145,45 @@ registerRenderer("NativeRating") { props -> /* @Composable */ }
 An **unregistered type renders a `⚠️` placeholder, not a crash** (`⚠` on the terminal backend). So you can ship a `CustomView` and add
 backend renderers incrementally.
 
+## 3. Platform views — a control the canvas *cannot* draw
+
+The registries above assume the backend can render your control. On a self-drawing backend some controls are
+simply out of reach: a `WebView`, a live map, an embedded .NET MAUI view. For those there is a third
+registry, and instead of drawing, the engine reports **where** the control belongs so the host can float a
+real one over the canvas.
+
+```csharp
+using SwiftDotNet.Graphics;
+
+PlatformViews.Register("MauiView");          // this type is a control, not paint
+
+sealed class MyHost : IPlatformViewHost
+{
+    public void SyncPlatformViews(IReadOnlyList<PlatformViewPlacement> placements)
+    {
+        // The COMPLETE set for this frame: create what is new, move and show/hide what persists,
+        // dispose anything whose id is absent.
+    }
+}
+
+bridge.PlatformViewHost = new MyHost();
+```
+
+Registering a type affects **layout** everywhere (it measures as a platform view) but only affects
+**painting** where a host is attached — so a headless, Silk or game-engine host keeps the painted
+placeholder with no `#if` anywhere.
+
+This is what makes [`MauiView`](maui-interop.md#mauiview) work, and it is why `WebView` shows a real web
+page inside a MAUI app while still painting *"not drawable on a canvas"* everywhere else. The mechanics —
+the whole-set contract, z-order suppression under an overlay, transforms being a no-op, clipping and
+measurement — are in [MAUI Interop → the platform-view seam](maui-interop.md#the-platform-view-seam) and
+[Architecture](architecture.md#the-platform-view-seam).
+
+On the **native-shim backends** there is no canvas to float anything over, so the same idea takes a
+different shape: the shim asks C# for a native view by key and wraps it (`UIViewRepresentable` on Apple, a
+Compose `AndroidView` on Android). See
+[MAUI as the guest](maui-interop.md#maui-as-the-guest-the-native-shim-backends).
+
 ## Reaching a specific native view (`.Tag`)
 
 A proposed (partly planned) seam lets you reach the underlying native view of an *existing* control by tag —

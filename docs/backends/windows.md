@@ -1,5 +1,9 @@
 # Windows (WinUI 3)
 
+> **Windows has three backends.** This page is WinUI 3. See also **[WPF](wpf.md)** (real Win32
+> controls, and the one that actually compiles today) and **[WinForms](winforms.md)** (the Skia
+> canvas — a native WinForms backend was deliberately not built).
+
 WinUI 3 controls are fully C#-bindable (not a compiler-plugin framework), so Windows uses the same **pure-C#
 "translate to controls"** retained-mode route as [GTK](linux-gtk.md) — **no native shim**.
 

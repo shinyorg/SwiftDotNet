@@ -87,6 +87,15 @@ interface EventCallback {
     fun onEvent(id: String, value: String?)
 }
 
+/**
+ * Supplies a real Android view for a `MauiView` node, keyed by the node's stable identity. Implemented on
+ * the managed side (see `AndroidPlatformViews`) — a `fun interface` so the Java binding surfaces it to C#
+ * as a single-method interface, exactly like [EventCallback].
+ */
+fun interface PlatformViewProvider {
+    fun viewFor(key: String): View?
+}
+
 /** Observable node — props/modifiers/children are snapshot state (Compose analog of iOS @Observable). */
 class VNode(
     val id: String,
@@ -110,6 +119,18 @@ object SwiftDotNetBridge {
     @JvmStatic fun setEventCallback(cb: EventCallback) { eventCallback = cb }
 
     @JvmStatic fun emit(id: String, value: String?) { eventCallback?.onEvent(id, value) }
+
+    private var platformViewProvider: PlatformViewProvider? = null
+
+    /**
+     * Install the provider C# uses to hand over real Android views for `MauiView` nodes — typically a
+     * .NET MAUI control realised through MAUI's native embedding. The bridge knows nothing about MAUI;
+     * it only knows how to ask for a View by key. Until this is set, those nodes render a placeholder.
+     */
+    @JvmStatic fun setPlatformViewProvider(provider: PlatformViewProvider?) { platformViewProvider = provider }
+
+    /** The native view for a node key, or null when nothing is registered for it. */
+    @JvmStatic fun platformView(key: String): View? = platformViewProvider?.viewFor(key)
 
     @JvmStatic
     fun render(json: String) {
@@ -918,6 +939,7 @@ private fun RawNode(node: VNode) {
         "ActionSheet" -> ActionSheetNode(node)
 
         "WebView" -> WebViewNode(node)
+        "MauiView" -> PlatformViewNode(node)
         "Image" -> RasterImage(node)
         "Label" -> Row(verticalAlignment = Alignment.CenterVertically) {
             // Fixed-width icon slot so titles line up down the column however wide the glyph renders.
@@ -950,6 +972,25 @@ private fun RawNode(node: VNode) {
             else Text("⚠️ unknown view: ${node.type}", color = colorFor("red")!!)
         }
     }
+}
+
+// MARK: - Platform views -----------------------------------------------------
+
+/**
+ * Hosts a C#-owned Android view inside Compose. The managed side owns the view's lifetime and pushes new
+ * values into it through its own updater, so `update` here is deliberately empty.
+ */
+@Composable
+private fun PlatformViewNode(node: VNode) {
+    val key = node.s("key")
+    val width = node.n("w")
+    val height = node.n("h")
+    AndroidView(
+        factory = { ctx -> SwiftDotNetBridge.platformView(key) ?: View(ctx) },
+        modifier = Modifier
+            .then(if (width != null) Modifier.width(width.dp) else Modifier.fillMaxWidth())
+            .then(if (height != null) Modifier.height(height.dp) else Modifier.height(120.dp)),
+    )
 }
 
 // MARK: - WebView ------------------------------------------------------------

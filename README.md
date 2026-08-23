@@ -1,7 +1,7 @@
 # SwiftDotNet
 
 **SwiftUI for .NET — everywhere.** Write declarative UI once in C# and render it as *real* native UI on
-each platform: **SwiftUI** on iOS/macOS/tvOS, **Jetpack Compose** on Android, **GTK4** on Linux, **WinUI 3**
+each platform: **SwiftUI** on iOS/macOS/tvOS, **Jetpack Compose** on Android, **GTK4** on Linux, **WinUI 3** and **WPF**
 on Windows, and **HTML/DOM** on the Web. Not a reimplementation of each toolkit — the actual native controls,
 with the platform's own layout, fonts, animations, and accessibility. Plus a **self-drawing SkiaSharp**
 backend that paints the UI itself for a pixel-identical look on every platform, hosts for the **MonoGame**,
@@ -20,6 +20,8 @@ controls) and **self-drawing** (paint every pixel with SkiaSharp for a pixel-ide
 | Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop |
 | Linux | Self-drawn on a native Wayland surface | Pure C# (libwayland/xkbcommon P/Invoke) | 🧩 Scaffolded — builds clean; never run against a compositor |
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded (needs Windows to build) |
+| Windows | WPF | Pure C# (no shim) | 🧩 Scaffolded — compiles clean (Windows CI); never run |
+| Windows | Self-drawn on a WinForms / WPF surface | Pure C# (Skia engine) | 🧩 Host compiles clean; never run |
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp — no native controls)** | ✅ Verified (macOS window + headless PNG) |
 | **Any (terminal)** | **Characters in a TTY** | **Pure C# (XenoAtom.Terminal.UI — no native controls)** | ✅ Verified headlessly (35 CI tests) |
@@ -33,7 +35,7 @@ backends can't reach (dependency-free desktop, embedded/framebuffer Linux). Trad
 accessibility, and `WebView`/`Map` can't be painted onto a canvas (they need a native-view overlay).
 
 Two backend routes: SwiftUI and Compose are **compiler-plugin frameworks**, so they need a thin native shim
-(Swift/Kotlin) that reconstructs the tree; GTK, WinUI, and the Web are fully C#-bindable, so those backends are
+(Swift/Kotlin) that reconstructs the tree; GTK, WinUI, WPF, and the Web are fully C#-bindable, so those backends are
 **pure C#** with **no native code** — a retained-mode interpreter that maps the node tree straight to native
 controls (or DOM elements) and applies the same diff patches.
 
@@ -65,7 +67,9 @@ Full docs live in **[`docs/`](docs/README.md)**. Quick links:
   **[Controls Library](docs/controls-library.md)**
 - Backends: **[Overview](docs/backends/README.md)** · [Apple](docs/backends/apple.md) ·
   [Android](docs/backends/android.md) · [Linux/GTK](docs/backends/linux-gtk.md) ·
-  [Windows](docs/backends/windows.md) · [Web](docs/backends/web.md) · [Skia](docs/backends/skia.md) ·
+  [Windows/WinUI](docs/backends/windows.md) · [Windows/WPF](docs/backends/wpf.md) ·
+  [Windows/WinForms](docs/backends/winforms.md) · [Web](docs/backends/web.md) ·
+  [Skia](docs/backends/skia.md) ·
   [WebGPU](docs/backends/webgpu.md) · [MonoGame](docs/backends/monogame.md) ·
   [Godot](docs/backends/godot.md) · [Unity](docs/backends/unity.md) ·
   [Terminal/TUI](docs/backends/tui.md)
@@ -73,6 +77,8 @@ Full docs live in **[`docs/`](docs/README.md)**. Quick links:
   patch inspector, and the in-IDE Skia preview
 - **[Live Surfaces](docs/live-surfaces.md)** — iOS Live Activities & the Dynamic Island, home-screen
   widgets, Android custom notifications & app widgets, Android 16 Live Updates
+- **[MAUI Interop](docs/maui-interop.md)** — host SwiftDotNet in a .NET MAUI app, and put real MAUI
+  controls back inside the tree with `MauiView`
 - **[Maps](docs/maps.md)** · **[Roadmap](docs/roadmap.md)**
 
 ## Custom controls
@@ -232,9 +238,14 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 | `sample/SampleApp.Skia` | `net10.0` | Headless harness: renders `ContentView` to PNGs, drives taps/scroll/typing/overlays/animation (the Skia analog of the `SDN_TEST` harness). |
 | `sample/SampleApp.Skia.Mac` | `net10.0-macos` | **Interactive** AppKit window: an `NSView` blits the Skia scene and feeds mouse/scroll/keyboard into the bridge; a timer drives the animation clock. |
 | `src/SwiftDotNet.Skia.Maui` | `net10.0-maccatalyst` (+more) | MAUI adapter: `SwiftDotNetSkiaView : SKCanvasView` hosts the engine on iOS/Android/Mac Catalyst/Windows. Composes with **Shiny** via MAUI hosting (`.UseShiny()`) — the Skia UI and Shiny plugins share one DI container. |
+| `src/SwiftDotNet.Maui` | `net10.0-ios;-android;-maccatalyst` (+`-windows`) | **MAUI interop**: the `MauiView` node (a real `Microsoft.Maui.Controls.View` inside a SwiftDotNet tree), the layer that places those controls over the Skia canvas, and `MauiEmbedding` for the reverse direction. There is deliberately **no MAUI backend** — see [MAUI Interop](docs/maui-interop.md). |
 | `sample/SampleApp.Skia.Maui` | `net10.0-maccatalyst` | MAUI + **Shiny** demo: `MauiProgram` calls `.UseSkiaSharp().UseShiny()` + `AddBluetoothLE()`; the page resolves `IBleManager` from the same container. (`-p:NoShiny=true` builds without Shiny.) |
 | `sample/SampleApp.Tui` | `net10.0` | Thin terminal app: references `SwiftDotNet.Tui` and registers a `TuiRenderers` custom renderer. `SDN_TUI_GRAPHICS=1` opts into real pixel images. |
 | `sample/SampleApp.Skia.Silk` | `net10.0` | **Dependency-free desktop** (Windows/macOS/Linux): a Silk.NET (GLFW) window + GL context; SkiaSharp draws onto a GL-backed surface. Base for embedded/framebuffer Linux. |
+| `src/SwiftDotNet.Wpf` | `net10.0-windows` | **WPF backend** — the node tree as real `System.Windows.Controls`. Separate project (Windows-only TFM); `EnableWindowsTargeting` so it compiles off Windows too. |
+| `src/SwiftDotNet.Skia.Wpf` | `net10.0-windows` | Skia host for WPF: `SwiftDotNetSkiaElement` paints into a `WriteableBitmap` back buffer. No `SkiaSharp.Views.WPF` dependency (that package is .NET-Framework-only). |
+| `src/SwiftDotNet.Skia.WindowsForms` | `net10.0-windows` | Skia host for Windows Forms: `SwiftDotNetSkiaControl` paints into a locked GDI+ bitmap. **The only WinForms backend** — see [WinForms](docs/backends/winforms.md). |
+| `sample/SampleApp.Wpf` · `.Skia.Wpf` · `.Skia.WinForms` | `net10.0-windows` | The three Windows-desktop heads. All build on macOS/Linux; CI compiles them on `windows-latest`. |
 
 All projects are wired into **`SwiftDotNet.slnx`** at the repo root.
 
@@ -249,6 +260,8 @@ is a one-liner that just names its root view:
 | `SwiftDotNetAppDelegate : NSApplicationDelegate` | macOS | same (creates + sizes the `NSWindow` for you) |
 | `SwiftDotNetActivity : ComponentActivity` | Android | `[Activity(MainLauncher=true)] class MainActivity : SwiftDotNetActivity` |
 | `SwiftDotNetApplication : Application` | Windows | `class App : SwiftDotNetApplication` |
+| `SwiftDotNetWpfApplication : Application` | Windows (WPF) | `class App : SwiftDotNetWpfApplication` |
+| `SwiftDotNetSkiaWindow` / `SwiftDotNetSkiaForm` | Windows (Skia on WPF / WinForms) | `app.Run(new SwiftDotNetSkiaWindow(swiftApp))` |
 
 Each override is just `protected override SwiftDotNetApp CreateSwiftApp() => SwiftProgram.CreateSwiftApp();`
 — deliberately the same shape as .NET MAUI's `MauiProgram.cs`. `SwiftProgram` is the single place the app
@@ -279,6 +292,20 @@ fully C#-bindable, so no native shim is needed — unlike SwiftUI/Compose. **Thi
 not yet compiled** (WinUI 3 / Windows App SDK require Windows to build); expect minor WinUI API fixes on the
 first Windows build. Notably, `microsoft-ui-reactor` is a WinUI-only project with this same architecture —
 a sibling, not a dependency; this backend keeps SwiftDotNet's own reconciler.
+
+**Windows/WPF** takes the same route and is the one that actually builds today: `SwiftDotNet.Wpf` maps the
+node tree to real WPF controls (`TextBox`, `CheckBox`, `Slider`, `ComboBox`, `TabControl`, `Expander`,
+`DatePicker`, `Canvas`, shapes, …). Where WinUI has a control WPF lacks it is rebuilt from parts rather than
+dropped — `Stepper` becomes a `RepeatButton` pair, `ColorPicker` a swatch + palette popup, and dialogs an
+overlay layer (a modal `ShowDialog()` would block the render loop mid-patch). Two modifiers land *better*
+than on WinUI: `.Shadow` is a real `DropShadowEffect` that follows the content's alpha, and `.Disabled` is
+plain `IsEnabled`. It compiles on macOS and Linux via `EnableWindowsTargeting` and on a `windows-latest` CI
+runner — but has **never been run**. See [WPF](docs/backends/wpf.md).
+
+**Windows Forms** deliberately gets **no** native-control backend. GDI controls have no transforms, no
+per-element opacity, no rounded clipping, no vector shapes and no animation system, so roughly half the
+modifier vocabulary would have had to become a silent no-op. It hosts the Skia canvas in one `Control`
+instead, which gives it the complete feature set. See [WinForms](docs/backends/winforms.md).
 
 The sample app is **unpackaged + self-contained** (`WindowsPackageType=None`, `SelfContained=true`,
 `WindowsAppSDKSelfContained=true`), so on a Windows machine it runs with no prerequisites beyond the .NET SDK:

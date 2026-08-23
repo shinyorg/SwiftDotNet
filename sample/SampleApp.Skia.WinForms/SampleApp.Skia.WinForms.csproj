@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Skia draws it. WinForms has no native-control backend at all, so unlike the WPF pair there is no
+         other candidate — but the declaration keeps the derivation from guessing `winforms`, which would
+         name a backend that does not exist. -->
+    <SwiftDotNetPlatform>skia</SwiftDotNetPlatform>
+    <OutputType>WinExe</OutputType>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <StartupObject>SwiftDotNet.Sample.Skia.WinForms.Program</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SwiftDotNet.Skia.WindowsForms\SwiftDotNet.Skia.WindowsForms.csproj" />
+    <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
+    <ProjectReference Include="..\SampleApp.Skia.Renderers\SampleApp.Skia.Renderers.csproj" />
+  </ItemGroup>
+
+</Project>

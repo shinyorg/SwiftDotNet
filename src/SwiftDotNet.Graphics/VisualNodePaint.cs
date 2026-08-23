@@ -97,6 +97,7 @@ sealed partial class VisualNode
             {
                 var clip = canvas.Save();
                 canvas.ClipRect(Frame);
+                _bridge.PushClip(Frame);   // platform views inside this viewport clip to it too
                 // Viewport culling: rows arranged fully above/below the visible window are skipped, so a
                 // long scrolled list only pays paint cost for the handful of rows actually on screen.
                 foreach (var c in Children)
@@ -109,6 +110,7 @@ sealed partial class VisualNode
                     }
                     c.Draw(canvas, dark);
                 }
+                _bridge.PopClip();
                 canvas.RestoreToCount(clip);
                 PaintScrollbar(canvas, dark);
                 return;
@@ -160,6 +162,17 @@ sealed partial class VisualNode
 
     void PaintContent(ICanvas canvas, bool dark)
     {
+        // A registered platform view is drawn by a real OS control the host floats above the canvas, so the
+        // engine paints *nothing* here and reports where the control belongs instead. Decorations
+        // (.Background / .Border) are painted by PaintDecorations either way, so the SwiftDotNet chrome
+        // around a transparent native control still shows. With no host attached this is false and the
+        // node keeps painting the placeholder below.
+        if (IsPlatformView)
+        {
+            _bridge.RecordPlatformView(Id, Type, _content, Props);
+            return;
+        }
+
         switch (Type)
         {
             case "Text":

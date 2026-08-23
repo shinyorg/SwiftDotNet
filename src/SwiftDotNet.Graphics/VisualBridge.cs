@@ -125,8 +125,9 @@ public class VisualBridge : IBridge
     public void Draw(ICanvas canvas, Size size, bool dark)
     {
         canvas.Clear(ClearColor ?? Theme.Background(dark));
-        if (_root is null) return;
+        if (_root is null) { BeginPlatformViews(); SyncPlatformViews(default); return; }
         _lastSize = size;
+        BeginPlatformViews();
         _root.Measure(size);
         _root.Arrange(new Rect(0, 0, size.Width, size.Height));
         _root.Draw(canvas, dark);
@@ -134,7 +135,76 @@ public class VisualBridge : IBridge
         // Overlays (Sheet/Alert/Menu/pushed nav) paint full-window on top, post-order so an outer
         // presentation lands above an inner one.
         var window = new Rect(0, 0, size.Width, size.Height);
-        foreach (var n in Overlays(_root)) n.PaintOverlay(canvas, window, dark);
+        foreach (var n in Overlays(_root))
+        {
+            // Each overlay is a new stacking layer, and its content is a separate subtree that may hold
+            // platform views of its own. Only the topmost layer's survive — see SyncPlatformViews.
+            _paintLayer++;
+            _clips.Clear();
+            n.PaintOverlay(canvas, window, dark);
+        }
+
+        SyncPlatformViews(window);
+    }
+
+    // ---- platform views (real OS controls floated above the canvas) ----------
+
+    /// <summary>
+    /// The host that places real OS controls for <see cref="PlatformViews"/>-registered node types
+    /// (<c>WebView</c>, an embedded MAUI view, …). Null — the default — means every such node keeps
+    /// painting its placeholder, which is what a headless or game-engine host wants.
+    /// </summary>
+    public IPlatformViewHost? PlatformViewHost { get; set; }
+
+    readonly List<(PlatformViewPlacement Placement, int Layer)> _placements = new();
+    readonly Stack<Rect> _clips = new();
+    int _paintLayer;
+
+    void BeginPlatformViews()
+    {
+        _placements.Clear();
+        _clips.Clear();
+        _paintLayer = 0;
+    }
+
+    /// <summary>Push a clipping viewport (a ScrollView/List/Form) for the duration of its children's paint.</summary>
+    internal void PushClip(Rect rect)
+        => _clips.Push(_clips.Count > 0 ? _clips.Peek().Intersect(rect) : rect);
+
+    internal void PopClip()
+    {
+        if (_clips.Count > 0) _clips.Pop();
+    }
+
+    /// <summary>Called from the paint pass by a node whose type is registered as a platform view.</summary>
+    internal void RecordPlatformView(string id, string type, Rect frame, IReadOnlyDictionary<string, object?> props)
+    {
+        var clip = _clips.Count > 0 ? _clips.Peek() : (Rect?)null;
+        _placements.Add((new PlatformViewPlacement(id, type, frame, clip, Visible: true, props), _paintLayer));
+    }
+
+    // Resolve visibility once the whole frame is known, then hand the host the complete set.
+    //
+    // Visibility is decided here rather than at record time for one reason: z-order. A real OS control
+    // always floats *above* the canvas, so anything the engine paints over it — a Sheet, an Alert, a Menu,
+    // a pushed navigation destination — would appear behind the control instead of in front of it. Flutter
+    // and MAUI live with the same inversion. The resolution is to suppress: only the placements recorded in
+    // the topmost layer that painted stay visible, so a control under a presented Sheet hides itself, while
+    // a control *inside* that Sheet is shown.
+    void SyncPlatformViews(Rect window)
+    {
+        if (PlatformViewHost is not { } host) return;
+        var top = _paintLayer;
+        var resolved = new List<PlatformViewPlacement>(_placements.Count);
+        foreach (var (p, layer) in _placements)
+        {
+            var visible = layer == top
+                && p.Frame.Width > 0 && p.Frame.Height > 0
+                && p.Frame.IntersectsWith(window)
+                && (p.Clip is not { } c || p.Frame.IntersectsWith(c));
+            resolved.Add(p with { Visible = visible });
+        }
+        host.SyncPlatformViews(resolved);
     }
 
     /// <summary>Dispatch a pointer tap; returns true if a node handled it (host should then repaint).</summary>

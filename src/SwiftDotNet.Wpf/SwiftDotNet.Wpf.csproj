@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net10.0-windows with the *default* platform version (7.0), which is what WPF needs and no more.
+         Deliberately NOT a 10.0.19041 TPV: that would also be compatible with SwiftDotNet's
+         net10.0-windows10.0.19041.0 TFM, which carries the WinUI 3 backend, and a consumer would end up
+         compiling against two backends at once. At the default TPV, NuGet resolves SwiftDotNet's neutral
+         net10.0 asset and only Core comes along. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- Lets the project restore/compile on macOS and Linux (the repo's primary dev machine is macOS), so
+         this backend is compiler-verified rather than scaffolded like the WinUI one. Running still
+         requires Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+  </PropertyGroup>
+
+  <!-- WPF is a bindable, retained-mode toolkit (not a compiler-plugin one), so this is the same pure-C#
+       "translate to real controls" route as GTK and WinUI — no native shim. It is a separate project
+       rather than another TFM of the root library for the same reason GTK is: a Windows-only TFM would
+       force its dependency on every consumer of the multi-target library. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+  </ItemGroup>
+
+  <!-- WebView (the DSL control) → WebView2. WPF has no in-box web control at all, and the alternative
+       was a permanent "⚠️ WebView" placeholder. The package is managed-only at build time; the native
+       runtime is the WebView2 Evergreen runtime that ships with Windows 11 and current Windows 10. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
+  </ItemGroup>
+
+</Project>

@@ -36,6 +36,15 @@
     <SwiftDotNetPlatform Condition="$(TargetFramework.EndsWith('-ios')) Or $(TargetFramework.EndsWith('-tvos')) Or $(TargetFramework.EndsWith('-macos')) Or $(TargetFramework.EndsWith('-maccatalyst'))">apple</SwiftDotNetPlatform>
     <SwiftDotNetPlatform Condition="$(TargetFramework.EndsWith('-android'))">android</SwiftDotNetPlatform>
     <SwiftDotNetPlatform Condition="$(TargetFramework.Contains('-windows'))">windows</SwiftDotNetPlatform>
+    <!-- Three backends share the net10.0-windows family — WinUI 3, WPF and WinForms — so unlike every
+         other platform the TFM alone cannot pick between them. UseWPF / UseWindowsForms can, and they are
+         properties those heads had to set to compile at all. WinUI stays the bare-TFM answer because it
+         is the one needing no such switch. These are later assignments in the same PropertyGroup, so they
+         override the line above while the whole group stays gated on "not declared explicitly" — a head
+         that says SwiftDotNetPlatform itself (a Skia head on either toolkit, say) still wins outright.
+         A project setting both switches resolves to winforms; nothing in the repo does. -->
+    <SwiftDotNetPlatform Condition="$(TargetFramework.Contains('-windows')) And '$(UseWPF)' == 'true'">wpf</SwiftDotNetPlatform>
+    <SwiftDotNetPlatform Condition="$(TargetFramework.Contains('-windows')) And '$(UseWindowsForms)' == 'true'">winforms</SwiftDotNetPlatform>
   </PropertyGroup>
 
   <!-- A MAUI head hosts one of the backends inside MAUI rather than being that backend, so the TFM alone

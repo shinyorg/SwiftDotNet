@@ -26,6 +26,8 @@ public class SwiftDotNetSkiaView : Microsoft.Maui.Controls.ContentView
     readonly SKCanvasView _canvas = new();
     readonly Entry _input = new();
     readonly MauiGrid _layout = new();
+    readonly Microsoft.Maui.Controls.AbsoluteLayout _platformViews = MauiPlatformViewLayer.CreatePanel();
+    readonly MauiPlatformViewLayer _platformViewLayer;
     float _scale = 1;
     double _clock;
     bool _syncingInput;         // suppress the TextChanged that our own Text assignment raises
@@ -41,6 +43,7 @@ public class SwiftDotNetSkiaView : Microsoft.Maui.Controls.ContentView
     public SwiftDotNetSkiaView(View root, IServiceProvider? services)
     {
         _pointer = new SkiaPointerRouter(_bridge);
+        _platformViewLayer = new MauiPlatformViewLayer(_platformViews, _bridge);
         _canvas.EnableTouchEvents = true;
         _bridge.Invalidate += OnInvalidate;
         _canvas.PaintSurface += OnPaintSurface;
@@ -50,6 +53,7 @@ public class SwiftDotNetSkiaView : Microsoft.Maui.Controls.ContentView
         // top-left so it can never affect the canvas's layout or intercept a touch.
         _layout.Children.Add(_canvas);
         AttachSoftKeyboard();
+        AttachPlatformViews();
         Content = _layout;
 
         SwiftApp.Run(root, _bridge, services);
@@ -74,6 +78,27 @@ public class SwiftDotNetSkiaView : Microsoft.Maui.Controls.ContentView
 
     /// <summary>The canvas the engine paints into, for hosts that need to reach the SkiaSharp view itself.</summary>
     public SKCanvasView Canvas => _canvas;
+
+    /// <summary>The platform-view layer, exposed so a host can inspect or extend what it places.</summary>
+    public MauiPlatformViewLayer PlatformViews => _platformViewLayer;
+
+    /// <summary>
+    /// Let the tree hold real MAUI controls the canvas cannot draw — an embedded
+    /// <see cref="MauiView"/>, and <c>WebView</c>, which until now painted a "not drawable on a canvas"
+    /// placeholder on every self-drawing backend.
+    ///
+    /// The whole mechanism is one more child in the same grid: the engine reports where each such node
+    /// landed and this layer positions a MAUI view there. It goes in <em>last</em> so the real controls sit
+    /// above both the canvas and the shadow entry, which is also the constraint behind their one visible
+    /// compromise — a native view always floats above canvas pixels, so the engine hides every platform
+    /// view while a Sheet / Alert / Menu is presented rather than letting one punch through the overlay.
+    /// </summary>
+    void AttachPlatformViews()
+    {
+        _layout.Children.Add(_platformViews);
+        _bridge.PlatformViewHost = _platformViewLayer;
+        _bridge.FocusChanged += _platformViewLayer.OnEngineFocused;
+    }
 
     /// <summary>
     /// Bridge the engine's focus model to the platform IME. The engine owns *what* is focused (tapping a

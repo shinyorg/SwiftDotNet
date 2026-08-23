@@ -22,7 +22,9 @@ scrolling, overlays, input/focus, an animation clock, and an icon font, renderin
   **embedded/framebuffer Linux**.
 
 **Trade-offs:** no native accessibility, and `WebView`/`Map` can't be painted onto a canvas — they need a
-native-view overlay (a planned punch-through).
+real OS control floated over it. That punch-through now exists as the
+[platform-view seam](../maui-interop.md#the-platform-view-seam), but only the MAUI host implements it, so
+on every other Skia host those nodes still paint a placeholder.
 
 ## The engine ([`src/SwiftDotNet.Graphics`](../../src/SwiftDotNet.Graphics))
 
@@ -75,6 +77,14 @@ Skia is the **reference implementation** for [`Grid`](../views-and-controls.md#g
 algorithm (`MeasureGrid`/`ResolveTracks`/`ArrangeGrid`), which the Swift and Compose shims port line for
 line. Grid measures twice on purpose — natural sizes drive the content-sized columns, then every child is
 re-measured at its final cell width so wrapping `Text` reports the height it will actually paint at.
+
+**Platform views.** Three things the engine cannot draw — `WebView`, a map, an embedded MAUI control —
+are no longer dead ends. A node type registered with `PlatformViews` stops being painted and is instead
+*reported* to an `IPlatformViewHost`, which floats a real OS control over the canvas at that frame. Only the
+[MAUI host](#hosts) implements one today, so inside a MAUI app `WebView` is a real web view and
+[`MauiView`](../maui-interop.md#mauiview) shows a real MAUI control, while every other Skia host keeps the
+painted placeholder. See [MAUI Interop](../maui-interop.md) and
+[Architecture](../architecture.md#the-platform-view-seam).
 
 Two paint-side notes: raster images (`Image.FromFile/FromBytes`, and `Image.FromUrl` via the async
 [`SkiaImageLoader`](../../src/SwiftDotNet.Graphics/ImageLoader.cs)) are **greedy** — they fill the space
@@ -179,7 +189,9 @@ The engine is host-agnostic via `ISkiaHost`. Available hosts:
 | **Headless** | [`sample/SampleApp.Skia`](../../sample/SampleApp.Skia) | Console harness → PNGs; `-- <dir> anim` renders animation frames. Walks the whole flyout, including every controls page. |
 | **macOS / AppKit** | [`sample/SampleApp.Skia.Mac`](../../sample/SampleApp.Skia.Mac) | Interactive `NSView` blits the scene; mouse/scroll/keyboard → router → bridge; `NSTimer(1/60)` drives both the animation clock and `router.Poll`. Real trackpad pinch via `MagnifyWithEvent`; ⌃-scroll zooms on a mouse. |
 | **Silk.NET desktop** | [`sample/SampleApp.Skia.Silk`](../../sample/SampleApp.Skia.Silk) | Silk.NET (GLFW) window + GL context; SkiaSharp draws to a GL-backed surface. Dependency-free cross-platform desktop; base for embedded/framebuffer Linux. GLFW has no pinch event, so zoom is ctrl+wheel. |
-| **MAUI + Shiny** | [`src/SwiftDotNet.Skia.Maui`](../../src/SwiftDotNet.Skia.Maui) + [`sample/SampleApp.Skia.Maui`](../../sample/SampleApp.Skia.Maui) | `SwiftDotNetSkiaView` (a `ContentView` over an `SKCanvasView` + a shadow `Entry` for the soft keyboard); composes with **Shiny** via `.UseSkiaSharp().UseShiny()` — Skia UI + Shiny plugins share one DI container. Real two-finger pinch via MAUI's `PinchGestureRecognizer`. Targets `net10.0-ios;net10.0-maccatalyst;net10.0-android` (+ `net10.0-windows…` when built on Windows). ✅ Verified on the **iOS simulator** and the **Android emulator**: full sample renders; nav push/pop; finger scrolling; slider drag; colour-picker popover; soft keyboard typing into a bound `TextField`; state round-trips repaint. |
+| **MAUI + Shiny** | [`src/SwiftDotNet.Skia.Maui`](../../src/SwiftDotNet.Skia.Maui) + [`sample/SampleApp.Skia.Maui`](../../sample/SampleApp.Skia.Maui) | `SwiftDotNetSkiaView` (a `ContentView` over an `SKCanvasView` + a shadow `Entry` for the soft keyboard); composes with **Shiny** via `.UseSkiaSharp().UseShiny()` — Skia UI + Shiny plugins share one DI container. Real two-finger pinch via MAUI's `PinchGestureRecognizer`. **Also the only Skia host that places [platform views](../maui-interop.md#the-platform-view-seam)** — an `AbsoluteLayout` above the canvas holds real MAUI controls for `MauiView` and `WebView` nodes (🧩 builds, not yet driven by hand). Targets `net10.0-ios;net10.0-maccatalyst;net10.0-android` (+ `net10.0-windows…` when built on Windows). ✅ Verified on the **iOS simulator** and the **Android emulator**: full sample renders; nav push/pop; finger scrolling; slider drag; colour-picker popover; soft keyboard typing into a bound `TextField`; state round-trips repaint. |
+| **WPF** | [`src/SwiftDotNet.Skia.Wpf`](../../src/SwiftDotNet.Skia.Wpf) + [`sample/SampleApp.Skia.Wpf`](../../sample/SampleApp.Skia.Wpf) | `SwiftDotNetSkiaElement` — a `FrameworkElement` painting into a `WriteableBitmap` back buffer, blitted in `OnRender`; mouse/wheel/`TextInput` → router → bridge; a `DispatcherTimer(16ms)` drives the animation clock and `router.Poll`. Zoom is ctrl+wheel (WPF raises no pinch for a mouse). Deliberately **not** built on `SkiaSharp.Views.WPF`, which is a .NET-Framework-only package that drags in OpenTK. 🧩 Compiles clean, never run. |
+| **Windows Forms** | [`src/SwiftDotNet.Skia.WindowsForms`](../../src/SwiftDotNet.Skia.WindowsForms) + [`sample/SampleApp.Skia.WinForms`](../../sample/SampleApp.Skia.WinForms) | `SwiftDotNetSkiaControl` — a `Control` painting into a locked 32bpp GDI+ `Bitmap`, blitted with `DrawImageUnscaled`. **The only WinForms backend there is**, on purpose — see [WinForms](winforms.md). 🧩 Compiles clean, never run. |
 
 > An iOS app hosting this view must also `<Import>` [`SwiftDotNetBridge.targets`](../../src/SwiftDotNet/SwiftDotNetBridge.targets)
 > — the app's ProjectReference graph resolves `SwiftDotNet` to its iOS slice, whose Swift-bridge P/Invokes
@@ -250,7 +262,8 @@ case above.
 
 ## Next
 
-Accessibility bridge; `WebView`/`Map` native-overlay punch-through; caret placement and selection (the IME
+Accessibility bridge; an `IPlatformViewHost` for the non-MAUI Skia hosts (macOS/AppKit, Silk, WPF,
+WinForms) so `WebView`/`Map` punch through there too, and a `Map` platform-view renderer; caret placement and selection (the IME
 replaces the whole string, so you always edit at the end); keyboard-avoidance (the engine does not know how
 much of the canvas the keyboard covers); fling/inertia and rubber-banding on a pan; dirty-rect repaint; the
 Windows MAUI head (needs a Windows machine to build). See the [Roadmap](../roadmap.md).

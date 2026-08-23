@@ -264,6 +264,23 @@ tap-driven. See [Skia backend](backends/skia.md#what-a-finger-needs-that-a-mouse
 | `Gauge` | Value gauge. |
 | `Link` | Hyperlink. |
 | Shapes | `Rectangle`, `Circle`, `Capsule`, `RoundedRectangle` — greedy (fill offered space unless `.Frame` overrides). |
+| `WebView` | A web page, by URL or from an HTML string. Native everywhere except the self-drawing backends, where it needs a real control floated over the canvas — inside a MAUI app it gets one; elsewhere it paints a placeholder. See [MAUI Interop](maui-interop.md#webview-on-the-self-drawing-backends). |
+
+## Interop
+
+| View | Notes |
+|------|-------|
+| `MauiView` | Embeds a real `Microsoft.Maui.Controls.View` in the tree — a native date wheel, an OS spinner, any MAUI control. Ships in the opt-in [`SwiftDotNet.Maui`](../src/SwiftDotNet.Maui) package; renders the ⚠️ placeholder where MAUI does not run. Full reference: [MAUI Interop](maui-interop.md#mauiview). |
+
+```csharp
+new MauiView(() => new Microsoft.Maui.Controls.DatePicker())
+    .Update(v => ((DatePicker)v).Date = _date.Value)
+    .Size(320, 44)
+```
+
+`.Size(w, h)` is effectively required (layout settles before the control exists, so the engine cannot ask it
+how big it wants to be), and transforms are a **no-op** on it — see the
+[gotchas](maui-interop.md#gotchas-1).
 
 ## Colors & fonts
 

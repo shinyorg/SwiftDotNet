@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Default platform version (7.0) on purpose — see the note in SwiftDotNet.Skia.Wpf.csproj: a
+         10.0.19041 TPV would also match SwiftDotNet's WinUI 3 TFM and pull a second backend in. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Lets the project restore/compile on macOS and Linux; running still requires Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+  </PropertyGroup>
+
+  <!-- WinForms is the one target that gets NO native-control backend: GDI controls have no transforms,
+       no per-element opacity, no rounded clipping and no vector shapes, so half the DSL would be a
+       silent no-op. Self-drawing the whole surface is the honest mapping, and it costs one control.
+       As in the WPF host, SkiaSharp.Views.WindowsForms is deliberately not referenced (net462-only). -->
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- MAUI's own platforms, and only those: this package's whole purpose is to let a real
+         Microsoft.Maui.Controls.View appear inside a SwiftDotNet tree, which is meaningless where MAUI
+         does not run. On GTK / Web / TUI / the game engines a MauiView node renders the standard ⚠️
+         placeholder instead, with no #if anywhere — see docs/custom-controls.md. -->
+    <TargetFrameworks>net10.0-ios;net10.0-maccatalyst;net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+    <UseMaui>true</UseMaui>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(TargetFramework.Contains('-maccatalyst')) Or $(TargetFramework.Contains('-ios'))">
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pin Core to its *neutral* net10.0 asset. Without SetTargetFramework, a net10.0-ios build of this
+         project would resolve Core's net10.0-ios asset, which is the SwiftUI backend: it P/Invokes the
+         Swift bridge through DllImport("__Internal") and needs SwiftDotNetBridge.targets imported by the
+         app. An app that also uses the Skia MAUI host (which pulls Core's net10.0 through the Skia chain)
+         would then have two Core assemblies with the same name in one graph. The DSL, State<T> and
+         CustomView that this package needs are all in the neutral asset. -->
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" SetTargetFramework="TargetFramework=net10.0" />
+    <!-- The platform-view seam (IPlatformViewHost / PlatformViewPlacement) lives with the self-drawing
+         engine. SwiftDotNet.Graphics is platform-neutral, so this resolves its net10.0 asset on every TFM
+         here and carries no rasterizer with it. -->
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" SetTargetFramework="TargetFramework=net10.0" />
+    <!-- Same explicit MAUI pin as SwiftDotNet.Skia.Maui (warning MA002): since .NET 8 <UseMaui> no longer
+         implies the package references, and mismatched halves fail at *launch* with a TypeLoadException
+         rather than at build. -->
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.80" />
+  </ItemGroup>
+
+  <!-- Android: MAUI 10.0.x's own AndroidX graph is internally unsatisfiable (NU1107) — the same tie-break
+       SwiftDotNet.Skia.Maui documents. -->
+  <ItemGroup Condition="$(TargetFramework.Contains('-android'))">
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.LiveData" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.LiveData.Core" Version="2.11.0.1" />
+  </ItemGroup>
+
+</Project>

@@ -17,11 +17,18 @@
         <Project Path="sample/SampleApp.Tui/SampleApp.Tui.csproj"/>
         <Project Path="sample/SampleApp.MonoGame/SampleApp.MonoGame.csproj"/>
         <Project Path="sample/SampleApp.Godot/SampleApp.Godot.csproj"/>
+        <Project Path="sample/SampleApp.Wpf/SampleApp.Wpf.csproj"/>
+        <Project Path="sample/SampleApp.Skia.Wpf/SampleApp.Skia.Wpf.csproj"/>
+        <Project Path="sample/SampleApp.Skia.WinForms/SampleApp.Skia.WinForms.csproj"/>
     </Folder>
     <Project Path="src/SwiftDotNet.Gtk/SwiftDotNet.Gtk.csproj"/>
     <Project Path="src/SwiftDotNet.Graphics/SwiftDotNet.Graphics.csproj"/>
     <Project Path="src/SwiftDotNet.Skia/SwiftDotNet.Skia.csproj"/>
+    <Project Path="src/SwiftDotNet.Maui/SwiftDotNet.Maui.csproj"/>
     <Project Path="src/SwiftDotNet.Skia.Maui/SwiftDotNet.Skia.Maui.csproj"/>
+    <Project Path="src/SwiftDotNet.Wpf/SwiftDotNet.Wpf.csproj"/>
+    <Project Path="src/SwiftDotNet.Skia.Wpf/SwiftDotNet.Skia.Wpf.csproj"/>
+    <Project Path="src/SwiftDotNet.Skia.WindowsForms/SwiftDotNet.Skia.WindowsForms.csproj"/>
     <Project Path="src/SwiftDotNet.MonoGame/SwiftDotNet.MonoGame.csproj"/>
     <Project Path="src/SwiftDotNet.Godot/SwiftDotNet.Godot.csproj"/>
     <Project Path="src/SwiftDotNet.Godot.Skia/SwiftDotNet.Godot.Skia.csproj"/>

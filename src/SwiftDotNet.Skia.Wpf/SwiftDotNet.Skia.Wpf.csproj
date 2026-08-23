@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net10.0-windows with the *default* platform version (7.0): deliberately NOT a
+         10.0.19041 TPV. A higher TPV would also be compatible with SwiftDotNet's
+         net10.0-windows10.0.19041.0 TFM, which carries the WinUI 3 backend — so a consumer would get
+         two backends (and two `SwiftDotNetApplication`s) in one compilation. At the default TPV, NuGet
+         resolves SwiftDotNet's neutral net10.0 asset and only the Skia engine comes along. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- Lets the project restore/compile on macOS and Linux (the repo's primary dev machine is macOS).
+         It only pulls the Windows targeting packs; running still requires Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+  </PropertyGroup>
+
+  <!-- The self-drawing backend, hosted on a WPF surface. Note there is deliberately NO reference to
+       SkiaSharp.Views.WPF: that package targets .NET Framework only (NU1701 on a net10.0 TFM) and drags
+       in OpenTK 3.x for its GL variant. The surface it provides is ~60 lines — a WriteableBitmap wrapped
+       in an SKSurface — so SwiftDotNetSkiaElement does it directly against plain SkiaSharp instead. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj" />
+  </ItemGroup>
+
+</Project>

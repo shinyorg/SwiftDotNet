@@ -85,6 +85,35 @@ dotnet run --project sample/SampleApp -f net10.0-windows10.0.19041.0
 
 The sample is unpackaged + self-contained, so it runs with no prerequisites beyond the .NET SDK.
 
+### Windows (WPF) — on a Windows machine
+
+```powershell
+dotnet run --project sample/SampleApp.Wpf
+```
+
+Real WPF controls, no shim. See [WPF](backends/wpf.md).
+
+### Windows Forms — on a Windows machine
+
+```powershell
+dotnet run --project sample/SampleApp.Skia.WinForms
+```
+
+WinForms has no native-control backend by design; this is the [Skia](backends/skia.md) canvas in a
+`Control`. See [WinForms](backends/winforms.md) for why.
+
+> **All three Windows-desktop heads build on macOS and Linux too**, because their projects set
+> `EnableWindowsTargeting` — which downloads the Windows targeting packs. You cannot *run* them off
+> Windows, but a break is caught on the dev machine:
+>
+> ```bash
+> dotnet build src/SwiftDotNet.Wpf
+> dotnet build sample/SampleApp.Wpf
+> ```
+>
+> CI does the same on a real `windows-latest` runner (the `windows-desktop` job). The WinUI 3 head is the
+> exception — it genuinely needs Windows, and has never compiled anywhere.
+
 ### Linux / GTK
 
 ```bash
@@ -112,6 +141,10 @@ dotnet build sample/SampleApp.Skia.Mac -c Release   # then launch the .app
 
 # Dependency-free desktop (Windows/macOS/Linux) via Silk.NET + OpenGL
 dotnet run --project sample/SampleApp.Skia.Silk
+
+# Windows desktop, hosted in a WPF window or a WinForms form
+dotnet run --project sample/SampleApp.Skia.Wpf
+dotnet run --project sample/SampleApp.Skia.WinForms
 
 # Mobile, via the MAUI host (iOS simulator / Android emulator)
 dotnet build sample/SampleApp.Skia.Maui -f net10.0-ios -p:RuntimeIdentifier=iossimulator-arm64

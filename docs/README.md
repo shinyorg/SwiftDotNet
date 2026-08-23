@@ -1,7 +1,7 @@
 # SwiftDotNet Documentation
 
 **SwiftUI for .NET — everywhere.** Write declarative UI once in C# and render it as *real* native UI on
-every platform: SwiftUI on iOS/macOS/tvOS, Jetpack Compose on Android, GTK4 on Linux, WinUI 3 on Windows,
+every platform: SwiftUI on iOS/macOS/tvOS, Jetpack Compose on Android, GTK4 on Linux, WinUI 3 / WPF on Windows,
 and HTML/DOM on the Web — plus self-drawing backends (SkiaSharp, or a from-scratch WebGPU rasterizer) for a
 pixel-identical look anywhere, hosts for the MonoGame, Godot and Unity game engines, and a terminal backend
 for anywhere with a TTY and no display server.
@@ -48,6 +48,8 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 - **[Linux / GTK](backends/linux-gtk.md)** (GTK4, pure C#)
 - **[Linux / Wayland](backends/wayland.md)** (self-drawn Skia on a native Wayland surface, no GTK)
 - **[Windows](backends/windows.md)** (WinUI 3, pure C#)
+- **[Windows / WPF](backends/wpf.md)** (WPF, pure C#)
+- **[Windows / WinForms](backends/winforms.md)** (the Skia canvas — no native-control backend, by design)
 - **[Web](backends/web.md)** (Blazor WebAssembly → HTML/DOM)
 - **[Skia](backends/skia.md)** (self-drawing SkiaSharp toolkit)
 - **[WebGPU](backends/webgpu.md)** (self-drawing, from-scratch GPU rasterizer — no Skia)
@@ -57,6 +59,9 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 - **[Terminal / TUI](backends/tui.md)** (XenoAtom.Terminal.UI, pure C#)
 
 ### Companions & planning
+- **[MAUI Interop](maui-interop.md)** — hosting SwiftDotNet inside a .NET MAUI app, and the `MauiView` node
+  that puts real MAUI controls back inside a SwiftDotNet tree, over the platform-view seam. (There is
+  deliberately no MAUI *backend*.)
 - **[Maps](maps.md)** — the opt-in `SwiftDotNet.Maps` companion (MapKit / MapLibre).
 - **[Live Surfaces](live-surfaces.md)** — the `SwiftDotNet.Live` / `SwiftDotNet.Widgets` companions: iOS
   Live Activities and the Dynamic Island, home-screen widgets, Android custom notifications and app

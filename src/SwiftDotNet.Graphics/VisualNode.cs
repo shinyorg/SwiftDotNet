@@ -484,6 +484,11 @@ sealed partial class VisualNode
 
             default:
                 if (_custom is { } r) return r.Measure(RenderCtx(), inner);
+                // A platform view is sized by the DSL, not by the control: the real control does not exist
+                // until the host places it, and layout has to settle before that. `.Size(w, h)` on MauiView
+                // writes the w/h props; without them a platform view fills the width and takes WebView's
+                // default height.
+                if (PlatformViews.IsRegistered(Type)) return PlatformViewSize(inner);
                 return MeasureText("⚠️ " + Type, Font());
         }
     }
@@ -1325,7 +1330,9 @@ sealed partial class VisualNode
         or "Divider" or "ProgressView" or "Gauge" or "WebView"
         or "TextField" or "SecureField" or "TextEditor"
         or "Toggle" or "Slider" or "Stepper" or "Picker" or "DatePicker" or "ColorPicker" or "Menu"
-        or "DisclosureGroup" or "NavigationLink";
+        or "DisclosureGroup" or "NavigationLink"
+        // A platform view with no explicit width is greedy, like the WebView it generalises.
+        || (Num("w") is not > 0 && PlatformViews.IsRegistered(Type));
 
     static bool IsBuiltIn(string type) => type is
         "Text" or "Button" or "Link" or "Image" or "Label" or "Divider" or "Spacer"
@@ -1337,6 +1344,18 @@ sealed partial class VisualNode
         or "ScrollView" or "List" or "Form" or "Section" or "ZStack" or "Grid" or "AbsoluteLayout"
         or "Tab" or "TabView" or "NavigationStack" or "NavigationLink"
         or "Sheet" or "Alert" or "ActionSheet";
+
+    /// <summary>
+    /// True when this node is drawn by a real OS control floated above the canvas rather than painted.
+    /// Requires both that the type is registered (<see cref="PlatformViews"/>) <em>and</em> that the bridge
+    /// has a host able to place one — a headless or game-engine host keeps the painted placeholder.
+    /// </summary>
+    internal bool IsPlatformView => _bridge.PlatformViewHost is not null && PlatformViews.IsRegistered(Type);
+
+    /// <summary>Layout size of a platform view: the declared <c>w</c>/<c>h</c> props, else fill × 120.</summary>
+    Size PlatformViewSize(Size inner) => new(
+        Num("w") is { } w and > 0 ? (float)w : inner.Width,
+        Num("h") is { } h and > 0 ? (float)h : 120);
 
     /// <summary>The rasterizer's font provider, reached through the bridge that owns this tree.</summary>
     IFontProvider Fonts => _bridge.Fonts;

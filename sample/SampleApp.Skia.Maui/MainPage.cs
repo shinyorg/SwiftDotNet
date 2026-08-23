@@ -7,6 +7,8 @@ using SwiftDotNet.Sample;
 using SdnView = SwiftDotNet.View;
 using Font = SwiftDotNet.Font;
 using Color = SwiftDotNet.Color;
+using Tab = SwiftDotNet.Tab;
+using TabView = SwiftDotNet.TabView;
 
 namespace SampleApp.Skia.Maui;
 
@@ -40,7 +42,15 @@ public class MainPage : ContentPage
         // ContentView every other backend hosts) so this sample exercises real UI — sliders, panels and
         // the rest — rather than a static proof card. Pass `?status=` style state via the view itself.
         var swiftApp = SwiftProgram.CreateSwiftApp();
-        Content = new SwiftDotNetSkiaView(swiftApp.CreateRoot(), swiftApp.Services);
+
+        // Two tabs, one host (one SwiftApp.Run — a second live SwiftDotNetSkiaView would rebind the
+        // runtime's static root). Tab 1 is the same shared tour every other backend renders; tab 2 is the
+        // MAUI-interop demo, which is the only tab that could not exist on any other backend.
+        Content = new SwiftDotNetSkiaView(
+            new TabView(
+                new Tab("Sample", "square.grid.2x2", swiftApp.CreateRoot()),
+                new Tab("MAUI", "puzzlepiece.extension", new MauiInteropView())),
+            swiftApp.Services);
 
         // Keep the Shiny resolution result visible in the page title — the point of this sample is that
         // the Skia UI and Shiny's plugins come out of the same MAUI ServiceProvider.

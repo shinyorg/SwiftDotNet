@@ -17,7 +17,7 @@ into a minimal patch so only changed nodes reach the renderer.
 ```
 
 The diagram shows the iOS/SwiftUI path. The **bridge** is a native shim on iOS/tvOS/macOS (Swift) and
-Android (Kotlin), and an **in-process interpreter** on the pure-C# backends (GTK / WinUI / Web / TUI /
+Android (Kotlin), and an **in-process interpreter** on the pure-C# backends (GTK / WinUI / WPF / Web / TUI /
 Skia / WebGPU) — but
 the patch protocol and event round-trip are **identical everywhere**.
 
@@ -164,6 +164,37 @@ port needed was care about draw ordering — see that page for the specific trap
 See [Skia](backends/skia.md), [WebGPU](backends/webgpu.md), [MonoGame](backends/monogame.md),
 [Godot](backends/godot.md) and [Unity](backends/unity.md).
 
+## The platform-view seam
+
+A self-drawing backend owns every pixel, which means there are controls it can never draw: a `WebView`, a
+map, an embedded .NET MAUI view. Those are not a rasterizer problem — no `ICanvas` primitive will ever
+produce a live web page — so they need a second, smaller seam beside the renderer one.
+
+The engine reports **placements**; a host decides what a placement means.
+
+| Piece | Role |
+|---|---|
+| [`PlatformViews`](../src/SwiftDotNet.Graphics/PlatformViews.cs) | Static registry of node types that are a control, not paint. Registering one stops the engine painting it. |
+| `PlatformViewPlacement` | Where one such node landed this frame: id, type, frame, clip, visibility, props |
+| `IPlatformViewHost` | Implemented by a host that can float a real OS control over the canvas |
+
+The paint pass records a placement instead of drawing, and `VisualBridge.Draw` hands the host the
+**complete set** once per frame — never a delta, because a set-reconcile is the only shape that cannot leak
+a control when a subtree vanishes through a `setChildren` patch. Decorations (`.Background`, `.Border`) are
+still painted underneath, so the SwiftDotNet chrome around a transparent native control survives.
+
+Two consequences are structural rather than incidental:
+
+- **Z-order inverts.** A native view always floats above canvas pixels, so anything the engine paints over
+  it — `Sheet`, `Alert`, `Menu`, a pushed nav destination — would render *behind* it. The engine resolves
+  this by layer: only placements recorded in the topmost painted layer stay visible.
+- **Transforms don't apply.** `.Offset` / `.ScaleEffect` / `.Rotation` are canvas-matrix operations at paint
+  time and are never folded into a node's frame, so a placement is the untransformed layout rect.
+
+A host that cannot place native views simply never sets `VisualBridge.PlatformViewHost`, and every such node
+keeps painting the placeholder it always did — which is why registering `WebView` changes its behaviour on
+the MAUI host and nowhere else. See [MAUI Interop](maui-interop.md) for the first two consumers.
+
 ## Project layout
 
 | Path | TFM | Role |
@@ -189,7 +220,13 @@ See [Skia](backends/skia.md), [WebGPU](backends/webgpu.md), [MonoGame](backends/
 Why some backends are **separate** projects rather than TFMs of the combined library: GTK, Web, Skia, WebGPU
 and the terminal backend all share the plain `net10.0` TFM with Core, so there's no TFM to distinguish them —
 folding them in would force their dependency (Gir.Core, Blazor, SkiaSharp, wgpu-native,
-XenoAtom.Terminal.UI) onto every neutral consumer. `SwiftDotNet.Graphics` is the exception that proves the
+XenoAtom.Terminal.UI) onto every neutral consumer. WPF and the two Windows-desktop Skia hosts
+(`SwiftDotNet.Wpf`, `SwiftDotNet.Skia.Wpf`, `SwiftDotNet.Skia.WindowsForms`) are separate for the *first*
+half of that reason rather than the second: they do have a distinct TFM (`net10.0-windows`), but it is
+Windows-only, so a TFM of the multi-target library would make every consumer's restore Windows-shaped. They
+also deliberately stay at the **default** platform version rather than `10.0.19041` — that higher TPV is
+also compatible with the WinUI 3 TFM, so a consumer would end up compiling against two Windows backends at
+once. `SwiftDotNet.Graphics` is the exception that proves the
 rule: it is dependency-free, which is exactly why it can sit between Core and every self-drawing backend.
 
 Core, `SwiftDotNet.Graphics` and `SwiftDotNet.Skia` also target **netstandard2.1** (Unity's scripting

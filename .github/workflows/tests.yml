@@ -49,3 +49,41 @@ jobs:
         with:
           name: test-results
           path: ./TestResults/*.trx
+
+  # The Windows-desktop backends (native WPF, plus the two Skia hosts) build on any OS thanks to
+  # EnableWindowsTargeting, but nothing verified them until this job existed — which is how the WinUI 3
+  # backend ended up scaffolded-and-never-compiled. Compiling them on a real Windows runner is what keeps
+  # WPF and WinForms from going the same way.
+  #
+  # It builds only these projects, not the solution: the solution also contains Apple, Android, MAUI and
+  # Godot heads whose workloads this runner has no reason to install.
+  #
+  # Deliberately NOT included: SwiftDotNet's own net10.0-windows10.0.19041.0 (WinUI 3) TFM. That backend
+  # has never compiled and is documented as expecting more than minor fixes, so adding it here would mean
+  # a job that is red from its first run. It belongs in this job the moment someone makes it build.
+  windows-desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build WPF backend
+        run: dotnet build src/SwiftDotNet.Wpf/SwiftDotNet.Wpf.csproj --configuration Release
+
+      - name: Build Skia WPF host
+        run: dotnet build src/SwiftDotNet.Skia.Wpf/SwiftDotNet.Skia.Wpf.csproj --configuration Release
+
+      - name: Build Skia WinForms host
+        run: dotnet build src/SwiftDotNet.Skia.WindowsForms/SwiftDotNet.Skia.WindowsForms.csproj --configuration Release
+
+      # The sample heads are the only thing that proves the public entry points actually compose —
+      # SwiftDotNetWpfApplication, SwiftDotNetSkiaWindow, SwiftDotNetSkiaForm and the renderer registries.
+      - name: Build sample heads
+        run: |
+          dotnet build sample/SampleApp.Wpf/SampleApp.Wpf.csproj --configuration Release
+          dotnet build sample/SampleApp.Skia.Wpf/SampleApp.Skia.Wpf.csproj --configuration Release
+          dotnet build sample/SampleApp.Skia.WinForms/SampleApp.Skia.WinForms.csproj --configuration Release

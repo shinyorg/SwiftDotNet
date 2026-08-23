@@ -803,6 +803,15 @@ struct NodeView: View {
             SwiftUI.Capsule()
         case "RoundedRectangle":
             SwiftUI.RoundedRectangle(cornerRadius: num("cornerRadius") ?? 8)
+        case "MauiView":
+            // A real platform view (a .NET MAUI control, realised by C# through MAUI's native embedding)
+            // hosted inside SwiftUI. The bridge knows nothing about MAUI — only how to ask C# for a UIView
+            // by key; see swiftdotnet_set_platform_view_provider.
+            if g_platformViewProvider != nil {
+                EmbeddedPlatformView(key: str("key"))
+            } else {
+                SwiftUI.Text("⚠️ MauiView: no platform-view provider registered").foregroundColor(.red)
+            }
         default:
             if let renderer = g_customRenderers[node.type] {
                 renderer(SwiftDotNetProps(id: node.id, node: node))
@@ -1879,6 +1888,50 @@ struct SDNAbsoluteLayout: Layout {
 }
 
 // MARK: - C ABI bridge (P/Invoke target from C#)
+
+// MARK: - Platform views (a real native view supplied by C#)
+
+#if canImport(UIKit)
+typealias PlatformNativeView = UIView
+#elseif canImport(AppKit)
+typealias PlatformNativeView = NSView
+#endif
+
+/// Hands back an <b>unretained</b> pointer to the native view for a node key, or nil when there is none.
+/// C# owns the view's lifetime — this side only borrows it for as long as SwiftUI shows it.
+public typealias PlatformViewProvider = @convention(c) (UnsafePointer<CChar>) -> UnsafeMutableRawPointer?
+
+private var g_platformViewProvider: PlatformViewProvider?
+
+/// Install the provider C# uses to supply real native views (a MAUI control, say) for `MauiView` nodes.
+/// Until this is called those nodes render a placeholder, exactly like an unregistered custom renderer.
+@_cdecl("swiftdotnet_set_platform_view_provider")
+public func swiftdotnet_set_platform_view_provider(_ provider: PlatformViewProvider?) {
+    g_platformViewProvider = provider
+}
+
+func swiftDotNetPlatformView(_ key: String) -> PlatformNativeView? {
+    guard let provider = g_platformViewProvider,
+          let raw = key.withCString({ provider($0) }) else { return nil }
+    return Unmanaged<PlatformNativeView>.fromOpaque(raw).takeUnretainedValue()
+}
+
+#if canImport(UIKit)
+/// Wraps a C#-owned UIView so SwiftUI can lay it out like any other view.
+struct EmbeddedPlatformView: UIViewRepresentable {
+    let key: String
+    func makeUIView(context: Context) -> UIView { swiftDotNetPlatformView(key) ?? UIView() }
+    // Deliberately empty: the managed side pushes new values into the control through its own updater
+    // (MauiView.Update), so there is nothing for SwiftUI to re-apply here.
+    func updateUIView(_ view: UIView, context: Context) {}
+}
+#elseif canImport(AppKit)
+struct EmbeddedPlatformView: NSViewRepresentable {
+    let key: String
+    func makeNSView(context: Context) -> NSView { swiftDotNetPlatformView(key) ?? NSView() }
+    func updateNSView(_ view: NSView, context: Context) {}
+}
+#endif
 
 // MARK: - Custom renderer registry (for native extensions)
 
