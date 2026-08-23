@@ -3,8 +3,8 @@
 **SwiftUI for .NET — everywhere.** Write declarative UI once in C# and render it as *real* native UI on
 every platform: SwiftUI on iOS/macOS/tvOS, Jetpack Compose on Android, GTK4 on Linux, WinUI 3 on Windows,
 and HTML/DOM on the Web — plus self-drawing backends (SkiaSharp, or a from-scratch WebGPU rasterizer) for a
-pixel-identical look anywhere, a Unity host, and a terminal backend for anywhere with a TTY and no display
-server.
+pixel-identical look anywhere, hosts for the MonoGame, Godot and Unity game engines, and a terminal backend
+for anywhere with a TTY and no display server.
 
 This is the documentation set. Start with **[Getting Started](getting-started.md)**, then read
 **[Architecture](architecture.md)** to understand how one C# view tree becomes native UI on every backend.
@@ -51,6 +51,8 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 - **[Web](backends/web.md)** (Blazor WebAssembly → HTML/DOM)
 - **[Skia](backends/skia.md)** (self-drawing SkiaSharp toolkit)
 - **[WebGPU](backends/webgpu.md)** (self-drawing, from-scratch GPU rasterizer — no Skia)
+- **[MonoGame](backends/monogame.md)** (the Skia engine drawn into a `Texture2D`, inside a game loop)
+- **[Godot](backends/godot.md)** (a `Control` node drawn with Godot's own 2D renderer — no Skia)
 - **[Unity](backends/unity.md)** (the Skia engine drawn into a Unity `Texture2D`)
 - **[Terminal / TUI](backends/tui.md)** (XenoAtom.Terminal.UI, pure C#)
 
@@ -75,7 +77,9 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp)** | ✅ Verified (macOS window, Silk.NET desktop, headless PNG, and iOS sim + Android emulator via the MAUI host) |
 | **Any (WebGPU)** | **Self-drawn, on the GPU** | **Pure C# (wgpu-native, no Skia)** | ✅ Verified on Metal via headless pixel readback; Vulkan/D3D12 unexercised |
-| **Unity** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine + Unity host)** | 🧩 .NET side builds for netstandard2.1; host MonoBehaviour **never compiled** |
+| **MonoGame** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine + game component)** | ✅ Verified — real window and back buffer on macOS/DesktopGL |
+| **Godot** | **Godot's own 2D draw commands** (no Skia) | **Pure C# (`Control` node)** | ✅ Verified on Godot 4.7.2 (macOS/Metal), both rendering routes |
+| **Unity** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine + Unity host)** | 🧩 Host **compiles** against UnityEngine reference assemblies; **never run** |
 | **Any (terminal)** | **Characters in a TTY** | **Pure C# (XenoAtom.Terminal.UI)** | ✅ Verified headlessly on macOS (35 CI tests); not yet driven by hand in a live terminal |
 
 | **Live surfaces** | **Live Activities, notifications, widgets** | **Restricted DSL + a Swift widget interpreter / a C# `RemoteViews` interpreter** | 🧩 Vocabulary, wire, validator & timeline ✅ verified headlessly (41 tests); both platform drivers **compile but have never run** |

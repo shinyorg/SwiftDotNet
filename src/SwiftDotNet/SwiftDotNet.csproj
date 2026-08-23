@@ -5,7 +5,7 @@
          Android builds anywhere. Linux/GTK stays a separate project (it shares the net10.0 TFM). -->
     <!-- netstandard2.1 is the Unity target: Unity 6's scripting runtime is netstandard2.1, and CoreCLR
          is not something to build on yet. It carries no platform code — see docs/backends/unity.md. -->
-    <TargetFrameworks>net10.0;net10.0-android;netstandard2.1</TargetFrameworks>
+    <TargetFrameworks>net10.0;net10.0-android;net8.0;netstandard2.1</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(TargetFrameworks);net10.0-ios;net10.0-macos;net10.0-tvos</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
 

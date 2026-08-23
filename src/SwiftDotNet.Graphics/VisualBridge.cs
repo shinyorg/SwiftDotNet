@@ -110,10 +110,21 @@ public class VisualBridge : IBridge
         Invalidate?.Invoke();
     }
 
+    /// <summary>
+    /// What the paint pass clears to before drawing. Null — the default — is the theme's window background,
+    /// which is opaque: a UI that owns the whole window.
+    /// </summary>
+    /// <remarks>
+    /// A host that composites the UI <em>over</em> something already on screen — a game scene, in the
+    /// MonoGame and Godot backends — sets this to a transparent colour so only the UI's own pixels land.
+    /// It lives here rather than in each host because <see cref="Draw"/> owns the clear.
+    /// </remarks>
+    public Color? ClearColor { get; set; }
+
     /// <summary>Lay out then paint the current scene into <paramref name="canvas"/> filling <paramref name="size"/>.</summary>
     public void Draw(ICanvas canvas, Size size, bool dark)
     {
-        canvas.Clear(Theme.Background(dark));
+        canvas.Clear(ClearColor ?? Theme.Background(dark));
         if (_root is null) return;
         _lastSize = size;
         _root.Measure(size);

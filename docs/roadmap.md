@@ -164,11 +164,21 @@ that is what they are.
   unexercised; real compositing layers so `.Opacity` on an overlapping subtree stops approximating; text
   shaping for scripts needing ligatures/reordering; image formats beyond PNG. See
   [WebGPU backend](backends/webgpu.md).
-- **Unity** — open the package in a Unity 6 project and make it compile and run (it never has); verify
-  IL2CPP/AOT; wire safe area (needs a host-facing entry point — `SafeArea.Update` is internal) and the soft
-  keyboard off `FocusChanged`. Route B (node tree → UI Toolkit `VisualElement`s) remains open if
-  Unity-native inspectability ever matters more than reusing the verified Skia backend. See
+- **Unity** — open the package in a Unity 6 project and **run** it (it never has; it does now compile
+  against UnityEngine reference assemblies via
+  [`tooling/unity-compile-check.sh`](../tooling/unity-compile-check.sh)); verify IL2CPP/AOT; wire safe area
+  (needs a host-facing entry point — `SafeArea.Update` is internal) and the soft keyboard off
+  `FocusChanged`. Route B (node tree → UI Toolkit `VisualElement`s) remains open if Unity-native
+  inspectability ever matters more than reusing the verified Skia backend. See
   [Unity backend](backends/unity.md).
+- **MonoGame** — pinch (`GestureType.Pinch` → `PointerRouter.Pinch`), safe area, automatic HiDPI
+  `RenderScale`, and a run on the WindowsDX / Android / iOS heads (the assembly contract is the same, so
+  they should just work). See [MonoGame backend](backends/monogame.md).
+- **Godot** — export to Android/iOS/desktop and confirm the native route really is dependency-free there;
+  drive the gestures and the on-screen keyboard by hand; soft shadows on ellipses (Godot has no canvas blur,
+  so today they are a solid offset ellipse); safe area. Route B (node tree → Godot `Control` nodes) stays
+  open but is unattractive — it would trade SwiftUI layout semantics for Godot's container layout. See
+  [Godot backend](backends/godot.md).
 - **Collection View** — true windowed streaming (WinUI/GTK/Web); Web pull-refresh/load-more/windowing (needs
   JS-interop `scrollTop`); Swift load-more wiring. See [Collection View → Deferred](collection-view.md#deferred).
 

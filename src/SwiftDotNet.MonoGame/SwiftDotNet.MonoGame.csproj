@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- MonoGame's own assemblies are net8.0, and a game may be on any TFM at or above it. -->
+    <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <!-- Route A: the engine paints through SkiaSharp into a Texture2D's pixels, which SpriteBatch blits.
+       Nothing about layout, gestures or the paint pass is MonoGame-specific — see docs/backends/monogame.md. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj" />
+  </ItemGroup>
+
+  <!-- Compile-time only. Every MonoGame platform package (DesktopGL, WindowsDX, Android, iOS) publishes
+       the same `MonoGame.Framework` assembly, so a library must bind against one and let the *game* pick
+       which one ships — ExcludeAssets="runtime" + PrivateAssets="all" is that arrangement. Referencing
+       DesktopGL here is only a choice of which copy of the contract to compile against. -->
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.5.1"
+                      PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

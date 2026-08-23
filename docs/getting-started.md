@@ -15,6 +15,8 @@ which renderer you build for.
 | Windows | A Windows machine (WinUI 3 / Windows App SDK don't build on macOS) |
 | Web | The `wasm-tools` workload (`dotnet workload install wasm-tools`) |
 | Skia | Nothing extra — pure C#, SkiaSharp is a NuGet package |
+| MonoGame | Nothing extra — MonoGame is a NuGet package |
+| Godot | The **.NET ("mono") build** of Godot 4.x. The plain build has no C# support. |
 
 All projects are wired into **[`SwiftDotNet.slnx`](../SwiftDotNet.slnx)** at the repo root.
 
@@ -123,6 +125,40 @@ dotnet build sample/SampleApp.Skia.Maui -f net10.0-android -t:Install   # then l
 (`rm -rf sample/SampleApp.Skia.Maui/bin sample/SampleApp.Skia.Maui/obj`) — the app bundle is patched
 incrementally, so assemblies from the previous configuration linger and the app dies at launch with
 `TypeLoadException: VTable setup of type Microsoft.Maui.Controls.Page failed`.
+
+### MonoGame
+
+```bash
+# a window
+dotnet run --project sample/SampleApp.MonoGame
+
+# render frames, save the back buffer, exit (no display interaction needed beyond a window)
+dotnet run --project sample/SampleApp.MonoGame -- --shot out.png
+
+# tap a node by id first, so the capture exercises the whole loop
+dotnet run --project sample/SampleApp.MonoGame -- --shot out.png --tap 0.0.0.0
+```
+
+### Godot
+
+Needs the .NET build of the editor/runtime — `Godot_v4.x-stable_mono_<platform>`. Point `GODOT` at the
+executable inside the app bundle on macOS.
+
+```bash
+GODOT=/Applications/Godot_mono.app/Contents/MacOS/Godot
+
+# a window, drawn with Godot's own renderer (no SkiaSharp)
+"$GODOT" --path sample/SampleApp.Godot
+
+# capture and exit
+"$GODOT" --path sample/SampleApp.Godot --quit-after 300 -- --shot out.png --tap 0.0.0.0
+
+# the same sample on the Skia-into-a-texture route
+"$GODOT" --path sample/SampleApp.Godot res://MainSkia.tscn --quit-after 300 -- --shot out.png
+```
+
+A game project referencing the backend needs `<EnableDynamicLoading>true</EnableDynamicLoading>` if it pulls
+in any NuGet package — see [the Godot backend's gotchas](backends/godot.md#gotchas).
 
 ### Terminal (TUI)
 

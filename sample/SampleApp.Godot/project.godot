@@ -1,0 +1,19 @@
+; Godot project for the SwiftDotNet sample. Kept minimal on purpose: the whole UI is one Control node
+; running the shared sample view, so there is nothing here but the entry scene and the C# assembly name.
+
+config_version=5
+
+[application]
+
+config/name="SwiftDotNet · Godot"
+run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=440
+window/size/viewport_height=820
+
+[dotnet]
+
+project/assembly_name="SampleApp.Godot"

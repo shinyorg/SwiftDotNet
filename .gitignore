@@ -410,3 +410,8 @@ FodyWeavers.xsd
 # IntelliJ Platform plugin sandbox (tooling/rider) — the sandbox IDE's config/system/plugins,
 # several GB once `gradle runIde` has run once.
 .intellijPlatform/
+
+# Godot's per-project cache: import data plus the C# temp build tree, regenerated whenever the project is
+# opened or built. Godot.NET.Sdk drops one next to *any* project it builds, backend libraries included.
+.godot/
+.mono/

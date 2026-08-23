@@ -122,8 +122,11 @@ small interfaces:
    VisualBridge ─► VisualNode: Measure / Arrange / HitTest / Draw
                              │
                     ICanvas · IFontProvider · IImageDecoder
-             ┌───────────────┼────────────────┐
-        SkiaCanvas     WebGpuCanvas      (Unity reuses SkiaCanvas)
+        ┌────────────────────┼────────────────────┐
+   SkiaCanvas          WebGpuCanvas          GodotCanvas
+        │                                    (Godot's own 2D
+   (MonoGame and Unity                        draw commands)
+    reuse SkiaCanvas)
 ```
 
 The split is roughly **3,600 lines of engine to 530 lines of Skia adapter** — a good measure of how little
@@ -140,7 +143,26 @@ Two design choices in `ICanvas` are worth knowing:
   graph. Carrying a shadow as four numbers instead lets the Skia adapter rebuild exactly that filter while
   the WebGPU backend renders it as an SDF falloff in the same draw call.
 
-See [Skia](backends/skia.md), [WebGPU](backends/webgpu.md) and [Unity](backends/unity.md).
+### What the seam has since had to absorb
+
+Two things the original Skia-shaped seam did not anticipate, both added because a host needed them and
+neither specific to one backend:
+
+- **[`VisualBridge.ClearColor`](../src/SwiftDotNet.Graphics/VisualBridge.cs)** — the paint pass clears to the
+  theme's window background, which is right for a UI that owns the window and wrong for a HUD drawn over a
+  game scene. A host that composites sets it to a transparent colour. It lives on the bridge because `Draw`
+  owns the clear.
+- **[`FrameLoopSyncContext`](../src/SwiftDotNet.Graphics/FrameLoopSyncContext.cs)** — game loops have no
+  synchronization context, so an off-thread `State<T>` mutation would rebuild the tree while the paint pass
+  reads it. Every loop-driven host installs one before `SwiftApp.Run` and drains it once per frame.
+
+**[Godot](backends/godot.md) is the seam's real test**, and it passed: it is the first `ICanvas`
+implementation whose target is a *retained* renderer, where clipping and group opacity are properties of a
+scene object rather than of a draw call. Everything above the seam was reused unchanged. The one thing the
+port needed was care about draw ordering — see that page for the specific trap.
+
+See [Skia](backends/skia.md), [WebGPU](backends/webgpu.md), [MonoGame](backends/monogame.md),
+[Godot](backends/godot.md) and [Unity](backends/unity.md).
 
 ## Project layout
 
@@ -149,9 +171,12 @@ See [Skia](backends/skia.md), [WebGPU](backends/webgpu.md) and [Unity](backends/
 | [`src/SwiftDotNet`](../src/SwiftDotNet) | **multi-target** | One library. `Core/` compiles for every TFM; `Platforms/{iOS,macOS,tvOS,Android,Windows}/` are opted in per TFM. |
 | [`src/SwiftDotNet.Gtk`](../src/SwiftDotNet.Gtk) | `net10.0` | Separate pure-C# GTK4 backend (Linux shares `net10.0` with Core, so folding it in would force GTK on every consumer). |
 | [`src/SwiftDotNet.Web`](../src/SwiftDotNet.Web) | `net10.0` (Razor) | Separate Blazor WebAssembly backend. |
-| [`src/SwiftDotNet.Graphics`](../src/SwiftDotNet.Graphics) | `net10.0`, `netstandard2.1` | The self-drawing **engine** — layout, hit-testing, gestures, paint pass — minus any rasterizer. Dependency-free, like Core. |
-| [`src/SwiftDotNet.Skia`](../src/SwiftDotNet.Skia) | `net10.0` | The SkiaSharp binding of that engine's seam (canvas, fonts, image decode) plus hosts. |
+| [`src/SwiftDotNet.Graphics`](../src/SwiftDotNet.Graphics) | `net10.0`, `net8.0`, `netstandard2.1` | The self-drawing **engine** — layout, hit-testing, gestures, paint pass — minus any rasterizer. Dependency-free, like Core. |
+| [`src/SwiftDotNet.Skia`](../src/SwiftDotNet.Skia) | `net10.0`, `net8.0`, `netstandard2.1` | The SkiaSharp binding of that engine's seam (canvas, fonts, image decode) plus hosts. |
 | [`src/SwiftDotNet.WebGpu`](../src/SwiftDotNet.WebGpu) | `net10.0` | A from-scratch GPU rasterizer for the same seam: SDF shapes, a glyph atlas, wgpu-native. No Skia. |
+| [`src/SwiftDotNet.MonoGame`](../src/SwiftDotNet.MonoGame) | `net10.0`, `net8.0` | MonoGame host: a `DrawableGameComponent` that draws the Skia engine into a `Texture2D`. |
+| [`src/SwiftDotNet.Godot`](../src/SwiftDotNet.Godot) | `net8.0` (Godot.NET.Sdk) | Godot host: a `Control` node **and** an `ICanvas` on Godot's own 2D renderer. No Skia, no native library. |
+| [`src/SwiftDotNet.Godot.Skia`](../src/SwiftDotNet.Godot.Skia) | `net8.0` (Godot.NET.Sdk) | The Skia-into-a-texture variant of that control; separate so the native route stays dependency-free. |
 | [`unity/com.swiftdotnet.unity`](../unity/com.swiftdotnet.unity) | Unity package | The Unity host: draws the Skia engine into a `Texture2D` and pumps input. |
 | [`src/SwiftDotNet.Tui`](../src/SwiftDotNet.Tui) | `net10.0` | Separate pure-C# terminal backend over XenoAtom.Terminal.UI; includes its own PNG decoder and image→character-art renderer. |
 | [`src/SwiftDotNet.Tui.Graphics`](../src/SwiftDotNet.Tui.Graphics) | `net10.0` | Optional add-on: Sixel/Kitty/iTerm2 pixel images (pulls SkiaSharp, hence separate from the backend). |
@@ -167,8 +192,13 @@ folding them in would force their dependency (Gir.Core, Blazor, SkiaSharp, wgpu-
 XenoAtom.Terminal.UI) onto every neutral consumer. `SwiftDotNet.Graphics` is the exception that proves the
 rule: it is dependency-free, which is exactly why it can sit between Core and every self-drawing backend.
 
-Core and `SwiftDotNet.Graphics` also target **netstandard2.1**, purely so Unity can consume them — see
+Core, `SwiftDotNet.Graphics` and `SwiftDotNet.Skia` also target **netstandard2.1** (Unity's scripting
+runtime) and **net8.0** (Godot's) — see
 [Unity → why Core multi-targets netstandard2.1](backends/unity.md#why-core-multi-targets-netstandard21).
+The `net8.0` target is not redundant with netstandard2.1: `init`-only setters carry a `modreq` on
+`IsExternalInit`, which is a polyfilled *internal* type on netstandard2.1 and a BCL type from net5.0 on, so
+an assembly compiled against the netstandard2.1 build throws `MissingMethodException` the first time it
+evaluates a `with` expression against the net10.0 one. Mixed-TFM consumers need a real net8.0 build.
 
 ## Centralized hosting & registration
 

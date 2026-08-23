@@ -1,0 +1,25 @@
+<!-- Godot.NET.Sdk rather than Microsoft.NET.Sdk: Godot's C# integration dispatches engine callbacks
+     (_Ready / _Process / _Draw / _GuiInput) through code its source generators emit per node class. A node
+     type compiled without them is inert — the engine never calls it. The SDK is the supported way to get
+     GodotSharp plus those generators. -->
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+
+  <PropertyGroup>
+    <!-- Godot 4.x's runtime is .NET 8. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <!-- Route C: no SkiaSharp, no native library of any kind — the UI is Godot draw commands, so it exports
+       to every platform Godot exports to. The Skia-into-a-texture route lives in SwiftDotNet.Godot.Skia
+       for projects that want pixel-identical parity with the other self-drawing backends instead. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,26 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+
+  <PropertyGroup>
+    <!-- Godot's templates say net8.0; it loads whatever runtime the assembly asks for, and the rest of the
+         repo (SharedUI and the controls libraries) is net10.0. Verified running on Godot 4.7.2. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SampleApp.Godot</RootNamespace>
+    <!-- Self-drawing, but through Godot's renderer rather than SkiaSharp. -->
+    <SwiftDotNetPlatform>skia</SwiftDotNetPlatform>
+    <!-- Godot loads the game assembly into its own load context, so every NuGet dependency has to sit next
+         to it. Without this, the DI abstractions the shared sample uses are simply missing at run time. -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SwiftDotNet.Godot\SwiftDotNet.Godot.csproj" />
+    <!-- Only so the sample can run the Skia-into-a-texture route too (res://MainSkia.tscn) and be compared
+         against the Godot-native one. A real project picks one and references only that. -->
+    <ProjectReference Include="..\..\src\SwiftDotNet.Godot.Skia\SwiftDotNet.Godot.Skia.csproj" />
+    <ProjectReference Include="..\SharedUI\SharedUI.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -6,8 +6,8 @@ One `View` subclass, many renderers. There are **two families** of backend:
   animations, and accessibility.
 - **Self-drawing** — paint every pixel ourselves for a pixel-identical look everywhere. The engine that does
   this is rasterizer-agnostic (see [the renderer seam](../architecture.md#the-renderer-seam)), so the same
-  layout, hit-testing, gestures and paint pass drive SkiaSharp, a from-scratch WebGPU renderer, or a Unity
-  texture.
+  layout, hit-testing, gestures and paint pass drive SkiaSharp, a from-scratch WebGPU renderer, a game
+  engine's texture, or — on Godot — the engine's own 2D draw commands.
 
 And **two routes** to get there (see [Architecture → the two backend routes](../architecture.md#the-two-backend-routes)):
 
@@ -28,14 +28,18 @@ And **two routes** to get there (see [Architecture → the two backend routes](.
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome | [Web](web.md) |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp)** | ✅ Verified (macOS window + PNG) | [Skia](skia.md) |
 | **Any (WebGPU)** | **Self-drawn, on the GPU** | **Pure C# (wgpu-native, no Skia)** | ✅ Verified on Metal via headless pixel readback (8 CI tests); Vulkan/D3D12 unexercised | [WebGPU](webgpu.md) |
-| **Unity** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine + Unity host)** | 🧩 .NET side builds for netstandard2.1; the host MonoBehaviour is **never compiled** | [Unity](unity.md) |
+| **MonoGame** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine + game component)** | ✅ Verified — real window and back buffer on macOS/DesktopGL | [MonoGame](monogame.md) |
+| **Godot** | **Godot's own 2D draw commands** (no Skia) | **Pure C# (`Control` node)** | ✅ Verified on Godot 4.7.2, macOS/Metal — both the native and the Skia-texture route | [Godot](godot.md) |
+| **Unity** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine + Unity host)** | 🧩 Host **compiles** against UnityEngine reference assemblies; **never run** | [Unity](unity.md) |
 | **Any (terminal)** | **Characters in a TTY** | **Pure C# (XenoAtom.Terminal.UI)** | ✅ Verified headlessly on macOS (35 CI tests); not yet driven by hand in a live terminal | [Terminal/TUI](tui.md) |
 
 > **What "Verified" means, and what CI actually covers.** ✅ Verified means the backend was *run* and
 > inspected on the stated target — it is not a claim of test coverage. The automated suite
-> ([`tests/SwiftDotNet.Tests`](../../tests/SwiftDotNet.Tests), 229 green) exercises **Core, Skia and the
-> terminal backend only**. There are no GTK, Web, WinUI, SwiftUI or Compose rendering tests, so per-backend
-> behaviour in the tables throughout these docs is verified by hand, not by CI. Prefer adding a Core, Skia
+> ([`tests/SwiftDotNet.Tests`](../../tests/SwiftDotNet.Tests), 364 green) exercises **Core, Skia and the
+> terminal backend only**. There are no GTK, Web, WinUI, SwiftUI, Compose, MonoGame or Godot rendering
+> tests, so per-backend behaviour in the tables throughout these docs is verified by hand, not by CI. The
+> two game-engine backends that are marked ✅ were verified by driving their sample heads
+> non-interactively — `--shot` / `--tap`, described on each page — and reading the captured frame. Prefer adding a Core, Skia
 > or TUI test for new behaviour — those are the ones that run on macOS.
 
 ## Choosing a backend
@@ -47,7 +51,11 @@ And **two routes** to get there (see [Architecture → the two backend routes](.
 - **Want the self-drawn look with no native imaging dependency, or GPU-resident rendering?** Use
   **[WebGPU](webgpu.md)**. Trade-off: PNG-only images, no complex text shaping, and group opacity is
   approximated.
-- **Rendering inside a game engine?** Use **[Unity](unity.md)** — the Skia engine drawn into a `Texture2D`.
+- **Rendering inside a game engine?** Three hosts, and the choice is mostly which engine you are already in:
+  **[MonoGame](monogame.md)** (verified; MonoGame ships no UI of its own, so this fills a real gap),
+  **[Godot](godot.md)** (verified; the default route draws with Godot's renderer, so there is **no native
+  dependency** and it exports wherever Godot does), and **[Unity](unity.md)** (compiles, never run). All
+  three support a transparent HUD over a live scene.
 - **No display server at all — SSH, a container, CI?** Use **[Terminal/TUI](tui.md)**. Trade-off: one glyph
   size (so `.Font` becomes emphasis, not scale), no transforms or animation, and images become character
   art unless the terminal speaks Sixel/Kitty.

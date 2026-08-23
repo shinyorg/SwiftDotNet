@@ -4,8 +4,9 @@
 each platform: **SwiftUI** on iOS/macOS/tvOS, **Jetpack Compose** on Android, **GTK4** on Linux, **WinUI 3**
 on Windows, and **HTML/DOM** on the Web. Not a reimplementation of each toolkit — the actual native controls,
 with the platform's own layout, fonts, animations, and accessibility. Plus a **self-drawing SkiaSharp**
-backend that paints the UI itself for a pixel-identical look on every platform, and a **terminal**
-backend for anywhere with a TTY and no display server.
+backend that paints the UI itself for a pixel-identical look on every platform, hosts for the **MonoGame**,
+**Godot** and **Unity** game engines, and a **terminal** backend for anywhere with a TTY and no display
+server.
 
 One `View` subclass, and two families of rendering backend — **native-fidelity** (map to the OS's real
 controls) and **self-drawing** (paint every pixel with SkiaSharp for a pixel-identical look everywhere):
@@ -22,6 +23,8 @@ controls) and **self-drawing** (paint every pixel with SkiaSharp for a pixel-ide
 | Web | HTML/DOM | Pure C# (Blazor WASM, no shim) | ✅ Verified in Chrome |
 | **Any (Skia)** | **Self-drawn canvas** | **Pure C# (SkiaSharp — no native controls)** | ✅ Verified (macOS window + headless PNG) |
 | **Any (terminal)** | **Characters in a TTY** | **Pure C# (XenoAtom.Terminal.UI — no native controls)** | ✅ Verified headlessly (35 CI tests) |
+| **MonoGame** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine in a game loop)** | ✅ Verified (macOS/DesktopGL window + back buffer) |
+| **Godot** | **Godot's own 2D draw commands** | **Pure C# `Control` node — no Skia, no native library** | ✅ Verified on Godot 4.7.2 (macOS/Metal) |
 
 The **Skia** backend is a from-scratch UI toolkit: it owns layout, text shaping (HarfBuzz), scrolling,
 overlays, input/focus, an animation clock, and an icon font — rendering the *whole* shared `ContentView`
@@ -63,7 +66,8 @@ Full docs live in **[`docs/`](docs/README.md)**. Quick links:
 - Backends: **[Overview](docs/backends/README.md)** · [Apple](docs/backends/apple.md) ·
   [Android](docs/backends/android.md) · [Linux/GTK](docs/backends/linux-gtk.md) ·
   [Windows](docs/backends/windows.md) · [Web](docs/backends/web.md) · [Skia](docs/backends/skia.md) ·
-  [WebGPU](docs/backends/webgpu.md) · [Unity](docs/backends/unity.md) ·
+  [WebGPU](docs/backends/webgpu.md) · [MonoGame](docs/backends/monogame.md) ·
+  [Godot](docs/backends/godot.md) · [Unity](docs/backends/unity.md) ·
   [Terminal/TUI](docs/backends/tui.md)
 - Tooling: **[Rider Plugin & Dev Tools](docs/rider-plugin.md)** — run configurations, the live
   patch inspector, and the in-IDE Skia preview

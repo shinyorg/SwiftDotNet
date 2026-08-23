@@ -1,0 +1,24 @@
+<!-- Separate from SwiftDotNet.Godot on purpose: this is the only part of the Godot backend that needs a
+     native library (libSkiaSharp) on every export target. Projects that want Godot-native rendering with
+     no native dependency reference SwiftDotNet.Godot alone and never pull this in. -->
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <!-- SwiftDotNet.Skia resolves to its netstandard2.1 target here; Godot's runtime is .NET 8 and cannot
+       load the net10.0 one. That TFM exists for exactly this reason (and for Unity). -->
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Godot\SwiftDotNet.Godot.csproj" />
+  </ItemGroup>
+
+</Project>

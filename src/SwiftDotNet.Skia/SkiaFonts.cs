@@ -70,12 +70,14 @@ public sealed class SkiaFonts : IFontProvider
         var sb = new StringBuilder();
         SKTypeface? current = null;
 
-        foreach (var rune in text.EnumerateRunes())
+        // TextLayout.CodePoints rather than string.EnumerateRunes(): the latter is .NET Core-only, and this
+        // assembly also builds for netstandard2.1 (Unity / Godot). One segmenter, so every target agrees.
+        foreach (var (codepoint, glyph) in Graphics.TextLayout.CodePoints(text))
         {
-            var face = Resolve(font.Native, baseFace, rune.Value);
+            var face = Resolve(font.Native, baseFace, codepoint);
             if (current is null) current = face;
             else if (!ReferenceEquals(face, current)) { yield return (sb.ToString(), current); sb.Clear(); current = face; }
-            sb.Append(rune.ToString());
+            sb.Append(glyph);
         }
 
         if (sb.Length > 0 && current is not null) yield return (sb.ToString(), current);

@@ -1,12 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- netstandard2.1 is not decoration: Unity's scripting runtime and Godot's net8.0 runtime both load
+         this assembly directly, and neither can load a net10.0 one. See docs/backends/unity.md and
+         docs/backends/godot.md. -->
+    <TargetFrameworks>net10.0;net8.0;netstandard2.1</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <RootNamespace>SwiftDotNet</RootNamespace>
+    <IsTrimmable Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">true</IsTrimmable>
   </PropertyGroup>
+
+  <!-- Same rule as SwiftDotNet.Graphics: Core's polyfills are internal to that assembly, so the file is
+       linked in rather than made public. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <Compile Include="..\SwiftDotNet\Compat\Netstandard.cs" Link="Compat\Netstandard.cs" />
+  </ItemGroup>
 
   <!-- The engine (layout / hit-test / gestures / paint) lives in SwiftDotNet.Graphics; this project is
        only the SkiaSharp binding of its ICanvas / IFontProvider / IImageDecoder seam. -->
