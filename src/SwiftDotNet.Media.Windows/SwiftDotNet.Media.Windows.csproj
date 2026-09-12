@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Windows frame producer: Windows.Media.Capture's MediaFrameReader feeding the engine's frame seam,
+    so CameraView shows a real preview on a self-drawing backend (Skia in WinUI/WPF/WinForms/Silk, WebGPU,
+    MonoGame, Godot) running on Windows.
+
+    Camera only, on purpose — see docs/video-and-camera.md:
+      * VIDEO  -> use SwiftDotNet.Media.Vlc. MediaPlayer's frame-server mode only copies into a Direct3D
+                  surface, so a CPU frame needs Win2D or hand-written D3D interop; LibVLC already renders
+                  into memory on Windows and covers files, HLS and RTSP.
+      * WEBVIEW-> WebView2 has no public off-screen-rendering mode, so there is nothing to pump. Inside a
+                  MAUI host a real web view can still be floated over the canvas via IPlatformViewHost.
+
+    Requires Windows to build (the TFM does), so it is not in SwiftDotNet.slnx and not part of the
+    headless build sweep.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Media\SwiftDotNet.Media.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+  </ItemGroup>
+
+</Project>

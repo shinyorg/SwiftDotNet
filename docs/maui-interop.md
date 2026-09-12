@@ -188,8 +188,14 @@ static size proves annoying.
 new WebView("https://learn.microsoft.com/dotnet/maui/").Frame(height: 220)
 ```
 
-Everywhere else — headless Skia, Silk, WebGPU, MonoGame, Godot, Unity — it still paints its placeholder,
-because no host is attached to place one. The status is per **host**, not per backend.
+Everywhere else — headless Skia, Silk, WebGPU, MonoGame, Godot, Unity — no host is attached to place one,
+so the node either paints its placeholder or, if the app registered a web frame producer, draws an
+**off-screen page as pumped frames** ([Video, camera & web surfaces](video-and-camera.md)). The status is
+per **host**, not per backend.
+
+Inside a MAUI app, prefer the real control above: it is zero-copy and its input is genuine. The pumped
+route exists for the hosts that have no view hierarchy to float anything in — and it composites, which the
+floated control does not.
 
 ---
 

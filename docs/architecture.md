@@ -195,6 +195,35 @@ A host that cannot place native views simply never sets `VisualBridge.PlatformVi
 keeps painting the placeholder it always did — which is why registering `WebView` changes its behaviour on
 the MAUI host and nowhere else. See [MAUI Interop](maui-interop.md) for the first two consumers.
 
+## The frame seam
+
+The platform-view seam answers "the engine cannot draw this" by **not drawing it**. The frame seam answers
+the same question the opposite way: get the pixels from the platform and draw them anyway.
+
+That is the only answer available to a host with no view hierarchy to float anything in — Silk.NET,
+MonoGame, Godot, a framebuffer, the headless harness — and it is the better answer wherever the content has
+to composite with the UI around it, because a pumped frame is clipped, rounded, z-ordered and transformed
+like any other pixel while a floated control is none of those things.
+
+| Piece | Role |
+|---|---|
+| [`FrameSources`](../src/SwiftDotNet.Graphics/Surfaces.cs) | Static registry of frame producers, mirroring `VisualRenderers` and `PlatformViews` |
+| `IFrameSource` / `PixelFrame` | A producer and its newest frame (straight RGBA8, plus rotation and mirroring) |
+| `FrameSurfaces` | **Per-bridge** live surfaces: the source per node, its uploaded texture, and lifetime |
+| `IPixelUploader` | A rasterizer's ability to turn raw pixels into a drawable image — the capability that decides whether a backend can show a surface at all |
+| `ISurfaceInput` | Optional: a surface that takes taps, scrolls and typing (a pumped `WebView`) |
+
+Three things are worth carrying over from the platform-view seam's design notes:
+
+- **Lifetime is swept, not signalled.** A renderer is only ever asked to measure and paint, and a
+  `setChildren` patch can drop a subtree without telling it, so every paint touches its surface and
+  anything untouched for two seconds is released. A camera in a hidden tab turns itself off.
+- **Registration is per node type**, so `VideoView`, `CameraView` and `WebView` all resolve through the
+  same renderer without the engine growing a media stack.
+- **Nothing is faked.** With no producer registered, the node paints a labelled placeholder.
+
+Full reference, per-platform providers and status: [Video, camera & web surfaces](video-and-camera.md).
+
 ## Project layout
 
 | Path | TFM | Role |

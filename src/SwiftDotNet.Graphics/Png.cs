@@ -271,3 +271,107 @@ public static class PngDecoder
         : max == 65535 ? (byte)(value >> 8)
         : (byte)(value * 255 / max);
 }
+
+/// <summary>
+/// A minimal PNG <em>encoder</em> — the counterpart to <see cref="PngDecoder"/>, for handing pixels back
+/// out of the engine (a camera still, a screenshot of a surface) without a platform imaging library.
+/// </summary>
+/// <remarks>
+/// Always writes 8-bit RGBA, non-interlaced, with no filtering. Filtering would compress better, but a
+/// still capture is written once and read once; the simplicity is worth more than the bytes. Deflate
+/// comes from <see cref="DeflateStream"/> with a hand-written zlib wrapper, because <c>ZLibStream</c>
+/// does not exist on the netstandard2.1 (Unity) target this assembly also builds for.
+/// </remarks>
+public static class PngEncoder
+{
+    /// <summary>Encode straight RGBA pixels as a PNG.</summary>
+    public static byte[] Encode(Pixels pixels)
+    {
+        using var output = new MemoryStream();
+        output.Write([0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A], 0, 8);
+
+        var header = new byte[13];
+        BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(0), pixels.Width);
+        BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), pixels.Height);
+        header[8] = 8;      // bit depth
+        header[9] = 6;      // colour type: truecolour with alpha
+        Chunk(output, "IHDR", header);
+
+        Chunk(output, "IDAT", Compress(pixels));
+        Chunk(output, "IEND", []);
+        return output.ToArray();
+    }
+
+    static byte[] Compress(Pixels pixels)
+    {
+        var stride = pixels.Width * 4;
+        using var raw = new MemoryStream((stride + 1) * pixels.Height);
+        for (var y = 0; y < pixels.Height; y++)
+        {
+            raw.WriteByte(0);                                   // filter type 0 (none)
+            raw.Write(pixels.Rgba, y * stride, stride);
+        }
+        var scanlines = raw.ToArray();
+
+        using var zlib = new MemoryStream();
+        zlib.WriteByte(0x78);                                   // deflate, 32K window
+        zlib.WriteByte(0x01);                                   // no preset dictionary, fastest
+        using (var deflate = new DeflateStream(zlib, CompressionLevel.Fastest, leaveOpen: true))
+            deflate.Write(scanlines, 0, scanlines.Length);
+
+        var adler = Adler32(scanlines);
+        zlib.WriteByte((byte)(adler >> 24));
+        zlib.WriteByte((byte)(adler >> 16));
+        zlib.WriteByte((byte)(adler >> 8));
+        zlib.WriteByte((byte)adler);
+        return zlib.ToArray();
+    }
+
+    static void Chunk(Stream output, string type, byte[] data)
+    {
+        var length = new byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(length, data.Length);
+        output.Write(length, 0, 4);
+
+        var body = new byte[4 + data.Length];
+        for (var i = 0; i < 4; i++) body[i] = (byte)type[i];
+        Buffer.BlockCopy(data, 0, body, 4, data.Length);
+        output.Write(body, 0, body.Length);
+
+        var crc = new byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(crc, Crc32(body));
+        output.Write(crc, 0, 4);
+    }
+
+    static uint Adler32(byte[] data)
+    {
+        uint a = 1, b = 0;
+        foreach (var value in data)
+        {
+            a = (a + value) % 65521;
+            b = (b + a) % 65521;
+        }
+        return (b << 16) | a;
+    }
+
+    static readonly uint[] CrcTable = BuildCrcTable();
+
+    static uint[] BuildCrcTable()
+    {
+        var table = new uint[256];
+        for (uint n = 0; n < 256; n++)
+        {
+            var c = n;
+            for (var k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            table[n] = c;
+        }
+        return table;
+    }
+
+    static uint Crc32(byte[] data)
+    {
+        var c = 0xFFFFFFFFu;
+        foreach (var value in data) c = CrcTable[(c ^ value) & 0xFF] ^ (c >> 8);
+        return c ^ 0xFFFFFFFFu;
+    }
+}

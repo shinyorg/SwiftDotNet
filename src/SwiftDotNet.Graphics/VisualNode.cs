@@ -392,7 +392,10 @@ sealed partial class VisualNode
         if (Kf("height") is { } kh) outerH = (float)kh;
         else if (Mod("animation") is not null && Mod("frame")?.ContainsKey("height") == true) outerH = AnimH;
         else if (fh is { } h) outerH = (float)h;
-        if (Mod("align") is not null || FillsWidth) outerW = available.Width;
+        // Greedy types (WebView, the control rows) fill the width they are offered — but an explicit
+        // .Frame(width:) is a statement, not a hint, and used to be silently overwritten here. An
+        // `align` modifier (.Frame(maxWidth:)) still wins, because that one *means* "be greedy".
+        if (Mod("align") is not null || (fw is null && FillsWidth)) outerW = available.Width;
         outer = new Size(outerW, outerH);
 
         _measured = outer;
@@ -1147,6 +1150,18 @@ sealed partial class VisualNode
                     return true;
                 }
 
+        // An interactive surface (a pumped WebView) swallows the tap and replays it into its own
+        // document. Normalized, because the surface renders at a resolution only it knows.
+        if (_bridge.Surfaces.InputFor(Id) is { } input)
+        {
+            _bridge.FocusedId = Id;
+            input.Pointer(Normalized(p.X, _content.Left, _content.Width), Normalized(p.Y, _content.Top, _content.Height),
+                GesturePhase.Began);
+            input.Pointer(Normalized(p.X, _content.Left, _content.Width), Normalized(p.Y, _content.Top, _content.Height),
+                GesturePhase.Ended);
+            return true;
+        }
+
         // Tapping a text control focuses it (keyboard input then routes here).
         if (Type is "TextField" or "SecureField" or "TextEditor")
         {
@@ -1300,6 +1315,23 @@ sealed partial class VisualNode
         if (Type == "TabView")
             return _tabIndex < Children.Count ? new[] { Children[_tabIndex] } : Array.Empty<VisualNode>();
         return Children;
+    }
+
+    /// <summary>A point mapped to 0–1 across a span, for handing to a surface in its own space.</summary>
+    static float Normalized(float value, float start, float extent) =>
+        extent <= 0 ? 0 : Math.Clamp((value - start) / extent, 0, 1);
+
+    /// <summary>
+    /// The innermost interactive surface under a point (a pumped <c>WebView</c>), or null. Scrolling
+    /// consults this before the scroll views, so a wheel over a page scrolls the page, not the list
+    /// the page happens to sit in.
+    /// </summary>
+    internal (VisualNode Node, ISurfaceInput Input)? SurfaceInputAt(Point p)
+    {
+        if (!Frame.Contains(p)) return null;
+        foreach (var child in VisibleOverlayChildren())
+            if (child.SurfaceInputAt(p) is { } inner) return inner;
+        return _bridge.Surfaces.InputFor(Id) is { } input ? (this, input) : null;
     }
 
     /// <summary>Find the innermost scrollable node under a point (for wheel/drag scrolling).</summary>
@@ -1513,7 +1545,7 @@ sealed partial class VisualNode
 
     string? CrossToken() => Props.GetValueOrDefault("alignment") as string;
 
-    VisualRenderContext RenderCtx() => new(Id, Props, _bridge.Emit);
+    VisualRenderContext RenderCtx() => new(Id, Type, Props, _bridge, CornerRadius());
 
     Dictionary<string, object?>? Mod(string type)
     {

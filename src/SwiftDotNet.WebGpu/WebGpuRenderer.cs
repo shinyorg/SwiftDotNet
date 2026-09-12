@@ -314,7 +314,13 @@ public sealed unsafe class WebGpuRenderer : IDisposable
     BindGroup* GroupFor(WebGpuImage? image)
     {
         if (image is null) return _whiteGroup;
-        if (_imageGroups.TryGetValue(image.GetHashCode(), out var cached)) return (BindGroup*)cached;
+        if (_imageGroups.TryGetValue(image.GetHashCode(), out var cached))
+        {
+            // A video frame replaces the pixels of an image the renderer has already seen; rewrite the
+            // texture it owns rather than making another one.
+            if (image.UploadedRevision != image.Revision) WriteTexture(image);
+            return (BindGroup*)cached;
+        }
 
         var descriptor = new TextureDescriptor
         {
@@ -328,19 +334,27 @@ public sealed unsafe class WebGpuRenderer : IDisposable
         var texture = _wgpu.DeviceCreateTexture(_device, in descriptor);
         var view = _wgpu.TextureCreateView(texture, null);
 
+        image.Texture = texture;
+        image.View = view;
+        WriteTexture(image);
+
+        var group = CreateTextureGroup(view);
+        _imageGroups[image.GetHashCode()] = (nint)group;
+        return group;
+    }
+
+    /// <summary>Copy an image's current pixels into its GPU texture.</summary>
+    void WriteTexture(WebGpuImage image)
+    {
+        if (image.Texture is null) return;
         fixed (byte* pixels = image.Source.Rgba)
         {
-            var destination = new ImageCopyTexture { Texture = texture, MipLevel = 0, Aspect = TextureAspect.All };
+            var destination = new ImageCopyTexture { Texture = image.Texture, MipLevel = 0, Aspect = TextureAspect.All };
             var layout = new TextureDataLayout { BytesPerRow = (uint)(image.Width * 4), RowsPerImage = (uint)image.Height };
             var extent = new Extent3D((uint)image.Width, (uint)image.Height, 1);
             _wgpu.QueueWriteTexture(_queue, in destination, pixels, (nuint)image.Source.Rgba.Length, in layout, in extent);
         }
-
-        image.Texture = texture;
-        image.View = view;
-        var group = CreateTextureGroup(view);
-        _imageGroups[image.GetHashCode()] = (nint)group;
-        return group;
+        image.UploadedRevision = image.Revision;
     }
 
     void UploadFrame(WebGpuCanvas canvas)

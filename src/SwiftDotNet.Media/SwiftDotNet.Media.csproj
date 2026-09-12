@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The media family core. Like SwiftDotNet.Maps and SwiftDotNet.Controls.Camera: a pure-C# package with
+    the VideoView control + wire types and nothing platform-specific, so it is referenceable from every
+    head. The frame producers that make a feed appear live in the companion packages
+    (SwiftDotNet.Media.Apple / .Android / .Windows / .Vlc), which plug into the engine's
+    SwiftDotNet.Graphics video seam; a backend with no provider registered paints the honest placeholder.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+  </ItemGroup>
+
+</Project>

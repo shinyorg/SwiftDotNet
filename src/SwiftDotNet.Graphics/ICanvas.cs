@@ -59,3 +59,21 @@ public interface ICanvas
     /// </summary>
     void DrawText(string text, float x, float baselineY, Font font, Color color);
 }
+
+/// <summary>
+/// A canvas that can clip to a <b>rounded</b> rect, not just a rect.
+/// </summary>
+/// <remarks>
+/// <para>Deliberately separate from <see cref="ICanvas"/>. That interface is rect-clip-only by design —
+/// see its remarks — and widening it would make every present and future rasterizer owe a rounded clip
+/// before it could draw a single label. As a capability, a backend that has one for free (Skia) offers
+/// it, and one that does not simply clips square.</para>
+///
+/// <para>What it buys: content that honours <c>.CornerRadius</c> instead of only its background doing
+/// so. A camera preview or a video in a rounded card is the case that makes the difference obvious.</para>
+/// </remarks>
+public interface IRoundedClipCanvas
+{
+    /// <summary>Intersect the clip with a rounded rect.</summary>
+    void ClipRoundRect(Rect rect, float radiusX, float radiusY);
+}

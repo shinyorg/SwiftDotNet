@@ -17,7 +17,9 @@ on a backend exactly to the extent that backend implements the modifiers the con
 `ImageViewer`.
 
 The one exception is [`CameraView`](../src/SwiftDotNet.Controls.Camera) — a genuine native primitive
-(`CustomView`), not a composite. It needs a registered per-backend renderer.
+(`CustomView`), not a composite. It needs a registered per-backend renderer, or — on the self-drawing
+backends — a registered frame producer that pushes camera frames onto the canvas. See
+[Video, camera & web surfaces](video-and-camera.md).
 
 ```csharp
 using SwiftDotNet.Controls;
@@ -101,7 +103,7 @@ against the code on **2026-07-20**.
 | `.ScaleEffect` / `.Rotation` | ✅ | ✅ | ✅ | ✅ | ✅⁹ | ✅² |
 | Real backdrop blur | ✅ | ✅ | tint | tint | tint | tint |
 | URL images | ✅ | ✅ | ✅ | ✅ | ✅ | ✅² |
-| `CameraView` | ✅ | ❌ | ❌¹⁰ | placeholder | ❌ | ❌ |
+| `CameraView` | ✅ | ❌ | ❌¹⁰ | ✅¹¹ | ❌ | ❌ |
 
 ¹ Only if the host wires [`SkiaPointerRouter`](../src/SwiftDotNet.Graphics/PointerRouter.cs). A
 self-drawing backend has no gesture recognizers, so a host that forwards only taps leaves all seven
@@ -118,6 +120,9 @@ as an opacity pulse rather than a size pulse, and `SkeletonView`'s shimmer fades
 ⁹ Via a `Gtk.Fixed` + `GskTransform` wrapper. Not visually verified.
 ¹⁰ The Compose `CameraRenderer.kt` exists but is **not compiled into the bridge AAR** — see
 [Android](backends/android.md).
+¹¹ Via the [frame seam](video-and-camera.md): the engine draws camera frames pushed by a
+`SwiftDotNet.Media.*` producer. The engine half is tested headlessly; the producers compile but have not
+been run on a device. With none registered the node paints a viewfinder placeholder.
 
 ## Gotchas
 

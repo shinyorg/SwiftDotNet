@@ -264,7 +264,31 @@ tap-driven. See [Skia backend](backends/skia.md#what-a-finger-needs-that-a-mouse
 | `Gauge` | Value gauge. |
 | `Link` | Hyperlink. |
 | Shapes | `Rectangle`, `Circle`, `Capsule`, `RoundedRectangle` — greedy (fill offered space unless `.Frame` overrides). |
-| `WebView` | A web page, by URL or from an HTML string. Native everywhere except the self-drawing backends, where it needs a real control floated over the canvas — inside a MAUI app it gets one; elsewhere it paints a placeholder. See [MAUI Interop](maui-interop.md#webview-on-the-self-drawing-backends). |
+| `WebView` | A web page, by URL or from an HTML string. Native everywhere except the self-drawing backends, where it is either floated over the canvas as a real control (inside a MAUI app — see [MAUI Interop](maui-interop.md#webview-on-the-self-drawing-backends)) or **pumped as frames** from an off-screen web view ([Video, camera & web surfaces](video-and-camera.md)); with neither, it paints a placeholder. |
+
+## Video
+
+| View | Notes |
+|------|-------|
+| `VideoView` | A movie or stream playing in the layout — a file, `http`/HLS, or RTSP. Ships in the opt-in [`SwiftDotNet.Media`](../src/SwiftDotNet.Media) package. **No built-in transport controls by design**: play/pause/scrub are `State<T>` in your view, so the chrome is composed from the DSL and stays themed and testable. |
+| `CameraView` | A live camera preview, with still capture and native frame analyzers. Ships in [`SwiftDotNet.Controls.Camera`](../src/SwiftDotNet.Controls.Camera). |
+
+```csharp
+new VideoView("https://example.com/clip.mp4")
+    .ContentMode(VideoContentMode.Fill)     // Fit (letterbox), Fill (crop), Stretch
+    .Loop()
+    .Playing(_playing)                      // two-way: written back when it ends or fails
+    .Seek(_position)                        // writing a TimeSpan seeks there
+    .OnReady(i => _duration.Value = i.Duration)
+    .OnEnded(() => _finished.Value = true)
+    .CornerRadius(12)
+    .Frame(height: 220)
+```
+
+On the widget-backed backends a native player renders it; on the self-drawing backends the frames are
+decoded by a platform producer and drawn by the canvas, so the video clips, rounds and scrolls with the
+rest of the UI. Registration, per-platform support and the honest status table:
+**[Video, camera & web surfaces](video-and-camera.md)**.
 
 ## Interop
 

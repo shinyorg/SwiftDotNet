@@ -63,6 +63,10 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
   that puts real MAUI controls back inside a SwiftDotNet tree, over the platform-view seam. (There is
   deliberately no MAUI *backend*.)
 - **[Maps](maps.md)** — the opt-in `SwiftDotNet.Maps` companion (MapKit / MapLibre).
+- **[Video, Camera & Web Surfaces](video-and-camera.md)** — `VideoView`, `CameraView` and `WebView` on the
+  self-drawing backends: the frame seam that pumps decoded pixels onto the canvas, the
+  `SwiftDotNet.Media.*` providers (AVFoundation / Camera2 + MediaCodec / MediaCapture / LibVLC), and when
+  to float a real control instead.
 - **[Live Surfaces](live-surfaces.md)** — the `SwiftDotNet.Live` / `SwiftDotNet.Widgets` companions: iOS
   Live Activities and the Dynamic Island, home-screen widgets, Android custom notifications and app
   widgets, and Android 16 Live Updates. The first targets where **another process renders our tree**.
@@ -87,6 +91,7 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 | **Unity** | **Self-drawn into a `Texture2D`** | **Pure C# (Skia engine + Unity host)** | 🧩 Host **compiles** against UnityEngine reference assemblies; **never run** |
 | **Any (terminal)** | **Characters in a TTY** | **Pure C# (XenoAtom.Terminal.UI)** | ✅ Verified headlessly on macOS (35 CI tests); not yet driven by hand in a live terminal |
 
+| **Video / camera / web surfaces** | **Decoded frames drawn by the canvas** | **Frame seam + `SwiftDotNet.Media.*` providers** | 🧩 Engine half ✅ verified headlessly (20 tests + a screenshot); every platform producer **compiles but has never run** (Windows never compiled) |
 | **Live surfaces** | **Live Activities, notifications, widgets** | **Restricted DSL + a Swift widget interpreter / a C# `RemoteViews` interpreter** | 🧩 Vocabulary, wire, validator & timeline ✅ verified headlessly (41 tests); both platform drivers **compile but have never run** |
 
 > The top-level [`README.md`](../README.md) is the marketing/overview entry point; these docs are the

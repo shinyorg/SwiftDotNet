@@ -250,7 +250,9 @@ sealed partial class VisualNode
                 PaintGauge(canvas, dark);
                 break;
             case "WebView":
-                PaintWebView(canvas, dark);
+                // A registered web provider turns this into a real (off-screen, pumped) page; with none,
+                // it keeps the "not drawable on a canvas" card it has always painted.
+                if (!SurfaceRenderer.Shared.TryPaint(RenderCtx(), canvas, _content)) PaintWebView(canvas, dark);
                 break;
             case "NavigationStack":
                 PaintNavBar(canvas, dark, Children.Count > 0 ? Children[0].NavTitle() : "", back: false);

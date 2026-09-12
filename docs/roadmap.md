@@ -202,6 +202,30 @@ that is what they are.
 - **Collection View** — true windowed streaming (WinUI/GTK/Web); Web pull-refresh/load-more/windowing (needs
   JS-interop `scrollTop`); Swift load-more wiring. See [Collection View → Deferred](collection-view.md#deferred).
 
+## Video, camera & web surfaces
+
+The engine half is done and tested; every platform producer compiles but has never met real hardware. See
+[Video, camera & web surfaces](video-and-camera.md) for the full status table.
+
+- **Run the providers.** AVFoundation on an iOS device and a Mac, Camera2 + MediaCodec on an emulator and a
+  phone, LibVLC on a Silk.NET desktop. Sensor rotation, front-camera mirroring and A/V sync are the three
+  things that can only be wrong on a device.
+- **Compile the Windows producer at all** — `SwiftDotNet.Media.Windows` is written against the documented
+  `MediaFrameReader` API and has never been through a compiler.
+- **`VideoView` on Windows** needs either Win2D (to read `MediaPlayer`'s frame-server output off a Direct3D
+  surface) or the LibVLC package, which is the current answer.
+- **A native `VideoView` renderer for the widget-backed backends** (AVPlayer in SwiftUI, ExoPlayer in
+  Compose, `MediaElement` in WinUI, `<video>` on Web). The control and its wire format already exist; only
+  the per-backend renderers are missing, so today `VideoView` shows the ⚠️ placeholder there.
+- **Rounded clipping beyond Skia** — `.CornerRadius` only rounds a surface's content where the rasterizer
+  implements `IRoundedClipCanvas`. WebGPU could do it as an SDF mask; Godot and Unity would need more.
+- **Frame analyzers on the pumped path** — `CameraAnalyzers` (barcode / face / text) runs natively on the
+  SwiftUI and Compose renderers. On a self-drawing backend the frames are already in memory, so Vision or
+  ML Kit could run against them, but nothing does yet.
+- **Zero-copy uploads.** Every frame is a CPU copy today. A platform texture handed straight to the
+  rasterizer (`CVPixelBuffer` → `SKImage`, `HardwareBuffer` → GL) would remove both the conversion and the
+  upload, at the cost of a per-rasterizer path.
+
 ## Framework-wide
 
 - **Binary bridge protocol** — replace JSON on the hot path.

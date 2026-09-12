@@ -108,8 +108,11 @@ public sealed class SkiaImage : IImage, IDisposable
     public void Dispose() => Native.Dispose();
 }
 
-/// <summary>The Skia <see cref="IImageDecoder"/> — decodes to a raster <see cref="SKImage"/>.</summary>
-public sealed class SkiaImages : IImageDecoder
+/// <summary>
+/// The Skia <see cref="IImageDecoder"/> — decodes to a raster <see cref="SKImage"/>, and uploads raw
+/// pixels for the video seam (<see cref="IPixelUploader"/>).
+/// </summary>
+public sealed class SkiaImages : IImageDecoder, IPixelUploader
 {
     public IImage? Decode(byte[] bytes)
     {
@@ -122,4 +125,24 @@ public sealed class SkiaImages : IImageDecoder
         var image = SKImage.FromEncodedData(path);
         return image is null ? null : new SkiaImage(image);
     }
+
+    /// <summary>
+    /// Wraps a video frame's pixels as a drawable image. <see cref="Pixels"/> is straight (un-premultiplied)
+    /// RGBA8 with no row padding, which maps exactly onto <see cref="SKColorType.Rgba8888"/> +
+    /// <see cref="SKAlphaType.Unpremul"/> — so this is one memcpy, not a conversion.
+    /// </summary>
+    public IImage? Upload(Pixels pixels)
+    {
+        if (pixels.Width <= 0 || pixels.Height <= 0) return null;
+        var info = new SKImageInfo(pixels.Width, pixels.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        if (pixels.Rgba.Length < info.BytesSize) return null;
+        var image = SKImage.FromPixelCopy(info, pixels.Rgba);
+        return image is null ? null : new SkiaImage(image);
+    }
+
+    /// <summary>
+    /// Always false: an <see cref="SKImage"/> is immutable by contract, so a frame is a new image. The
+    /// copy is what makes that safe — Skia may still be reading the previous frame on a raster thread.
+    /// </summary>
+    public bool TryUpdate(IImage image, Pixels pixels) => false;
 }

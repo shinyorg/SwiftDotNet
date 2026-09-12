@@ -11,7 +11,7 @@ namespace SwiftDotNet;
 /// <c>SwiftDotNet.Graphics</c>, and this type only translates the closed set of primitives that seam
 /// exposes into Skia calls. Wrapping is cheap — allocate one per frame around the host's canvas.
 /// </remarks>
-public sealed class SkiaCanvas : ICanvas
+public sealed class SkiaCanvas : ICanvas, IRoundedClipCanvas
 {
     readonly SKCanvas _canvas;
     readonly SkiaFonts _fonts;
@@ -40,6 +40,10 @@ public sealed class SkiaCanvas : ICanvas
     public void Scale(float sx, float sy) => _canvas.Scale(sx, sy);
     public void RotateDegrees(float degrees, float pivotX, float pivotY) => _canvas.RotateDegrees(degrees, pivotX, pivotY);
     public void ClipRect(Graphics.Rect rect) => _canvas.ClipRect(ToSk(rect));
+
+    /// <inheritdoc cref="IRoundedClipCanvas.ClipRoundRect"/>
+    public void ClipRoundRect(Graphics.Rect rect, float radiusX, float radiusY) =>
+        _canvas.ClipRoundRect(new SKRoundRect(ToSk(rect), radiusX, radiusY), antialias: true);
 
     public void DrawRect(Graphics.Rect rect, in Graphics.Paint paint)
     {

@@ -13,6 +13,9 @@
     <ItemGroup>
         <ProjectReference Include="..\..\src\SwiftDotNet.Skia\SwiftDotNet.Skia.csproj"/>
         <ProjectReference Include="..\SharedUI\SharedUI.csproj"/>
+        <!-- The VideoView control, for the `media` mode below. Only this head needs it; the shared UI
+             stays free of the media family so every other backend head keeps its current references. -->
+        <ProjectReference Include="..\..\src\SwiftDotNet.Media\SwiftDotNet.Media.csproj"/>
     <ProjectReference Include="..\SampleApp.Skia.Renderers\SampleApp.Skia.Renderers.csproj"/>
     </ItemGroup>
 

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Apple frame producers for the self-drawing backends: AVFoundation capture for CameraView,
+    AVPlayer + AVPlayerItemVideoOutput for VideoView, and an off-screen WKWebView for WebView. They plug
+    into the engine's SwiftDotNet.Graphics frame seam, so the pixels are drawn BY the canvas rather than
+    by a native view floated above it.
+
+    Separate from SwiftDotNet.Media (the pure-C# DSL) for the same reason SwiftDotNet.Controls.Camera.Apple
+    is separate from SwiftDotNet.Controls.Camera: only an app that opts in should link AVFoundation/WebKit.
+    Apple-only TFMs; needs the iOS/macOS/tvOS workloads, so it is not part of the headless build sweep.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-ios;net10.0-maccatalyst;net10.0-macos;net10.0-tvos</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.EndsWith('-ios'))">17.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.EndsWith('-maccatalyst'))">17.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.EndsWith('-macos'))">14.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.EndsWith('-tvos'))">17.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Media\SwiftDotNet.Media.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+  </ItemGroup>
+
+</Project>

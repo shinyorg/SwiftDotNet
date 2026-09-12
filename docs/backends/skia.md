@@ -78,7 +78,7 @@ algorithm (`MeasureGrid`/`ResolveTracks`/`ArrangeGrid`), which the Swift and Com
 line. Grid measures twice on purpose — natural sizes drive the content-sized columns, then every child is
 re-measured at its final cell width so wrapping `Text` reports the height it will actually paint at.
 
-**Platform views.** Three things the engine cannot draw — `WebView`, a map, an embedded MAUI control —
+**Platform views.** Three things the engine cannot draw itself — `WebView`, a map, an embedded MAUI control —
 are no longer dead ends. A node type registered with `PlatformViews` stops being painted and is instead
 *reported* to an `IPlatformViewHost`, which floats a real OS control over the canvas at that frame. Only the
 [MAUI host](#hosts) implements one today, so inside a MAUI app `WebView` is a real web view and
@@ -100,11 +100,14 @@ Skia already draws — pills, badges, skeletons, progress, sliders, PIN entry, a
 duration picker, table/tree/data-grid, staggered grid, carousel, scheduler (calendar + agenda), chat,
 toasts, dialogs, FABs, floating panels and frosted glass.
 
-The one exception to "pure composite" is `CameraView`, which is a **custom native primitive**. Skia has no
-capture stack, so the sample registers an honest viewfinder placeholder rather than faking a feed — see
-[`SkiaSampleRenderers`](../../sample/SampleApp.Skia.Renderers/SkiaSampleRenderers.cs). Without a
-registered renderer it would paint the generic "⚠️ unknown view" box, which reads as a bug rather than an
-unsupported capability.
+The one exception to "pure composite" is `CameraView`, which is a **custom native primitive** — and it now
+shows a real preview. Skia still has no capture stack, so nothing is faked: a platform producer
+(AVFoundation, Camera2, MediaCapture, LibVLC) pushes decoded frames through the engine's
+[frame seam](../video-and-camera.md) and the canvas draws them like any other pixel, which is also how
+`VideoView` and a pumped `WebView` work. With no producer registered the node paints a labelled
+viewfinder placeholder rather than the generic "⚠️ unknown view" box, which would read as a bug rather
+than an unsupported capability. `dotnet run --project sample/SampleApp.Skia -- <dir> media` renders the
+three of them against a generated test pattern.
 
 #### What a finger needs that a mouse got for free
 

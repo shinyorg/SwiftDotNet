@@ -121,11 +121,21 @@ public class VisualBridge : IBridge
     /// </remarks>
     public Color? ClearColor { get; set; }
 
+    /// <summary>The appearance the current frame is painting in. Read by custom renderers.</summary>
+    internal bool Dark { get; private set; }
+
+    /// <summary>
+    /// This bridge's live video surfaces (<c>VideoView</c> / <c>CameraView</c> feeds). Per-bridge rather
+    /// than process-wide because node ids are structural paths and repeat across trees.
+    /// </summary>
+    public FrameSurfaces Surfaces { get; } = new();
+
     /// <summary>Lay out then paint the current scene into <paramref name="canvas"/> filling <paramref name="size"/>.</summary>
     public void Draw(ICanvas canvas, Size size, bool dark)
     {
+        Dark = dark;
         canvas.Clear(ClearColor ?? Theme.Background(dark));
-        if (_root is null) { BeginPlatformViews(); SyncPlatformViews(default); return; }
+        if (_root is null) { BeginPlatformViews(); SyncPlatformViews(default); Surfaces.Sweep(); return; }
         _lastSize = size;
         BeginPlatformViews();
         _root.Measure(size);
@@ -145,6 +155,10 @@ public class VisualBridge : IBridge
         }
 
         SyncPlatformViews(window);
+
+        // Release video surfaces whose node was not painted this frame — the only "this node went away"
+        // signal a renderer-owned resource can get. See FrameSurfaces.
+        Surfaces.Sweep();
     }
 
     // ---- platform views (real OS controls floated above the canvas) ----------
@@ -244,6 +258,18 @@ public class VisualBridge : IBridge
     /// <summary>Scroll the innermost scrollable under <paramref name="point"/> by <paramref name="dy"/> px.</summary>
     public bool Scroll(Point point, float dy)
     {
+        // An interactive surface owns the wheel over its own box — a page inside a scroll view must
+        // scroll the page, not carry the whole list with it.
+        if (GestureTarget(point)?.SurfaceInputAt(point) is { } surface)
+        {
+            var frame = surface.Node.Frame;
+            surface.Input.Scroll(
+                frame.Width <= 0 ? 0 : Math.Clamp((point.X - frame.Left) / frame.Width, 0, 1),
+                frame.Height <= 0 ? 0 : Math.Clamp((point.Y - frame.Top) / frame.Height, 0, 1),
+                0, dy);
+            return true;
+        }
+
         // Search the presented overlay first, exactly as gestures do — a pushed nav destination's ScrollView
         // hangs off the overlay node, not off _root's children, so scrolling a pushed page needs this.
         if (GestureTarget(point)?.ScrollableAt(point) is not { } node) return false;
@@ -432,6 +458,9 @@ public class VisualBridge : IBridge
     public void InsertText(string s)
     {
         if (FocusedId is null || Find(FocusedId) is not { } node) return;
+        // A focused interactive surface (a pumped WebView) owns its own text fields; the engine has no
+        // value to patch, so keystrokes are replayed into the surface instead of round-tripping to C#.
+        if (Surfaces.InputFor(FocusedId) is { } input) { input.Text(s); return; }
         Emit(FocusedId, node.TextProp() + s);
     }
 
@@ -443,6 +472,7 @@ public class VisualBridge : IBridge
     public void SetFocusedText(string text)
     {
         if (FocusedId is null || Find(FocusedId) is not { } node) return;
+        if (Surfaces.InputFor(FocusedId) is not null) return;   // a surface owns its own editing state
         if (node.TextProp() == text) return;      // echo of our own patch — don't loop
         Emit(FocusedId, text);
     }
@@ -451,6 +481,7 @@ public class VisualBridge : IBridge
     public void DeleteBackward()
     {
         if (FocusedId is null || Find(FocusedId) is not { } node) return;
+        if (Surfaces.InputFor(FocusedId) is { } input) { input.Key("Backspace", down: true); input.Key("Backspace", down: false); return; }
         var cur = node.TextProp();
         if (cur.Length > 0) Emit(FocusedId, cur[..^1]);
     }

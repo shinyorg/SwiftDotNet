@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Android frame producers for the self-drawing backends: Camera2 for CameraView, MediaCodec (+ a
+    surface-less MediaPlayer for audio and the clock) for VideoView, and an off-screen android.webkit.WebView
+    for WebView. All three feed the engine's SwiftDotNet.Graphics frame seam.
+
+    Platform SDK only — deliberately NO AndroidX/CameraX dependency. The Compose backend already pins a
+    narrow AndroidX range (see docs/backends/android.md) and adding CameraX's transitive graph on top of
+    that is how NU1107/D8-duplicate-class afternoons start. Camera2 is in the platform.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Media\SwiftDotNet.Media.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+  </ItemGroup>
+
+</Project>

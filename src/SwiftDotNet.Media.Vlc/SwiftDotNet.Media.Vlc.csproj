@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The desktop frame producer: LibVLC rendering into memory, feeding the engine's frame seam. One
+    provider covers every desktop host that has no platform media stack of its own — Silk.NET, WPF,
+    WinForms, the headless harness, and Linux/framebuffer — for files, http/HLS/RTSP streams AND
+    webcams (dshow:// v4l2:// avcapture://).
+
+    Separate net10.0 project, exactly like the GTK/Web/Skia split: LibVLCSharp is a real dependency with
+    a native runtime behind it, and nothing that merely references SwiftDotNet.Media should inherit it.
+
+    The NATIVE libvlc is deliberately NOT referenced here — an app picks the one for the platform it
+    ships (VideoLAN.LibVLC.Windows / .Mac, or the distro's libvlc on Linux). Bundling all of them would
+    put ~200MB of unused binaries in every consumer's output.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Media\SwiftDotNet.Media.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+    <PackageReference Include="LibVLCSharp" Version="3.9.*" />
+  </ItemGroup>
+
+</Project>

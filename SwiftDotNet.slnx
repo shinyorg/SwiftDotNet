@@ -37,6 +37,8 @@
     <Project Path="src/SwiftDotNet.Tui/SwiftDotNet.Tui.csproj"/>
     <Project Path="src/SwiftDotNet.Tui.Graphics/SwiftDotNet.Tui.Graphics.csproj"/>
     <Project Path="src/SwiftDotNet.Maps/SwiftDotNet.Maps.csproj"/>
+    <Project Path="src/SwiftDotNet.Media/SwiftDotNet.Media.csproj"/>
+    <Project Path="src/SwiftDotNet.Media.Vlc/SwiftDotNet.Media.Vlc.csproj"/>
     <Project Path="src/SwiftDotNet.Live/SwiftDotNet.Live.csproj"/>
     <Project Path="src/SwiftDotNet.Widgets/SwiftDotNet.Widgets.csproj"/>
     <Project Path="src/SwiftDotNet.Live.Android/SwiftDotNet.Live.Android.csproj"/>

@@ -79,6 +79,8 @@ Full docs live in **[`docs/`](docs/README.md)**. Quick links:
   widgets, Android custom notifications & app widgets, Android 16 Live Updates
 - **[MAUI Interop](docs/maui-interop.md)** — host SwiftDotNet in a .NET MAUI app, and put real MAUI
   controls back inside the tree with `MauiView`
+- **[Video, Camera & Web Surfaces](docs/video-and-camera.md)** — `VideoView`, `CameraView` and a pumped
+  `WebView` on the self-drawing backends, and the `SwiftDotNet.Media.*` frame producers
 - **[Maps](docs/maps.md)** · **[Roadmap](docs/roadmap.md)**
 
 ## Custom controls

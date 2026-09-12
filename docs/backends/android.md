@@ -130,6 +130,11 @@ their headers require. Both files are authored but **not shipped** — confirmed
 `classes.jar`. Pulling them in means adding those dependencies to the bridge AAR that every consumer would
 then carry, which is a design decision, not a build fix.
 
+An app that wants a camera on Android *today* has a second route that does not touch the AAR: run the
+[Skia backend](skia.md) and register [`SwiftDotNet.Media.Android`](../video-and-camera.md), which feeds
+Camera2 frames to the canvas from an opt-in package. That does nothing for the **Compose** backend — it is
+the self-drawing path — but it needs no AndroidX and no change to the bridge.
+
 ## Maps
 
 A Compose/MapLibre renderer is **authored** in [`native/maps`](../../native/maps) (`MapRenderer.kt`) against

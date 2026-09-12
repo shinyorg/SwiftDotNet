@@ -33,6 +33,23 @@ if (args.Length > 1 && args[1] == "anim")
     return;
 }
 
+// Media mode (exclusive, same reason as `anim`): draw VideoView / CameraView / WebView fed by the
+// engine's built-in generated test pattern, so the whole frame seam — source → upload → canvas, with
+// fit/fill, mirroring and the rounded clip — can be checked in a PNG with no camera, codec or network.
+if (args.Length > 1 && args[1] == "media")
+{
+    SwiftDotNet.Graphics.FrameSources.RegisterTestPattern(640, 360, 30);
+    var d = new MediaDemo();
+    var b = new SkiaBridge();
+    var h = new SkiaImageHost(b);
+    SwiftApp.Run(d, b);
+    h.RenderPng(W, H);                 // first paint creates and starts the sources
+    Thread.Sleep(250);                 // let a few frames land
+    h.RenderToFile(Path.Combine(outDir, "media.png"), W, H);
+    Console.WriteLine("wrote media frame to " + Path.GetFullPath(outDir));
+    return;
+}
+
 // Register a custom Skia renderer for the "Map" CustomView (from SwiftDotNet.Maps) — proves the
 // registry seam: an unregistered type shows ⚠️, a registered one draws itself onto the canvas.
 SkiaSampleRenderers.RegisterAll();
@@ -126,6 +143,34 @@ for (var i = 0; i <= 6; i++)
 }
 
 Console.WriteLine("wrote all screenshots to " + Path.GetFullPath(outDir));
+
+/// <summary>
+/// The three surface-bearing nodes side by side, fed by the generated test pattern: a letterboxed
+/// VideoView, a cropped + rounded CameraView (mirrored, as a front camera is), and a WebView.
+/// </summary>
+sealed class MediaDemo : View
+{
+    readonly State<SwiftDotNet.Controls.CameraFacing> _facing = new(SwiftDotNet.Controls.CameraFacing.Front);
+
+    public override View Body => new VStack(
+            new Text("Video, camera & web on a canvas").Font(Font.Title),
+            new Text("Generated test pattern — no camera, codec or network.")
+                .Font(Font.Caption).ForegroundColor(Color.Secondary),
+
+            new Text("VideoView — .Fit, letterboxed").Font(Font.Caption),
+            new SwiftDotNet.Controls.VideoView("test://pattern")
+                .ContentMode(SwiftDotNet.Controls.VideoContentMode.Fit)
+                .CornerRadius(12)
+                .Frame(height: 150),
+
+            new Text("CameraView — .Fill, rounded, front-facing (mirrored)").Font(Font.Caption),
+            new SwiftDotNet.Controls.CameraView(_facing).CornerRadius(20).Frame(width: 220, height: 220),
+
+            new Text("WebView — same seam, pumped frames").Font(Font.Caption),
+            new WebView("https://example.com").CornerRadius(12).Frame(height: 120))
+        .Spacing(10)
+        .Padding(16);
+}
 
 /// <summary>A tiny screen whose panel animates (height + opacity) via .Animation(spring, on: state).</summary>
 sealed class AnimatedDemo : View

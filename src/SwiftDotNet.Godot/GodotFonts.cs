@@ -115,7 +115,7 @@ public sealed class GodotImage : IImage
 /// Format is sniffed from the magic bytes rather than trusted from a file extension, because the engine's
 /// image nodes also take bytes straight off the network. SVG is included since Godot decodes it natively.
 /// </remarks>
-public sealed class GodotImages : IImageDecoder
+public sealed class GodotImages : IImageDecoder, IPixelUploader
 {
     public IImage? Decode(byte[] bytes)
     {
@@ -141,6 +141,31 @@ public sealed class GodotImages : IImageDecoder
         // throwing on a missing file — which is the contract this seam wants.
         var image = Godot.Image.LoadFromFile(path);
         return image is null ? null : new GodotImage(ImageTexture.CreateFromImage(image));
+    }
+
+    /// <summary>
+    /// Uploads a video frame's pixels as a texture. Godot's <see cref="Godot.Image"/> takes straight
+    /// RGBA8 directly, which is exactly what <see cref="Pixels"/> carries.
+    /// </summary>
+    public IImage? Upload(Pixels pixels)
+    {
+        if (pixels.Width <= 0 || pixels.Height <= 0) return null;
+        var image = Godot.Image.CreateFromData(pixels.Width, pixels.Height, false, Godot.Image.Format.Rgba8, pixels.Rgba);
+        return image is null ? null : new GodotImage(ImageTexture.CreateFromImage(image));
+    }
+
+    /// <summary>
+    /// Refreshes the existing texture in place when the dimensions match — the cheap path for a video
+    /// feed, since <see cref="ImageTexture.Update"/> reuses the allocated GPU texture.
+    /// </summary>
+    public bool TryUpdate(IImage image, Pixels pixels)
+    {
+        if (image is not GodotImage godot || godot.Texture is not ImageTexture texture) return false;
+        if (godot.Width != pixels.Width || godot.Height != pixels.Height) return false;
+        var updated = Godot.Image.CreateFromData(pixels.Width, pixels.Height, false, Godot.Image.Format.Rgba8, pixels.Rgba);
+        if (updated is null) return false;
+        texture.Update(updated);
+        return true;
     }
 
     static string Sniff(byte[] b) =>
