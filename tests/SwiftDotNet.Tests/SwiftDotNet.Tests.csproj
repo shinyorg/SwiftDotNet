@@ -40,10 +40,16 @@
              because the platforms these target fail silently rather than throwing. -->
         <ProjectReference Include="..\..\src\SwiftDotNet.Live\SwiftDotNet.Live.csproj"/>
         <ProjectReference Include="..\..\src\SwiftDotNet.Widgets\SwiftDotNet.Widgets.csproj"/>
+        <!-- The car template vocabulary. The limits, the category rules and the navigation stack are pure
+             C#, so this is the half of CarPlay / Android Auto that can run in CI at all. -->
+        <ProjectReference Include="..\..\src\SwiftDotNet.Car\SwiftDotNet.Car.csproj"/>
         <!-- The IDE-facing dev-tools channel (patch tap + socket protocol) and the preview host that
              rides on it. Both are plain net10.0, so they are testable on the same terms as Skia. -->
         <ProjectReference Include="..\..\src\SwiftDotNet.DevTools\SwiftDotNet.DevTools.csproj"/>
         <ProjectReference Include="..\..\src\SwiftDotNet.Preview.Host\SwiftDotNet.Preview.Host.csproj"/>
+        <!-- The watchOS host. Plain net10.0: the host loop, the native-call services and the live-mode
+             socket protocol are all driven here through fakes of the Swift side. -->
+        <ProjectReference Include="..\..\src\SwiftDotNet.Watch\SwiftDotNet.Watch.csproj"/>
         <!-- The [Inject] source generator, referenced as an analyzer so the generated IInjectable
              implementations are exercised by the DI tests. -->
         <ProjectReference Include="..\..\src\SwiftDotNet.SourceGenerators\SwiftDotNet.SourceGenerators.csproj"

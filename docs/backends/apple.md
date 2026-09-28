@@ -1,5 +1,8 @@
 # Apple — iOS / macOS / tvOS (SwiftUI)
 
+> The **Apple Watch** uses this same interpreter, compiled into a watch app with `#if os(watchOS)` fallbacks and an
+> inverted host — see [Apple Watch](watchos.md).
+
 The three Apple platforms share **one Swift interpreter** ([`native/SwiftDotNetBridge/Sources/.../Bridge.swift`](../../native/SwiftDotNetBridge/Sources))
 that reconstructs *real* SwiftUI from the C# node tree. This is a **native-shim** backend (SwiftUI is a
 compiler-plugin framework — you can't author a SwiftUI `View` from C#).
@@ -94,6 +97,11 @@ See [Getting Started](../getting-started.md#ios-swiftui) for build/run commands.
   layout — wrapping the root in a `GeometryReader` would have re-aligned every existing app. Keyboard
   height comes from `UIResponder.keyboardWillChangeFrame`/`WillHide`, which SwiftUI has no equivalent for.
   See [Safe area](../modifiers-gestures-animation.md#safe-area-ios--android-only).
+- **Scene manifests.** Declaring `UIApplicationSceneManifest` (required for CarPlay) moves every window to a
+  scene. `SwiftDotNetAppDelegate` notices the manifest, builds the app and returns without creating a window;
+  point `UIWindowSceneSessionRoleApplication` at
+  [`SwiftDotNetSceneDelegate`](../../src/SwiftDotNet/Platforms/iOS/SwiftDotNetSceneDelegate.cs) to get the
+  phone UI back. `SwiftDotNetCar.targets` does this for you. See [CarPlay & Android Auto](../car.md).
 - **Maps:** MapKit ships as a separate companion xcframework (`SwiftDotNetMaps`), registered via
   `AppleMaps.Register()` — it stays out of the core bridge. See [Maps](../maps.md).
 - **Alert / ActionSheet buttons need a dismissal guard.** SwiftUI dismisses the dialog *itself* when a

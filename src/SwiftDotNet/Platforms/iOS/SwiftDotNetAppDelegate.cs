@@ -27,7 +27,14 @@ public abstract class SwiftDotNetAppDelegate : UIApplicationDelegate
 
     public override bool FinishedLaunching(UIApplication application, NSDictionary launchOptions)
     {
-        var app = CreateSwiftApp();
+        var app = Hosting.SwiftDotNetApp.GetOrCreate(CreateSwiftApp);
+
+        // With a scene manifest (e.g. a CarPlay app), UIKit drives windows per scene: a window made here
+        // would have no scene and never show. SwiftDotNetSceneDelegate builds the phone window instead,
+        // from the same app.
+        if (UsesScenes)
+            return true;
+
         Window = new UIWindow(UIScreen.MainScreen.Bounds)
         {
             RootViewController = SwiftDotNetHost.CreateRootController(app.CreateRoot(), app.Services),
@@ -35,4 +42,7 @@ public abstract class SwiftDotNetAppDelegate : UIApplicationDelegate
         Window.MakeKeyAndVisible();
         return true;
     }
+
+    /// <summary>True when Info.plist declares <c>UIApplicationSceneManifest</c>.</summary>
+    internal static bool UsesScenes => NSBundle.MainBundle.ObjectForInfoDictionary("UIApplicationSceneManifest") is not null;
 }

@@ -65,6 +65,19 @@ dotnet build sample/SampleApp -f net10.0-macos
 dotnet build sample/SampleApp -f net10.0-tvos
 ```
 
+### Apple Watch (watchOS)
+
+A separate head — a plain `net10.0` project the watch SDK turns into a watchOS `.app` (NativeAOT, restamped from
+the iOS runtime packs). It compiles the shared `Bridge.swift` itself, so the xcframework isn't needed:
+
+```bash
+dotnet run --project sample/SampleApp.Watch                # live mode: C# on the Mac, the watch simulator renders
+dotnet run --project sample/SampleApp.Watch -c Release     # NativeAOT, installed + launched on a watch simulator
+# pick a simulator: -p:WatchSimulator="Apple Watch Series 12 (46mm)" (name or UDID)
+```
+
+Needs Xcode with a watchOS simulator runtime. See [Apple Watch](backends/watchos.md).
+
 ### Android (Jetpack Compose)
 
 ```bash
@@ -76,6 +89,32 @@ dotnet build sample/SampleApp -f net10.0-android
 > **Gotcha:** after rebuilding the `.aar`, delete the `obj`/`bin` of both `src/SwiftDotNet` and
 > `sample/SampleApp` before rebuilding — incremental builds reuse a stale binding. See
 > [Android backend](backends/android.md).
+
+### Wear OS (Compose for Wear OS)
+
+The same Gradle run also builds the Wear skin (`wear` module). Copy both `.aar`s into `build/`, boot a Wear
+OS AVD, then install the watch sample:
+
+```bash
+cp native/SwiftDotNetComposeBridge/build/outputs/aar/SwiftDotNetComposeBridge-release.aar build/SwiftDotNetComposeBridge.aar
+cp native/SwiftDotNetComposeBridge/wear/build/outputs/aar/wear-release.aar build/SwiftDotNetWearBridge.aar
+dotnet build sample/SampleApp.Wear -t:Install -p:AdbTarget="-s emulator-5554"
+```
+
+See [Wear OS backend](backends/wear-os.md).
+
+### CarPlay & Android Auto
+
+```bash
+# CarPlay — install on an iOS simulator, then Simulator → I/O → External Displays → CarPlay
+dotnet build sample/SampleApp.Car -f net10.0-ios
+# Android Auto — no head unit needed to check the templates: tap "Validate Android Auto templates"
+dotnet build sample/SampleApp.Car -f net10.0-android -t:Install
+adb logcat -s CarDiag
+```
+
+The CarPlay category entitlement works in the simulator without Apple's approval. A Desktop Head Unit run
+needs the full Android Auto app (emulator images ship a stub). See [CarPlay & Android Auto](car.md).
 
 ### Windows (WinUI 3) — on a Windows machine
 

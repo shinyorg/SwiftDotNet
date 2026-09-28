@@ -47,7 +47,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.Image
@@ -567,6 +571,63 @@ private fun safeAreaInsetsFor(mod: Map<String, Any?>): WindowInsets {
     return insets
 }
 
+// MARK: - Rotary input (.DigitalCrownRotation) --------------------------------
+
+// Wear OS reports rotary input as scroll *pixels* — the raw axis value times the device's
+// `scaledVerticalScrollFactor`. Dividing that factor back out gives encoder units: one unit (a detent on
+// a bezel, one emulator rotary tick) is one `by` step. A continuous crown (`by` = 0) sweeps its whole
+// from…through range in this many units — about two full turns of a physical crown.
+private const val CrownUnitsPerRange = 48f
+
+/**
+ * `.DigitalCrownRotation(value, onChange, from, through, by)` — rotary input from a Wear OS crown or bezel.
+ * Rotary events only reach the *focused* node, so the view takes focus on first composition. The value is
+ * tracked locally between events so a fast spin isn't throttled by the C# round-trip, and re-synced
+ * whenever C# sends a different one.
+ */
+@Composable
+private fun crownModifier(mod: Map<String, Any?>, event: String): Modifier {
+    val from = numOf(mod["from"]) ?: 0.0
+    val through = numOf(mod["through"]) ?: 1.0
+    val by = numOf(mod["by"]) ?: 0.0
+    val incoming = numOf(mod["value"]) ?: from
+    val lo = minOf(from, through)
+    val hi = maxOf(from, through)
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val pixelsPerUnit = remember(context) {
+        android.view.ViewConfiguration.get(context).scaledVerticalScrollFactor.takeIf { it > 0f } ?: 64f
+    }
+    val focus = remember { FocusRequester() }
+    var local by remember { mutableDoubleStateOf(incoming) }
+    var carry by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(incoming) { local = incoming }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+
+    return Modifier
+        .onRotaryScrollEvent { ev ->
+            val units = ev.verticalScrollPixels / pixelsPerUnit
+            val next = if (by > 0) {
+                // High-resolution crowns report fractional units; carry them until a whole step builds up.
+                carry += units
+                val steps = carry.toInt()
+                if (steps == 0) return@onRotaryScrollEvent true
+                carry -= steps
+                local + steps * by
+            } else {
+                local + units / CrownUnitsPerRange * (hi - lo)
+            }
+            val clamped = next.coerceIn(lo, hi)
+            if (clamped != local) {
+                local = clamped
+                SwiftDotNetBridge.emit(event, clamped.toString())
+            }
+            true
+        }
+        .focusRequester(focus)
+        .focusable()
+}
+
 // MARK: - Modifier application ----------------------------------------------
 
 @Composable
@@ -724,6 +785,7 @@ private fun Modified(node: VNode, content: @Composable () -> Unit) {
                     }
                 }
             }
+            "digitalCrown" -> (mod["event"] as? String)?.let { e -> m = m.then(crownModifier(mod, e)) }
             "font" -> textStyle = textStyleFor(mod["value"] as? String)
             "foregroundColor" -> contentColor = colorFor(mod["value"] as? String)
         }
@@ -823,14 +885,58 @@ fun registerRenderer(type: String, renderer: SwiftDotNetRenderer) {
     customRenderers[type] = renderer
 }
 
+// MARK: - Form-factor seam (Kotlin-only)
+//
+// A companion module (the Wear OS bridge, `native/SwiftDotNetComposeBridge/wear`) re-skins built-in node
+// types for another form factor without forking the interpreter: an *override* is consulted before the
+// built-in mapping, and a *root container* wraps the whole tree (theme, scaffold). Unlike
+// [registerRenderer] — which only fills in unknown custom types — an override replaces a built-in one.
+// All three are @JvmSynthetic: the managed binding never sees Composable signatures; C# installs a
+// companion through that module's own plain entry point.
+
+private val nodeOverrides = mutableMapOf<String, @Composable (VNode) -> Unit>()
+private var rootContainer: (@Composable (@Composable () -> Unit) -> Unit)? = null
+
+/** Replace the built-in rendering of [type] (e.g. `"List"`). The renderer can recurse via [RenderNode]. */
+@JvmSynthetic
+fun overrideRenderer(type: String, renderer: @Composable (VNode) -> Unit) {
+    nodeOverrides[type] = renderer
+}
+
+/**
+ * Where the root node sits inside the window. Phones pin it top-start; a round watch face provides
+ * `Center` from its root container so a lone `VStack` isn't clipped by the bezel.
+ */
+@get:JvmSynthetic
+val LocalRootAlignment = compositionLocalOf { Alignment.TopStart }
+
+/** Wrap the whole rendered tree (theme, scaffold, time text). `null` restores the default. */
+@JvmSynthetic
+fun setRootContainer(container: (@Composable (@Composable () -> Unit) -> Unit)?) {
+    rootContainer = container
+}
+
+/** The glyph the interpreter shows for an SF Symbol name (there are no SF Symbols on Android). */
+@JvmSynthetic
+fun systemImageGlyph(name: String): String = emojiFor(name)
+
+/** Render a node with its modifiers — the interpreter's entry point, for use inside an override. */
+@JvmSynthetic
+@Composable
+fun RenderNode(node: VNode) = NodeView(node)
+
 @Composable
 private fun RootHostView() {
     val root = SwiftDotNetBridge.root
     ReportSafeAreaInsets()
-    Box(Modifier.fillMaxSize()) {
-        if (root != null) NodeView(root)
-        else Text("SwiftDotNet: waiting for first render…", Modifier.align(Alignment.Center))
+    val body: @Composable () -> Unit = {
+        Box(Modifier.fillMaxSize(), contentAlignment = LocalRootAlignment.current) {
+            if (root != null) NodeView(root)
+            else Text("SwiftDotNet: waiting for first render…", Modifier.align(Alignment.Center))
+        }
     }
+    val container = rootContainer
+    if (container != null) container(body) else body()
 }
 
 /**
@@ -869,6 +975,7 @@ private fun RowScope.StackChildren(node: VNode) =
 
 @Composable
 private fun RawNode(node: VNode) {
+    nodeOverrides[node.type]?.let { it(node); return }
     when (node.type) {
         "Text" -> Text(node.s("text"))
         "Button" -> Button(onClick = { SwiftDotNetBridge.emit(node.id, null) }) { Text(node.s("title")) }

@@ -337,4 +337,18 @@ public static class ViewModifiers
         view.Modifiers.Add(new OnMagnifyModifier(handler));
         return view;
     }
+
+    /// <summary>
+    /// Rotary input: the watchOS Digital Crown or a Wear OS rotating button/bezel drives a value between
+    /// <paramref name="from"/> and <paramref name="through"/> (mirrors SwiftUI's
+    /// <c>.digitalCrownRotation(_:from:through:by:)</c>). <paramref name="by"/> &gt; 0 snaps to that step;
+    /// 0 is continuous. Feed the reported value back through <paramref name="value"/> — typically a
+    /// <see cref="State{T}"/>. A no-op on hosts without rotary input.
+    /// </summary>
+    public static T DigitalCrownRotation<T>(this T view, double value, Action<double> onChange,
+        double from = 0, double through = 1, double by = 0) where T : View
+    {
+        view.Modifiers.Add(new DigitalCrownModifier(value, onChange, from, through, by));
+        return view;
+    }
 }

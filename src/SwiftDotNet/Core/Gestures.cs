@@ -74,3 +74,38 @@ sealed class OnMagnifyModifier : Modifier
         return new() { ["type"] = "onMagnify", ["event"] = path };
     }
 }
+
+/// <summary>
+/// Rotary input — the watchOS Digital Crown, a Wear OS rotating side button or bezel (mirrors SwiftUI's
+/// <c>.digitalCrownRotation(_:from:through:by:)</c>). The host owns the in-flight value between events so a
+/// fast spin isn't throttled by the round-trip; C# receives the new value and is expected to feed it back
+/// on the next render.
+/// </summary>
+sealed class DigitalCrownModifier : Modifier
+{
+    readonly double _value, _from, _through, _by;
+    readonly Action<double> _onChange;
+
+    public DigitalCrownModifier(double value, Action<double> onChange, double from, double through, double by)
+    {
+        _value = value; _onChange = onChange; _from = from; _through = through; _by = by;
+    }
+
+    internal override Dictionary<string, object> Serialize(RenderContext ctx, string path)
+    {
+        // Value = the new crown value as an invariant-culture string.
+        ctx.RegisterAction(path, v =>
+        {
+            if (double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)) _onChange(value);
+        });
+        return new()
+        {
+            ["type"] = "digitalCrown",
+            ["value"] = _value,
+            ["from"] = _from,
+            ["through"] = _through,
+            ["by"] = _by,
+            ["event"] = path,
+        };
+    }
+}

@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Wear OS: the Compose-for-Wear skin over the Android (Compose) backend.
+
+    A companion rather than part of src/SwiftDotNet on purpose. Wear OS *is* Android, so a watch app runs
+    the same Compose interpreter as a phone app; this package only adds overrides for the node types whose
+    phone rendering is the wrong shape on a round screen (lists, navigation, toggles, paging). Keeping it
+    separate means a phone app never pulls the androidx.wear.compose graph, and the AndroidX version
+    pinning risk (the NU1107 trap documented in SwiftDotNet.csproj) is confined to watch apps.
+    See plans/wear-os-plan.md and docs/backends/wear-os.md.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <!-- Wear OS 3 (API 30) is the floor for Compose for Wear OS. -->
+    <SupportedOSPlatformVersion>30</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+  </ItemGroup>
+
+  <!-- The wear module of native/SwiftDotNetComposeBridge (built by the same `gradlew assembleRelease`).
+       Its runtime classes come from these packages, which must stay on the Compose line SwiftDotNet.csproj
+       pins (Wear.Compose 1.6.2.1 → Compose 1.11.3.1 / Activity.Compose 1.13.0.1). -->
+  <ItemGroup>
+    <AndroidLibrary Include="$(MSBuildThisFileDirectory)..\..\build\SwiftDotNetWearBridge.aar" Bind="true" />
+    <PackageReference Include="Xamarin.AndroidX.Wear.Compose.Foundation" Version="1.6.2.1" />
+    <PackageReference Include="Xamarin.AndroidX.Wear.Compose.Material" Version="1.6.2.1" />
+  </ItemGroup>
+
+</Project>

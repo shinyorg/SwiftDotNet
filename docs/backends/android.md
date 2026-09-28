@@ -27,6 +27,15 @@ Alert, Image/Label, ProgressView/Gauge, Link, shapes — plus the modifier set.
   [`GridEngine`](../../src/SwiftDotNet/Core/GridEngine.cs) line for line. Fixed/Flexible track sizes and
   point bounds are converted `dp → px` before sizing. See [Grid](../views-and-controls.md#grid).
 
+- **Form-factor seam (Kotlin-only).** `overrideRenderer(type, …)` replaces a *built-in* node type's
+  rendering (consulted before the built-in mapping — unlike `registerRenderer`, which only fills in unknown
+  custom types), `setRootContainer(…)` wraps the whole tree, and `RenderNode(node)` lets an override recurse
+  with the full modifier pass. All `@JvmSynthetic`, so the .NET binding never sees them. The
+  [Wear OS](wear-os.md) skin is built entirely on this seam.
+- **Rotary input.** `.DigitalCrownRotation` maps to `Modifier.onRotaryScrollEvent` on a focused node — plain
+  `androidx.compose.ui`, so it works on any device with a rotary encoder. See
+  [Modifiers → rotary input](../modifiers-gestures-animation.md#rotary-input-digital-crown).
+
 ## Building & wiring
 
 ```bash

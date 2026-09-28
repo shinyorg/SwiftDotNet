@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!--
+      VoltFinder: one EV-charging app with a phone UI (SwiftDotNet DSL → SwiftUI / Compose) and a car UI
+      (car templates → CarPlay / Android Auto), both over one StationService. Ported from the Shiny.Auto
+      prototype's MAUI sample with the MAUI parts replaced by SwiftDotNet.
+    -->
+    <PropertyGroup>
+        <TargetFrameworks>net10.0-android</TargetFrameworks>
+        <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(TargetFrameworks);net10.0-ios</TargetFrameworks>
+
+        <OutputType>Exe</OutputType>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <LangVersion>latest</LangVersion>
+        <RootNamespace>SampleApp.Car</RootNamespace>
+
+        <ApplicationTitle>VoltFinder</ApplicationTitle>
+        <ApplicationId>com.swiftdotnet.sample.car</ApplicationId>
+        <ApplicationVersion>1</ApplicationVersion>
+        <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="$(TargetFramework.EndsWith('-ios'))">
+        <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
+        <!-- CarPlay charging category. The simulator accepts it without Apple's approval; a device build needs
+             a provisioning profile that includes the granted entitlement. -->
+        <CodesignEntitlements>Platforms/iOS/Entitlements.plist</CodesignEntitlements>
+    </PropertyGroup>
+    <PropertyGroup Condition="$(TargetFramework.EndsWith('-android'))">
+        <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+        <AndroidManifest>Platforms/Android/AndroidManifest.xml</AndroidManifest>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\SwiftDotNet\SwiftDotNet.csproj"/>
+        <ProjectReference Include="..\..\src\SwiftDotNet.Car\SwiftDotNet.Car.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Remove="Platforms/**/*.cs"/>
+        <AndroidResource Remove="Platforms/**"/>
+    </ItemGroup>
+    <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'ios'">
+        <Compile Include="Platforms/iOS/**/*.cs"/>
+        <None Include="Platforms/iOS/Info.plist" Link="Info.plist"/>
+        <ProjectReference Include="..\..\src\SwiftDotNet.Car.Apple\SwiftDotNet.Car.Apple.csproj"/>
+    </ItemGroup>
+    <ItemGroup Condition="'$(TargetPlatformIdentifier)' == 'android'">
+        <Compile Include="Platforms/Android/**/*.cs"/>
+        <AndroidResource Include="Platforms/Android/Resources/**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)"/>
+        <ProjectReference Include="..\..\src\SwiftDotNet.Car.Android\SwiftDotNet.Car.Android.csproj"/>
+    </ItemGroup>
+
+    <!-- Apple: link the Swift bridge for the phone UI (NativeReference doesn't flow transitively)… -->
+    <Import Project="..\..\src\SwiftDotNet\SwiftDotNetBridge.targets"/>
+    <!-- …and merge the phone + CarPlay scene manifest into Info.plist. -->
+    <Import Project="..\..\src\SwiftDotNet.Car.Apple\SwiftDotNetCar.targets"/>
+
+</Project>

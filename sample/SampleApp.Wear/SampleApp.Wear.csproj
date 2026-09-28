@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Wear OS head: the ordinary Android (Compose) backend plus the SwiftDotNet.Wear skin.
+         Build the bridge first (both .aars come out of one Gradle run):
+           native/SwiftDotNetComposeBridge/gradlew -p native/SwiftDotNetComposeBridge assembleRelease
+         then copy both outputs into build/ — see docs/backends/wear-os.md. -->
+    <PropertyGroup>
+        <TargetFramework>net10.0-android</TargetFramework>
+        <!-- Wear OS 3 (API 30) is the floor for Compose for Wear OS. -->
+        <SupportedOSPlatformVersion>30</SupportedOSPlatformVersion>
+        <OutputType>Exe</OutputType>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <LangVersion>latest</LangVersion>
+        <RootNamespace>SampleApp.Wear</RootNamespace>
+
+        <ApplicationTitle>SwiftDotNet Wear</ApplicationTitle>
+        <ApplicationId>com.swiftdotnet.sample.wear</ApplicationId>
+        <ApplicationVersion>1</ApplicationVersion>
+        <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\SwiftDotNet\SwiftDotNet.csproj" />
+        <ProjectReference Include="..\..\src\SwiftDotNet.Wear\SwiftDotNet.Wear.csproj" />
+    </ItemGroup>
+
+</Project>

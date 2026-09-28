@@ -1,7 +1,7 @@
 # SwiftDotNet
 
 **SwiftUI for .NET — everywhere.** Write declarative UI once in C# and render it as *real* native UI on
-each platform: **SwiftUI** on iOS/macOS/tvOS, **Jetpack Compose** on Android, **GTK4** on Linux, **WinUI 3** and **WPF**
+each platform: **SwiftUI** on iOS/macOS/tvOS and the Apple Watch, **Jetpack Compose** on Android, **GTK4** on Linux, **WinUI 3** and **WPF**
 on Windows, and **HTML/DOM** on the Web. Not a reimplementation of each toolkit — the actual native controls,
 with the platform's own layout, fonts, animations, and accessibility. Plus a **self-drawing SkiaSharp**
 backend that paints the UI itself for a pixel-identical look on every platform, hosts for the **MonoGame**,
@@ -16,6 +16,7 @@ controls) and **self-drawing** (paint every pixel with SkiaSharp for a pixel-ide
 | iOS | SwiftUI | Swift shim (xcframework, P/Invoke) | ✅ Verified on simulator |
 | macOS | SwiftUI (AppKit-hosted) | Same Swift shim (`#if` UIKit→AppKit) | ✅ Verified on desktop |
 | tvOS | SwiftUI | Same Swift shim (`#if os(tvOS)` fallbacks) | ✅ Verified on Apple TV sim |
+| watchOS | SwiftUI | Same Swift renderer; Swift app hosts a NativeAOT .NET library (restamped from iOS) | ✅ Verified on the watchOS 27 simulator; device & App Store unverified |
 | Android | Jetpack Compose | Kotlin shim (`.aar`, JNI) | ✅ Verified on emulator |
 | Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop |
 | Linux | Self-drawn on a native Wayland surface | Pure C# (libwayland/xkbcommon P/Invoke) | 🧩 Scaffolded — builds clean; never run against a compositor |
@@ -66,7 +67,8 @@ Full docs live in **[`docs/`](docs/README.md)**. Quick links:
   **[Global Styles](docs/global-styles.md)** · **[Custom Controls](docs/custom-controls.md)** ·
   **[Controls Library](docs/controls-library.md)**
 - Backends: **[Overview](docs/backends/README.md)** · [Apple](docs/backends/apple.md) ·
-  [Android](docs/backends/android.md) · [Linux/GTK](docs/backends/linux-gtk.md) ·
+  [Apple Watch](docs/backends/watchos.md) ·
+  [Android](docs/backends/android.md) · [Wear OS](docs/backends/wear-os.md) · [Linux/GTK](docs/backends/linux-gtk.md) ·
   [Windows/WinUI](docs/backends/windows.md) · [Windows/WPF](docs/backends/wpf.md) ·
   [Windows/WinForms](docs/backends/winforms.md) · [Web](docs/backends/web.md) ·
   [Skia](docs/backends/skia.md) ·
@@ -75,6 +77,8 @@ Full docs live in **[`docs/`](docs/README.md)**. Quick links:
   [Terminal/TUI](docs/backends/tui.md)
 - Tooling: **[Rider Plugin & Dev Tools](docs/rider-plugin.md)** — run configurations, the live
   patch inspector, and the in-IDE Skia preview
+- **[CarPlay & Android Auto](docs/car.md)** — car template screens from one C# model, sharing the phone
+  app's container
 - **[Live Surfaces](docs/live-surfaces.md)** — iOS Live Activities & the Dynamic Island, home-screen
   widgets, Android custom notifications & app widgets, Android 16 Live Updates
 - **[MAUI Interop](docs/maui-interop.md)** — host SwiftDotNet in a .NET MAUI app, and put real MAUI
@@ -231,8 +235,17 @@ parent; identical renders emit nothing. Two-way-bound controls (`TextField`, `To
 | `src/SwiftDotNet.Wayland` | `net10.0` | **Separate** (drags in `Wayland.Platform` and its libwayland/libxkbcommon P/Invoke, which only Linux can load). Hosts the **Skia** backend on a native Wayland surface — no GTK, no GLFW. Supplies only a canvas, title text, input translation and the animation tick; the protocol, windowing, decorations and buffers come from the shared `maui-wayland` repo. |
 | `src/SwiftDotNet.Tui` | `net10.0` | **Separate** (same reasoning as GTK — a terminal toolkit on every neutral consumer). Pure-C# **XenoAtom.Terminal.UI** backend — `TuiBridge` keeps a retained `Visual` tree and applies the same patches to it. Includes a hand-rolled PNG decoder and the image→character-art renderer, so it takes **no** image dependency. |
 | `src/SwiftDotNet.Tui.Graphics` | `net10.0` | **Optional** add-on: real Sixel/Kitty/iTerm2 images plus JPEG/WebP/GIF decode. Separate because it drags in SkiaSharp + native assets for three RIDs, which a terminal app shouldn't pay for unless it asks. |
+| `src/SwiftDotNet.Watch` | `net10.0` | **Apple Watch host** — the inverted C ABI the SwiftUI watch app calls, the main-thread pump, watch services (`Haptics`, `Preferences`, `WatchHttp`, `PhoneConnection`) and live mode. Its `sdk/` holds the MSBuild pipeline (NativeAOT with iOS packs → Mach-O retarget → `swiftc` with the shared `Bridge.swift` → signed `.app`). See [Apple Watch](docs/backends/watchos.md). |
+| `sample/SampleApp.Watch` | `net10.0` → watchOS `.app` | Watch head: counter, Digital Crown gauge, list, device info and HTTP. `dotnet run` = live mode; `-c Release` = NativeAOT on the simulator. |
+| `src/SwiftDotNet.Car` | `net10.0` | **Car template vocabulary** — `CarScreen`, the template records, `CarNavigator`, the portable content limits and category rules, `UseCar<TApp>()`. Platform-free; see [CarPlay & Android Auto](docs/car.md). |
+| `src/SwiftDotNet.Car.Apple` | `net10.0-ios` | CarPlay renderer + scene delegate + `SwiftDotNetCar.targets` (scene manifest). Pure C# — no Swift shim. |
+| `src/SwiftDotNet.Car.Android` | `net10.0-android` | Android Auto / AAOS renderer over `Xamarin.AndroidX.Car.App.App`, `SwiftDotNetCarAppService`, host-less template diagnostics. |
+| `src/SwiftDotNet.Graphics.Apple` / `.Android` | `net10.0-ios` / `-android` | The renderer seam (`ICanvas`) over CoreGraphics / `android.graphics` — what the car map surfaces (and the live surfaces' bitmap mode) draw through. |
+| `sample/SampleApp.Car` | `net10.0-ios` / `-android` | VoltFinder: a phone UI and a car UI over one `StationService` — verified in the CarPlay simulator. |
 | `native/SwiftDotNetBridge` | Swift | `Bridge.swift` + build script → `build/SwiftDotNetBridge.xcframework` (SwiftUI interpreter; 5 slices — iOS device/sim, tvOS device/sim, macOS) |
-| `native/SwiftDotNetComposeBridge` | Kotlin | `Bridge.kt` + Gradle → `build/SwiftDotNetComposeBridge.aar` (Jetpack Compose interpreter) |
+| `native/SwiftDotNetComposeBridge` | Kotlin | `Bridge.kt` + Gradle → `build/SwiftDotNetComposeBridge.aar` (Jetpack Compose interpreter); its `wear` module → `build/SwiftDotNetWearBridge.aar` (the Compose-for-Wear skin) |
+| `src/SwiftDotNet.Wear` | `net10.0-android` | **Wear OS** companion: binds the Wear skin `.aar` + `Xamarin.AndroidX.Wear.Compose.*`; `SwiftDotNetWearActivity`. Separate so phone apps never carry the Wear graph — see [Wear OS](docs/backends/wear-os.md). |
+| `sample/SampleApp.Wear` | `net10.0-android` | Wear OS watch app (list, navigation, rotary crown, pager) — verified on the Wear OS emulator. |
 | `sample/SharedUI` | `net10.0` | The demo `ContentView` (MAUI-style flyout menu) + composite `Rating` control — one file, shared by all apps |
 | `sample/SampleApp` | **multi-target** | **One sample app**, multi-targeted like the library: `net10.0-android` always, `+ios;-macos;-tvos` on a Mac, `+windows` on Windows. `Platforms/{iOS,macOS,tvOS,Android,Windows}/` hold the thin per-OS entry points; services and the root view are registered once in `SharedUI/SwiftProgram.cs`. |
 | `sample/SampleApp.Gtk` | `net10.0` | Thin GTK app: references `SwiftDotNet.Gtk` (separate — no distinct TFM) |

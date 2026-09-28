@@ -17,8 +17,8 @@ namespace SwiftDotNet;
 /// <summary>
 /// An <see cref="ICanvas"/> over <c>android.graphics.Canvas</c>.
 ///
-/// This is the whole of what Android has to supply for <see cref="LiveRenderMode.Bitmap"/> to work. The
-/// renderer seam was extracted out of the Skia backend precisely so that a new rasterizer costs one small
+/// This is the whole of what Android has to supply to draw with the shared engine — used by the live
+/// surfaces' bitmap mode (<c>LiveRenderMode.Bitmap</c>) and by the Android Auto map surface. The renderer seam was extracted out of the Skia backend precisely so that a new rasterizer costs one small
 /// adapter rather than a second layout engine, and this is the first place that claim gets tested on a
 /// platform toolkit rather than another Skia binding.
 ///

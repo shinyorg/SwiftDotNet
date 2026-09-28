@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Android Auto (and Android Automotive OS) renderer for the car template vocabulary.
+
+    Pure C#, like the live surfaces: androidx.car.app templates are immutable builder output that the host
+    draws in its own process, so there is no Compose here and no Kotlin — the Screen/Session/CarAppService
+    types are bound in Xamarin.AndroidX.Car.App.App. One generic Screen (CarAppScreen) maps whatever the
+    CarNavigator's current CarScreen builds.
+
+    The map surface draws through SwiftDotNet.Graphics.Android's AndroidCanvas, the same adapter the live
+    surfaces' bitmap mode uses.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet.AndroidAuto</RootNamespace>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Car\SwiftDotNet.Car.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics.Android\SwiftDotNet.Graphics.Android.csproj" />
+    <!-- The Car App Library binding. 1.7.0.1 is the version Shiny.Auto verified (every sample screen passes
+         the real androidx builders). Its AndroidX transitive graph resolves alongside the Compose pins in
+         SwiftDotNet.csproj without an NU1107 — checked by building SampleApp.Car's Android head. -->
+    <PackageReference Include="Xamarin.AndroidX.Car.App.App" Version="1.7.0.1" />
+  </ItemGroup>
+
+</Project>

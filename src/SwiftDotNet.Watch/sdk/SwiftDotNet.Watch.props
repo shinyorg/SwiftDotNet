@@ -1,0 +1,70 @@
+<Project>
+  <!--
+    SwiftDotNet watchOS SDK (props). Import at the top of a watch app's .csproj body, and
+    SwiftDotNet.Watch.targets at the bottom:
+
+      <Project Sdk="Microsoft.NET.Sdk">
+        <Import Project="path/to/src/SwiftDotNet.Watch/sdk/SwiftDotNet.Watch.props" />
+        ...
+        <Import Project="path/to/src/SwiftDotNet.Watch/sdk/SwiftDotNet.Watch.targets" />
+      </Project>
+
+    Importing inside the body (after Sdk.props) is enough: everything here must merely be set before the SDK's
+    *targets* evaluate, and it means $(Configuration) is already defaulted.
+
+    WatchTarget:
+      live        (Debug default) C# runs on the Mac under CoreCLR (IDE debugging + Hot Reload); a thin SwiftUI
+                  shell on the watch simulator renders it over a loopback socket.
+      simulator   (Release default) NativeAOT, linked into a watchOS simulator app.
+      device      NativeAOT for a real Apple Watch (arm64 only: watchOS 26+).
+
+    Adapted from the Shiny.Wearables prototype. See docs/backends/watchos.md and plans/watchos-plan.md.
+  -->
+  <PropertyGroup>
+    <SwiftDotNetWatchSdkDir>$(MSBuildThisFileDirectory)</SwiftDotNetWatchSdkDir>
+    <IsSwiftDotNetWatchApp>true</IsSwiftDotNetWatchApp>
+    <SwiftDotNetPlatform Condition="'$(SwiftDotNetPlatform)' == ''">watchos</SwiftDotNetPlatform>
+    <WatchTarget Condition="'$(WatchTarget)' == '' and '$(Configuration)' == 'Debug'">live</WatchTarget>
+    <WatchTarget Condition="'$(WatchTarget)' == ''">simulator</WatchTarget>
+    <!--
+      Real watches: 64-bit arm64 watchOS apps exist from watchOS 26 (earlier devices/OSes use the ILP32 arm64_32
+      ABI, which NativeAOT cannot target). The simulator is plain arm64 on Apple silicon; 10.0 is the floor the
+      renderer needs (Observation).
+    -->
+    <WatchMinimumOSVersion Condition="'$(WatchMinimumOSVersion)' == '' and '$(WatchTarget)' == 'device'">26.0</WatchMinimumOSVersion>
+    <WatchMinimumOSVersion Condition="'$(WatchMinimumOSVersion)' == ''">10.0</WatchMinimumOSVersion>
+
+    <!-- The watch has no app-local ICU; live mode matches so behaviour doesn't change between modes. -->
+    <InvariantGlobalization Condition="'$(InvariantGlobalization)' == ''">true</InvariantGlobalization>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!--
+    There is no watchOS NativeAOT runtime pack. The iOS ones produce identical arm64 machine code against the same
+    libSystem, so we compile for iOS and restamp the Mach-O platform to watchOS before linking.
+  -->
+  <PropertyGroup Condition="'$(WatchTarget)' != 'live'">
+    <RuntimeIdentifier Condition="'$(WatchTarget)' == 'simulator'">iossimulator-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(WatchTarget)' == 'device'">ios-arm64</RuntimeIdentifier>
+    <RuntimeIdentifiers>iossimulator-arm64;ios-arm64</RuntimeIdentifiers>
+    <SelfContained>true</SelfContained>
+    <PublishAot>true</PublishAot>
+    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
+    <NativeLib>Static</NativeLib>
+    <StripSymbols>false</StripSymbols>
+  </PropertyGroup>
+
+  <!-- Live mode: an ordinary Mac executable (the SDK generates Main). AOT/trim analyzers stay on. -->
+  <PropertyGroup Condition="'$(WatchTarget)' == 'live'">
+    <OutputType>Exe</OutputType>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <ApplicationTitle Condition="'$(ApplicationTitle)' == ''">$(MSBuildProjectName)</ApplicationTitle>
+    <ApplicationId Condition="'$(ApplicationId)' == ''">com.companyname.$(MSBuildProjectName.ToLowerInvariant())</ApplicationId>
+    <ApplicationDisplayVersion Condition="'$(ApplicationDisplayVersion)' == ''">1.0</ApplicationDisplayVersion>
+    <ApplicationVersion Condition="'$(ApplicationVersion)' == ''">1</ApplicationVersion>
+  </PropertyGroup>
+</Project>

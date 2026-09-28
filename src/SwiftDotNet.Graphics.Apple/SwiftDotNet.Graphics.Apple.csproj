@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The CoreGraphics/CoreText adapter for the renderer seam (ICanvas / IFontProvider / IImageDecoder) —
+    the Apple counterpart of SwiftDotNet.Graphics.Android.
+
+    Most Apple surfaces are SwiftUI and never touch this. It exists for the ones that are not: the CarPlay
+    navigation window (SwiftDotNet.Car.Apple) is a bare UIWindow that the app must paint itself.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-ios</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+  </ItemGroup>
+
+</Project>

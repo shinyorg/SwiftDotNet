@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The CarPlay renderer for the car template vocabulary.
+
+    The first Apple target in this repo with no Swift shim: CarPlay templates are plain Objective-C objects,
+    already bound in .NET for iOS (the CarPlay namespace), with no SwiftUI or compiler plugin in sight. So
+    this project does not import SwiftDotNetBridge.targets — it is route 2 (pure C#), like GTK and WinUI.
+
+    The navigation map window is painted through SwiftDotNet.Graphics.Apple's CoreGraphics canvas.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-ios</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet.CarPlay</RootNamespace>
+    <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Car\SwiftDotNet.Car.csproj" />
+    <ProjectReference Include="..\SwiftDotNet.Graphics.Apple\SwiftDotNet.Graphics.Apple.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="SwiftDotNetCar.targets" Pack="true" PackagePath="buildTransitive" />
+    <None Include="SwiftDotNetCar.Scene.plist" Pack="true" PackagePath="buildTransitive" />
+  </ItemGroup>
+
+</Project>

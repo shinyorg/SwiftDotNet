@@ -90,6 +90,12 @@ P/Invoke resolves the Swift bridge via `DllImport("__Internal")` — it's a load
 `@_cdecl` symbols are in the global namespace (a leaf-name `dlopen` would ignore `@rpath`). See
 [Apple backend](backends/apple.md) and [Android backend](backends/android.md).
 
+**The Apple Watch inverts the host, not the protocol.** .NET has no watchOS runtime, so there the Swift app owns
+the process and .NET is a NativeAOT static library (compiled with the iOS packs, restamped to watchOS) that it
+calls into. The renderer is the same `Bridge.swift` and still receives patches at `swiftdotnet_render` and emits
+events through `swiftdotnet_set_event_callback`; only the plumbing around it differs. See
+[Apple Watch](backends/watchos.md).
+
 ### 2. Pure-C# interpreters (bindable toolkits)
 
 GTK4, WinUI 3, Blazor/DOM, XenoAtom.Terminal.UI, and the self-drawing canvases are all fully C#-bindable (or
@@ -99,6 +105,12 @@ the node tree straight to native controls (or DOM elements, terminal cells, or c
 [GTK](backends/linux-gtk.md), [Windows](backends/windows.md), [Web](backends/web.md),
 [Terminal/TUI](backends/tui.md), [Skia](backends/skia.md), [WebGPU](backends/webgpu.md) and
 [Unity](backends/unity.md).
+
+**Car head units are pure C# too, but not a backend.** CarPlay's templates are ordinary Objective-C objects,
+already bound in .NET for iOS, and Android Auto's are `Xamarin.AndroidX.Car.App.App` builders. So
+`SwiftDotNet.Car.Apple` is the first Apple target with **no Swift shim**. Neither head unit lets us draw, though:
+both render a fixed catalogue of templates. So the car layer is a parallel vocabulary with its own navigator,
+not an `IBridge` consumer. See [CarPlay & Android Auto](car.md).
 
 > **One Core, three families.** The DSL, `State<T>`, `Node`, `TreeDiffer`, patch protocol, and `SwiftApp`
 > are shared verbatim. Only the leaf renderer differs: a native shim for the compiler-locked toolkits, a
@@ -241,6 +253,8 @@ Full reference, per-platform providers and status: [Video, camera & web surfaces
 | [`src/SwiftDotNet.Tui`](../src/SwiftDotNet.Tui) | `net10.0` | Separate pure-C# terminal backend over XenoAtom.Terminal.UI; includes its own PNG decoder and image→character-art renderer. |
 | [`src/SwiftDotNet.Tui.Graphics`](../src/SwiftDotNet.Tui.Graphics) | `net10.0` | Optional add-on: Sixel/Kitty/iTerm2 pixel images (pulls SkiaSharp, hence separate from the backend). |
 | [`src/SwiftDotNet.Skia.Maui`](../src/SwiftDotNet.Skia.Maui) | `net10.0-maccatalyst` (+more) | MAUI adapter hosting the Skia engine; composes with Shiny. |
+| [`src/SwiftDotNet.Car`](../src/SwiftDotNet.Car) (+ `.Apple`, `.Android`) | `net10.0` / `-ios` / `-android` | Car template vocabulary, limits, navigator; CarPlay and Android Auto renderers. See [CarPlay & Android Auto](car.md). |
+| [`src/SwiftDotNet.Graphics.Apple`](../src/SwiftDotNet.Graphics.Apple) / [`.Android`](../src/SwiftDotNet.Graphics.Android) | `net10.0-ios` / `-android` | The renderer seam over CoreGraphics / `android.graphics`, for surfaces that aren't SwiftUI/Compose (car map windows, live-surface bitmaps). |
 | [`native/SwiftDotNetBridge`](../native/SwiftDotNetBridge) | Swift | SwiftUI interpreter → xcframework (5 slices). |
 | [`native/SwiftDotNetComposeBridge`](../native/SwiftDotNetComposeBridge) | Kotlin | Compose interpreter → `.aar`. |
 | [`sample/SharedUI`](../sample/SharedUI) | `net10.0` | The demo `ContentView` + composite `Rating`, shared by all apps. |

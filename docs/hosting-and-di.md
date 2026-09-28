@@ -44,6 +44,23 @@ public sealed class AppDelegate : SwiftDotNetAppDelegate
 }
 ```
 
+### One app per process, shared by every head
+
+Heads build the app through `SwiftDotNetApp.GetOrCreate(CreateSwiftApp)`, not by calling it directly. The
+first head to start builds the app; any later head gets the same instance (`SwiftDotNetApp.Current`). That
+matters when one process hosts several heads over one app:
+- the phone UI plus a CarPlay scene;
+- an Android `CarAppService`, which Android starts **without** an activity (see [CarPlay & Android Auto](car.md)).
+
+Those heads then share one container, so a singleton the phone mutates is the instance the car reads. A side
+effect on Android: an activity recreated on rotation reattaches the same root view, and its `State<T>`, instead
+of building a second app.
+
+On iOS, an app whose Info.plist declares a `UIApplicationSceneManifest` gets its phone window from
+[`SwiftDotNetSceneDelegate`](../src/SwiftDotNet/Platforms/iOS/SwiftDotNetSceneDelegate.cs):
+`SwiftDotNetAppDelegate` builds the app, then leaves window creation to the scene. Without a manifest nothing
+changes.
+
 `builder.Configuration` is **not** exposed. `ConfigurationManager`'s binding is reflection-based and is
 the usual trim casualty under iOS AOT; it can be added when there is a concrete need.
 
@@ -187,8 +204,8 @@ scope; outside it, resolution falls back to the app provider.
 
 | Backend | Composition root | Notes |
 |---|---|---|
-| iOS / tvOS / macOS | `SwiftDotNetAppDelegate.CreateSwiftApp()` | Provider flows into `SwiftDotNetHost.CreateRootController(root, services)`. |
-| Android | `SwiftDotNetActivity.CreateSwiftApp()` | Via `CreateRootView(context, root, services)`. |
+| iOS / tvOS / macOS | `SwiftDotNetAppDelegate.CreateSwiftApp()` | Provider flows into `SwiftDotNetHost.CreateRootController(root, services)`. With a scene manifest (iOS), `SwiftDotNetSceneDelegate` makes the window. |
+| Android | `SwiftDotNetActivity.CreateSwiftApp()` | Via `CreateRootView(context, root, services)`. Built once per process (`GetOrCreate`), so activity recreation and a `SwiftDotNetCarAppService` reuse it. |
 | Windows | `SwiftDotNetApplication.CreateSwiftApp()` | Via `CreateRootElement(root, services)`. |
 | Linux / GTK | `Program.Main` | `SwiftDotNetHost.Run(app.CreateRoot(), services: app.Services)`. |
 | Skia | `Program.Main` | `SwiftApp.Run(app.CreateRoot(), bridge, app.Services)`. |
@@ -203,6 +220,8 @@ Optional SwiftDotNet libraries extend the builder, mirroring `UseMauiCommunityTo
 | `UseAppleMaps()` | `SwiftDotNet.Maps.Apple` | Native MapKit renderer for `Map`. |
 | `UseAppleCamera()` | `SwiftDotNet.Controls.Camera.Apple` | Native AVFoundation renderer for `CameraView`. |
 | `UseMapLibreMaps()` | `SwiftDotNet.Maps.Web` | MapLibre GL renderer for `Map` on Web. |
+| `UseCar<TApp>()` | `SwiftDotNet.Car` | Registers the car app, `CarOptions` and `ICarConnection` — see [CarPlay & Android Auto](car.md). |
+| `UseCarPlay()` | `SwiftDotNet.Car.Apple` | Keeps the CarPlay assembly and `CarPlay.framework` in the iOS app (a plist-only reference is dropped by the build). |
 
 These perform process-wide native/renderer registration rather than container registration — the builder
 is simply the one place an app declares what it uses.

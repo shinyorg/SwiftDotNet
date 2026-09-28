@@ -20,6 +20,9 @@
         <Project Path="sample/SampleApp.Wpf/SampleApp.Wpf.csproj"/>
         <Project Path="sample/SampleApp.Skia.Wpf/SampleApp.Skia.Wpf.csproj"/>
         <Project Path="sample/SampleApp.Skia.WinForms/SampleApp.Skia.WinForms.csproj"/>
+        <Project Path="sample/SampleApp.Wear/SampleApp.Wear.csproj"/>
+        <Project Path="sample/SampleApp.Watch/SampleApp.Watch.csproj"/>
+        <Project Path="sample/SampleApp.Car/SampleApp.Car.csproj"/>
     </Folder>
     <Project Path="src/SwiftDotNet.Gtk/SwiftDotNet.Gtk.csproj"/>
     <Project Path="src/SwiftDotNet.Graphics/SwiftDotNet.Graphics.csproj"/>
@@ -42,6 +45,13 @@
     <Project Path="src/SwiftDotNet.Live/SwiftDotNet.Live.csproj"/>
     <Project Path="src/SwiftDotNet.Widgets/SwiftDotNet.Widgets.csproj"/>
     <Project Path="src/SwiftDotNet.Live.Android/SwiftDotNet.Live.Android.csproj"/>
+    <Project Path="src/SwiftDotNet.Wear/SwiftDotNet.Wear.csproj"/>
+    <Project Path="src/SwiftDotNet.Watch/SwiftDotNet.Watch.csproj"/>
+    <Project Path="src/SwiftDotNet.Car/SwiftDotNet.Car.csproj"/>
+    <Project Path="src/SwiftDotNet.Car.Apple/SwiftDotNet.Car.Apple.csproj"/>
+    <Project Path="src/SwiftDotNet.Car.Android/SwiftDotNet.Car.Android.csproj"/>
+    <Project Path="src/SwiftDotNet.Graphics.Apple/SwiftDotNet.Graphics.Apple.csproj"/>
+    <Project Path="src/SwiftDotNet.Graphics.Android/SwiftDotNet.Graphics.Android.csproj"/>
     <Project Path="src/SwiftDotNet.Live.Apple/SwiftDotNet.Live.Apple.csproj"/>
     <Project Path="src/SwiftDotNet.Controls/SwiftDotNet.Controls.csproj"/>
     <Project Path="src/SwiftDotNet.Controls.Camera/SwiftDotNet.Controls.Camera.csproj"/>

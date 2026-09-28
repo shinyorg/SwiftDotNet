@@ -196,6 +196,33 @@ new Rectangle()
 | Skia | **nothing supplies these** — a self-drawing backend has no recognizers. Hosts must feed [`SkiaPointerRouter`](../src/SwiftDotNet.Graphics/PointerRouter.cs); a host that doesn't gets tap-only. |
 | TUI | **none** — a terminal reports button press/release and wheel, not drag paths or pinch. `.OnTapGesture` maps to pointer press plus Enter-when-focused; the continuous gestures are no-ops. |
 
+`.OnMagnify` is a no-op on watchOS (`MagnificationGesture` is unavailable there).
+
+### Rotary input (Digital Crown)
+
+`.DigitalCrownRotation(value, onChange, from, through, by)` drives a value from rotary hardware — the watchOS
+Digital Crown, or a Wear OS rotating side button or bezel. It mirrors SwiftUI's
+`.digitalCrownRotation(_:from:through:by:)`. `by > 0` snaps to that step; `by: 0` is continuous. Feed the
+reported value back through `value` (typically a `State<T>`):
+
+```csharp
+new Gauge(_crown.Value, 0, 100, $"{_crown.Value:0}")
+    .DigitalCrownRotation(_crown.Value, v => _crown.Value = v, from: 0, through: 100, by: 1);
+```
+
+| Backend | Source |
+|---------|--------|
+| SwiftUI ([watchOS](backends/watchos.md)) | real `.digitalCrownRotation` on a focusable view, medium sensitivity, haptic detents, stops at the ends. ✅ Verified on the watchOS 27 simulator |
+| Compose (Android, [Wear OS](backends/wear-os.md)) | `Modifier.onRotaryScrollEvent` on a focused node; one encoder unit = one `by` step. ✅ Verified on the Wear OS emulator |
+| Every other backend | **no-op** — no rotary hardware |
+
+**Wire:** `{"type":"digitalCrown","value","from","through","by","event"}`; the event payload is the new value
+as an invariant-culture double. The host tracks the in-flight value between events, so a fast spin isn't
+throttled by the round-trip. **Focus:** rotary input goes to the focused view, and a scrolling list also
+takes rotary focus — keep a crown-driven value on a screen that isn't itself a list. This is the first
+modifier to ship `value` as a number rather than a string token, which is why the Swift decoder reads `value`
+leniently. Source: [`Gestures.cs`](../src/SwiftDotNet/Core/Gestures.cs).
+
 ## Animation
 
 Implicit animation interpolates a view's animatable modifiers (opacity, frame size, …) when a value

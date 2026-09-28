@@ -35,6 +35,30 @@ public sealed class SwiftDotNetApp
     /// <summary>Start configuring an app. Mirrors <c>MauiApp.CreateBuilder()</c>.</summary>
     public static SwiftDotNetAppBuilder CreateBuilder() => new();
 
+    static readonly object _currentGate = new();
+
+    /// <summary>
+    /// The process-wide app, once a head has built it through <see cref="GetOrCreate"/>; otherwise null.
+    /// </summary>
+    public static SwiftDotNetApp? Current { get; private set; }
+
+    /// <summary>
+    /// Returns the process-wide app, building it with <paramref name="factory"/> on first use.
+    /// </summary>
+    /// <remarks>
+    /// One process can host several heads over the same app: the phone UI, a CarPlay scene, an Android
+    /// <c>CarAppService</c> (which Android starts <em>without</em> an activity). Whichever starts first builds
+    /// the app; the others reuse it, so they share one service container — a singleton the phone mutates is
+    /// the same instance the car screen reads. It also means an Android activity recreated on rotation
+    /// reattaches the same root view (and its <see cref="State{T}"/>) instead of building a second app.
+    /// </remarks>
+    public static SwiftDotNetApp GetOrCreate(Func<SwiftDotNetApp> factory)
+    {
+        Throw.IfNull(factory);
+        lock (_currentGate)
+            return Current ??= factory();
+    }
+
     /// <summary>The app's service container.</summary>
     public IServiceProvider Services { get; }
 

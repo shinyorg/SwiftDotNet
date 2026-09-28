@@ -1,6 +1,47 @@
 # Plan: CarPlay & Android Auto (`SwiftDotNet.CarPlay` / `SwiftDotNet.AndroidAuto`)
 
-**Status:** Draft for review — **nothing built** · **Date:** 2026-08-14
+**Status:** **Tier A implemented** (2026-09-28) — CarPlay verified on the iOS 26.5 simulator; Android Auto
+builder-validated 9/9, never run on a head unit · **Drafted:** 2026-08-14 · Reference: [CarPlay & Android Auto](../docs/car.md)
+
+## Outcome (2026-09-28) — read this first
+
+Built by adapting the **Shiny.Auto** prototype (`~/Desktop/dev/Prototypes/MauiNext/Shiny.Auto`). It had already
+answered this plan's Phase 0, so that phase was skipped. MAUI was removed: `Microsoft.Maui.Graphics.Color` became
+a `SwiftColor` token, `IDrawable` became the `ICanvas` seam, and `UseShinyAuto` became `UseCar`.
+
+**Phase 0 answers:**
+- `Xamarin.AndroidX.Car.App.App` **1.7.0.1** exists and binds `TabTemplate`, `ConstraintManager` and
+  `MapWithContentTemplate`. Its AndroidX graph resolves beside the Compose pins without an NU1107.
+- These CarPlay templates update in place: lists (`UpdateSections`), grids (`UpdateGridButtons`), information
+  panes (setters), tab bars (per child) and POIs (`SetPointsOfInterest`). Only a change of template type forces
+  a pop-and-push.
+- The portable limits are conservative rather than wrong: each is the stricter platform's number
+  (`CarLimits.Portable`), with an opt-in per-head-unit mode.
+
+**Decisions reversed from the draft below:**
+1. **Not Core views; a parallel assembly** (`SwiftDotNet.Car`, net10.0), like `SwiftDotNet.Live`. The draft's
+   Crux #3 assumed car screens would go through `SwiftApp`, but `SwiftApp` is a per-process singleton that the
+   phone UI owns, and a CarPlay scene lives in the same process. So the car layer has its own `CarNavigator` and
+   never touches `View.BuildNode`, which makes the `internal` question moot.
+2. **MVU screens, not a declarative `CarStack` of `View`s.** A `CarScreen` returns an immutable template from
+   `Build()` and calls `Invalidate()`; the navigator owns the stack imperatively and platform pops flow up
+   through `OnPlatformPopped`. This is the prototype's model, which had been proven on the simulator.
+3. **Modifiers don't exist on car types** (decision 3 below): the records have no modifier surface at all.
+
+**New constraints found while building:**
+- `SwiftDotNetApp.GetOrCreate` makes the phone head and the car entry points share one container. Android
+  starts `CarAppService` without an activity.
+- A scene manifest switches the whole iOS app to scenes, hence the new `SwiftDotNetSceneDelegate` in Core.
+- The iOS head must call `UseCarPlay()`. Otherwise the build drops the assembly and `CarPlay.framework`, and
+  the app opens to nothing on the head unit.
+
+**Still open:**
+- a DHU run with the full Android Auto app, then an AAOS image;
+- the app-drawn map on both platforms (the CarPlay host crashes on `CPMapTemplate` in the 26.5 simulator);
+- the driving-state signal (Phase 4);
+- Tier B guidance.
+
+Everything below is the original draft, kept for the reasoning.
 **Save to (repo convention):** `plans/car-backends-plan.md`
 
 > **Scope note.** This plan covers the **template** surface of both car platforms (Tier A) and the

@@ -31,6 +31,8 @@
     <!-- LiveRenderMode.Bitmap renders a live tree with the shared engine rather than a second
          rasterizer: the engine is already headless behind ICanvas, so Android only supplies a canvas. -->
     <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+    <!-- AndroidCanvas / AndroidFontProvider live there, shared with the Android Auto map surface. -->
+    <ProjectReference Include="..\SwiftDotNet.Graphics.Android\SwiftDotNet.Graphics.Android.csproj" />
   </ItemGroup>
 
 </Project>

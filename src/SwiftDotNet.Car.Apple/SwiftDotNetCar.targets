@@ -1,0 +1,22 @@
+<Project>
+  <!--
+    CarPlay build-time wiring. Import from the app .csproj (a ProjectReference does not flow build logic):
+
+      <Import Project="path/to/src/SwiftDotNet.Car.Apple/SwiftDotNetCar.targets" />
+
+    Merges SwiftDotNetCar.Scene.plist into Info.plist: the phone window scene (SwiftDotNetSceneDelegate)
+    plus the CPTemplateApplicationScene (SwiftDotNetCarPlaySceneDelegate). Set
+    SwiftDotNetCarAddSceneManifest=false if the app declares its own UIApplicationSceneManifest, and copy the
+    CarPlay entry from the plist instead.
+
+    The CarPlay category entitlement (e.g. com.apple.developer.carplay-charging) is app-specific and is
+    NOT added here — point CodesignEntitlements at your own Entitlements.plist.
+  -->
+  <PropertyGroup>
+    <SwiftDotNetCarAddSceneManifest Condition="'$(SwiftDotNetCarAddSceneManifest)' == ''">true</SwiftDotNetCarAddSceneManifest>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(SwiftDotNetCarAddSceneManifest)' == 'true' And $(TargetFramework.EndsWith('-ios'))">
+    <PartialAppManifest Include="$(MSBuildThisFileDirectory)SwiftDotNetCar.Scene.plist" />
+  </ItemGroup>
+</Project>

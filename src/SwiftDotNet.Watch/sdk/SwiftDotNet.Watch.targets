@@ -1,0 +1,288 @@
+<Project>
+  <!--
+    SwiftDotNet watchOS SDK (targets): turns a NativeAOT static library into a watchOS .app.
+
+      dotnet build -c Release               C# -> NativeAOT .a (iOS runtime packs) -> retarget to watchOS ->
+                                            swiftc (SwiftDotNetBridge renderer + watch host + your Swift) -> .app
+      dotnet run -p:WatchTarget=simulator   ... NativeAOT, install + launch on a watch simulator, streaming stdout
+      dotnet run                            Debug = live mode: C# runs on the Mac, the watch simulator renders it
+      dotnet build -p:WatchTarget=device -p:CodesignKey="Apple Development: ..." -p:CodesignProvision=x.mobileprovision
+
+    Properties: ApplicationId, ApplicationTitle, ApplicationDisplayVersion, ApplicationVersion, WatchMinimumOSVersion,
+    WatchSimulator (name or UDID), WatchLivePort, CodesignKey, CodesignProvision, CodesignEntitlements,
+    SwiftDotNetWatchAppFactory (default SwiftProgram.CreateSwiftApp: a static method returning SwiftDotNetApp,
+    resolved from the project's RootNamespace).
+    Items: <WatchSwift Include="*.swift" /> - your own Swift; define swiftDotNetWatchConfigure(_:) to register native
+    services and CustomView renderers. <WatchResource Include="..." /> - copied into the bundle root.
+    Picked up when present: Info.plist (merged; yours wins), Entitlements.plist, Assets.xcassets.
+  -->
+
+  <PropertyGroup>
+    <SwiftDotNetWatchAppFactory Condition="'$(SwiftDotNetWatchAppFactory)' == ''">SwiftProgram.CreateSwiftApp</SwiftDotNetWatchAppFactory>
+    <!-- The renderer is the one the iOS/macOS/tvOS heads use, compiled into the watch app from source. -->
+    <SwiftDotNetBridgeSwift Condition="'$(SwiftDotNetBridgeSwift)' == ''">$([MSBuild]::NormalizePath('$(SwiftDotNetWatchSdkDir)', '..', '..', '..', 'native', 'SwiftDotNetBridge', 'Sources', 'SwiftDotNetBridge', 'Bridge.swift'))</SwiftDotNetBridgeSwift>
+
+    <WatchSdkName Condition="'$(WatchTarget)' == 'simulator' or '$(WatchTarget)' == 'live'">watchsimulator</WatchSdkName>
+    <WatchSdkName Condition="'$(WatchTarget)' == 'device'">watchos</WatchSdkName>
+    <WatchMachOPlatform Condition="'$(WatchTarget)' == 'simulator'">watchossim</WatchMachOPlatform>
+    <WatchMachOPlatform Condition="'$(WatchTarget)' == 'device'">watchos</WatchMachOPlatform>
+    <WatchSwiftTarget Condition="'$(WatchTarget)' == 'simulator' or '$(WatchTarget)' == 'live'">arm64-apple-watchos$(WatchMinimumOSVersion)-simulator</WatchSwiftTarget>
+    <WatchSwiftTarget Condition="'$(WatchTarget)' == 'device'">arm64-apple-watchos$(WatchMinimumOSVersion)</WatchSwiftTarget>
+    <WatchPlatformName Condition="'$(WatchTarget)' == 'simulator' or '$(WatchTarget)' == 'live'">WatchSimulator</WatchPlatformName>
+    <WatchPlatformName Condition="'$(WatchTarget)' == 'device'">WatchOS</WatchPlatformName>
+
+    <WatchIntermediateDir>$(MSBuildProjectDirectory)/obj/swiftdotnet-watch/$(Configuration)-$(WatchTarget)/</WatchIntermediateDir>
+    <WatchAppBundleDir>$(MSBuildProjectDirectory)/bin/$(Configuration)/watch-$(WatchTarget)/$(AssemblyName).app/</WatchAppBundleDir>
+    <WatchAppExecutable>$(WatchAppBundleDir)$(AssemblyName)</WatchAppExecutable>
+    <WatchDsymDir>$(MSBuildProjectDirectory)/bin/$(Configuration)/watch-$(WatchTarget)/$(AssemblyName).app.dSYM</WatchDsymDir>
+
+    <WatchUserInfoPlist Condition="'$(WatchUserInfoPlist)' == '' and Exists('$(MSBuildProjectDirectory)/Info.plist')">$(MSBuildProjectDirectory)/Info.plist</WatchUserInfoPlist>
+    <CodesignEntitlements Condition="'$(CodesignEntitlements)' == '' and Exists('$(MSBuildProjectDirectory)/Entitlements.plist')">$(MSBuildProjectDirectory)/Entitlements.plist</CodesignEntitlements>
+    <WatchAssetCatalog Condition="'$(WatchAssetCatalog)' == '' and Exists('$(MSBuildProjectDirectory)/Assets.xcassets')">$(MSBuildProjectDirectory)/Assets.xcassets</WatchAssetCatalog>
+    <CodesignKey Condition="'$(CodesignKey)' == ''">-</CodesignKey>
+
+    <WatchSwiftOptimization Condition="'$(Configuration)' == 'Debug'">-Onone -g</WatchSwiftOptimization>
+    <WatchSwiftOptimization Condition="'$(Configuration)' != 'Debug'">-O -g</WatchSwiftOptimization>
+    <SwiftDotNetWatchBootstrapFile>$(MSBuildProjectDirectory)/obj/swiftdotnet-watch/SwiftDotNetWatchBootstrap.g.cs</SwiftDotNetWatchBootstrapFile>
+
+    <!-- live mode: fixed per app, so a relaunched shell finds its host again -->
+    <WatchLivePort Condition="'$(WatchLivePort)' == ''">$([MSBuild]::Add(50000, $([MSBuild]::Modulo($([System.Math]::Abs($([MSBuild]::StableStringHash('$(ApplicationId)')))), 10000))))</WatchLivePort>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(WatchTarget)' == 'live'">
+    <!-- dotnet watch: a Swift change rebuilds (and restarts) the shell -->
+    <Watch Include="@(WatchSwift)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      A plain restore never fetches the NativeAOT runtime packs (the SDK only asks for them in publish flows), so
+      request both explicitly - that is what lets `dotnet build` work on a clean machine, simulator and device.
+    -->
+    <PackageDownload Include="Microsoft.NETCore.App.Runtime.NativeAOT.iossimulator-arm64" Version="[$(BundledNETCoreAppPackageVersion)]" />
+    <PackageDownload Include="Microsoft.NETCore.App.Runtime.NativeAOT.ios-arm64" Version="[$(BundledNETCoreAppPackageVersion)]" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- export the host ABI (swiftdotnet_watch_event, _drain, ...) from the SwiftDotNet.Watch library -->
+    <UnmanagedEntryPointsAssembly Include="SwiftDotNet.Watch" />
+    <WatchHostSwift Include="$(SwiftDotNetWatchSdkDir)swift/*.swift" />
+    <WatchHostSwift Include="$(SwiftDotNetBridgeSwift)" />
+    <Compile Include="$(SwiftDotNetWatchBootstrapFile)" Visible="false" />
+  </ItemGroup>
+
+  <!--
+    1. The generated entry point in the app assembly. NativeAOT: the swiftdotnet_watch_bootstrap export the Swift
+       app calls. Live: a Main that runs the app on the Mac and serves the watch shell.
+  -->
+  <Target Name="_SwiftDotNetWatchGenerateBootstrap" BeforeTargets="CoreCompile;BeforeBuild">
+    <PropertyGroup>
+      <_SdnwNamespace>$(RootNamespace)</_SdnwNamespace>
+      <_SdnwNamespace Condition="'$(_SdnwNamespace)' == ''">SwiftDotNetWatchGenerated</_SdnwNamespace>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(WatchTarget)' == 'live'">
+      <_SdnwBootstrapSource><![CDATA[// <auto-generated> SwiftDotNet.Watch SDK (live mode) </auto-generated>
+namespace $(_SdnwNamespace)
+{
+    internal static class SwiftDotNetWatchLiveProgram
+    {
+        static int Main(string[] args) => global::SwiftDotNet.Watch.Live.LiveHost.Run(
+            static () => $(SwiftDotNetWatchAppFactory)(),
+            new global::SwiftDotNet.Watch.Live.LiveOptions
+            {
+                Port = $(WatchLivePort),
+                AppBundle = @"$(WatchAppBundleDir)",
+                BundleId = @"$(ApplicationId)",
+                Simulator = @"$(WatchSimulator)",
+                LaunchScript = @"$(SwiftDotNetWatchSdkDir)tools/watch-launch.sh",
+            },
+            args)%3B
+    }
+}
+]]></_SdnwBootstrapSource>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(WatchTarget)' != 'live'">
+      <_SdnwBootstrapSource><![CDATA[// <auto-generated> SwiftDotNet.Watch SDK </auto-generated>
+namespace $(_SdnwNamespace)
+{
+    internal static class SwiftDotNetWatchBootstrap
+    {
+        [global::System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = "swiftdotnet_watch_bootstrap")]
+        static void Bootstrap() => global::SwiftDotNet.Watch.WatchExports.Bootstrap(static () => $(SwiftDotNetWatchAppFactory)())%3B
+    }
+}
+]]></_SdnwBootstrapSource>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(SwiftDotNetWatchBootstrapFile)" Lines="$(_SdnwBootstrapSource)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+
+  <!-- 2. after a normal build, NativeAOT-publish (no rebuild) and assemble the .app -->
+  <Target Name="SwiftDotNetWatchPackage" AfterTargets="Build" Condition="'$(_SdnwInner)' != 'true' and '$(DesignTimeBuild)' != 'true' and '$(WatchTarget)' != 'live'"
+          DependsOnTargets="_SdnwCheckHost;_SdnwAotCompile;_SdnwRetargetRuntime;_SdnwLink;_SdnwBundle;_SdnwSign">
+    <Message Importance="high" Text="$(MSBuildProjectName) -> $(WatchAppBundleDir) ($(WatchTarget))" />
+  </Target>
+
+  <!-- live mode: the watch shell (renderer + host, no .NET) next to the normal Mac executable -->
+  <Target Name="SwiftDotNetWatchLive" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' and '$(WatchTarget)' == 'live'"
+          DependsOnTargets="_SdnwCheckHost;_SdnwLinkLive;_SdnwBundle;_SdnwSign">
+    <Message Importance="high" Text="$(MSBuildProjectName) -> $(WatchAppBundleDir) (live shell, port $(WatchLivePort)). Run the project to debug with Hot Reload." />
+  </Target>
+
+  <Target Name="_SdnwCheckHost">
+    <Error Condition="!$([MSBuild]::IsOSPlatform('OSX'))" Text="SwiftDotNet watch apps can only be built on macOS (Xcode required)." />
+    <Error Condition="'$(WatchTarget)' != 'simulator' and '$(WatchTarget)' != 'device' and '$(WatchTarget)' != 'live'" Text="WatchTarget must be 'live', 'simulator' or 'device' (was '$(WatchTarget)')." />
+    <Error Condition="'$(WatchTarget)' == 'device' and $([MSBuild]::VersionLessThan('$(WatchMinimumOSVersion)', '26.0'))" Text="WatchMinimumOSVersion must be 26.0 or later for devices: arm64 watch apps require watchOS 26 (arm64_32 is not supported by NativeAOT)." />
+    <Error Condition="!Exists('$(SwiftDotNetBridgeSwift)')" Text="SwiftDotNetBridge renderer source not found at '$(SwiftDotNetBridgeSwift)'. Set SwiftDotNetBridgeSwift." />
+  </Target>
+
+  <Target Name="_SdnwAotCompile">
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="_SdnwInnerPublish"
+             Properties="NoBuild=true;_SdnwInner=true;Configuration=$(Configuration);WatchTarget=$(WatchTarget);_IsPublishing=true">
+      <Output TaskParameter="TargetOutputs" PropertyName="_SdnwRuntimeNative" />
+    </MSBuild>
+    <PropertyGroup>
+      <_SdnwRuntimeNative>$([MSBuild]::EnsureTrailingSlash($([MSBuild]::NormalizeDirectory('$(_SdnwRuntimeNative)'))))</_SdnwRuntimeNative>
+      <_SdnwAppLib>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(OutputPath)', 'native', '$(TargetName).a'))</_SdnwAppLib>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_SdnwAppLib)')" Text="NativeAOT did not produce $(_SdnwAppLib)" />
+  </Target>
+
+  <!-- runs inside the inner (publish) build; hands back where ILCompiler found the NativeAOT runtime -->
+  <Target Name="_SdnwInnerPublish" DependsOnTargets="Publish" Returns="$(IlcFrameworkNativePath)" />
+
+  <!-- 3. restamp the NativeAOT runtime + app objects from iOS to watchOS -->
+  <Target Name="_SdnwResolveRuntime" DependsOnTargets="_SdnwAotCompile">
+    <Error Condition="!Exists('$(_SdnwRuntimeNative)libRuntime.WorkstationGC.a')" Text="NativeAOT runtime pack not found at '$(_SdnwRuntimeNative)'." />
+    <ItemGroup>
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libbootstrapperdll.o" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libRuntime.WorkstationGC.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libeventpipe-disabled.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libstandalonegc-disabled.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libstdc++compat.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libaotminipal.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libSystem.Native.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libSystem.Globalization.Native.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libSystem.IO.Compression.Native.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libbrotlicommon.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libbrotlidec.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libbrotlienc.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libSystem.Net.Security.Native.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwRuntimeNative)libSystem.Security.Cryptography.Native.Apple.a" />
+      <_SdnwRuntimeLib Include="$(_SdnwAppLib)" />
+      <_SdnwRetargeted Include="@(_SdnwRuntimeLib->'$(WatchIntermediateDir)lib/%(Filename)%(Extension)')" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="_SdnwRetargetRuntime" DependsOnTargets="_SdnwResolveRuntime"
+          Inputs="@(_SdnwRuntimeLib);$(SwiftDotNetWatchSdkDir)tools/retarget-macho.py" Outputs="@(_SdnwRetargeted)">
+    <Exec Command="python3 &quot;$(SwiftDotNetWatchSdkDir)tools/retarget-macho.py&quot; $(WatchMachOPlatform) $(WatchMinimumOSVersion) 26.0 &quot;%(_SdnwRuntimeLib.FullPath)&quot; &quot;$(WatchIntermediateDir)lib/%(_SdnwRuntimeLib.Filename)%(_SdnwRuntimeLib.Extension)&quot; &quot;$(WatchIntermediateDir)objs&quot;" />
+  </Target>
+
+  <!-- 4. compile the renderer + watch host (+ your Swift) and link everything into the app executable -->
+  <Target Name="_SdnwLink" DependsOnTargets="_SdnwResolveRuntime"
+          Inputs="@(_SdnwRetargeted);@(WatchHostSwift);@(WatchSwift);$(SwiftDotNetWatchSdkDir)swift/swiftdotnet_watch.h;$(CodesignEntitlements)" Outputs="$(WatchAppExecutable)">
+    <PropertyGroup>
+      <_SdnwSwiftDefines Condition="'@(WatchSwift)' != ''">-D SWIFTDOTNET_WATCH_CUSTOM</_SdnwSwiftDefines>
+      <_SdnwEntitlementsSection Condition="'$(WatchTarget)' == 'simulator' and '$(CodesignEntitlements)' != ''">-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker &quot;$(CodesignEntitlements)&quot;</_SdnwEntitlementsSection>
+    </PropertyGroup>
+    <MakeDir Directories="$(WatchAppBundleDir)" />
+    <!-- compile Swift to a kept object (so dsymutil can find its debug info), then link -->
+    <Exec Command="xcrun --sdk $(WatchSdkName) swiftc -c -wmo -target $(WatchSwiftTarget) -sdk &quot;%24(xcrun --sdk $(WatchSdkName) --show-sdk-path)&quot; -swift-version 5 -parse-as-library $(WatchSwiftOptimization) $(_SdnwSwiftDefines) -module-name SwiftDotNetWatchApp -disable-bridging-pch -import-objc-header &quot;$(SwiftDotNetWatchSdkDir)swift/swiftdotnet_watch.h&quot; @(WatchHostSwift->'&quot;%(FullPath)&quot;', ' ') @(WatchSwift->'&quot;%(FullPath)&quot;', ' ') -o &quot;$(WatchIntermediateDir)swift-host.o&quot;"
+          WorkingDirectory="$(WatchIntermediateDir)" />
+    <Exec Command="xcrun --sdk $(WatchSdkName) swiftc -target $(WatchSwiftTarget) -sdk &quot;%24(xcrun --sdk $(WatchSdkName) --show-sdk-path)&quot; &quot;$(WatchIntermediateDir)swift-host.o&quot; @(_SdnwRetargeted->'&quot;%(FullPath)&quot;', ' ') -lc++ -lz -Xlinker -framework -Xlinker Foundation -Xlinker -framework -Xlinker CoreFoundation -Xlinker -framework -Xlinker Security -Xlinker -dead_strip $(_SdnwEntitlementsSection) -o &quot;$(WatchAppExecutable)&quot;"
+          WorkingDirectory="$(WatchIntermediateDir)" />
+  </Target>
+
+  <!-- 4b. live shell: the same renderer + host, talking to .NET over a socket instead of linking it -->
+  <Target Name="_SdnwLinkLive"
+          Inputs="@(WatchHostSwift);@(WatchSwift);$(SwiftDotNetWatchSdkDir)swift/swiftdotnet_watch.h;$(CodesignEntitlements)" Outputs="$(WatchAppExecutable)">
+    <PropertyGroup>
+      <_SdnwSwiftDefines Condition="'@(WatchSwift)' != ''">-D SWIFTDOTNET_WATCH_CUSTOM</_SdnwSwiftDefines>
+      <_SdnwEntitlementsSection Condition="'$(CodesignEntitlements)' != ''">-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker &quot;$(CodesignEntitlements)&quot;</_SdnwEntitlementsSection>
+    </PropertyGroup>
+    <MakeDir Directories="$(WatchAppBundleDir);$(WatchIntermediateDir)" />
+    <Exec Command="xcrun --sdk $(WatchSdkName) swiftc -c -wmo -target $(WatchSwiftTarget) -sdk &quot;%24(xcrun --sdk $(WatchSdkName) --show-sdk-path)&quot; -swift-version 5 -parse-as-library -Onone -g -D SWIFTDOTNET_WATCH_LIVE $(_SdnwSwiftDefines) -module-name SwiftDotNetWatchApp -disable-bridging-pch -import-objc-header &quot;$(SwiftDotNetWatchSdkDir)swift/swiftdotnet_watch.h&quot; @(WatchHostSwift->'&quot;%(FullPath)&quot;', ' ') @(WatchSwift->'&quot;%(FullPath)&quot;', ' ') -o &quot;$(WatchIntermediateDir)swift-live.o&quot;"
+          WorkingDirectory="$(WatchIntermediateDir)" />
+    <Exec Command="xcrun --sdk $(WatchSdkName) swiftc -target $(WatchSwiftTarget) -sdk &quot;%24(xcrun --sdk $(WatchSdkName) --show-sdk-path)&quot; &quot;$(WatchIntermediateDir)swift-live.o&quot; $(_SdnwEntitlementsSection) -o &quot;$(WatchAppExecutable)&quot;"
+          WorkingDirectory="$(WatchIntermediateDir)" />
+  </Target>
+
+  <!-- 5. Info.plist, asset catalog, resources, dSYM -->
+  <Target Name="_SdnwBundle">
+    <PropertyGroup>
+      <_SdnwLivePlistKeys Condition="'$(WatchTarget)' == 'live'"><![CDATA[<key>SwiftDotNetWatchLivePort</key><integer>$(WatchLivePort)</integer>]]></_SdnwLivePlistKeys>
+      <_SdnwGeneratedPlist>$(WatchIntermediateDir)Info.generated.plist</_SdnwGeneratedPlist>
+      <_SdnwPlistSource><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>$(ApplicationId)</string>
+  <key>CFBundleExecutable</key><string>$(AssemblyName)</string>
+  <key>CFBundleName</key><string>$(AssemblyName)</string>
+  <key>CFBundleDisplayName</key><string>$(ApplicationTitle)</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleShortVersionString</key><string>$(ApplicationDisplayVersion)</string>
+  <key>CFBundleVersion</key><string>$(ApplicationVersion)</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleSupportedPlatforms</key><array><string>$(WatchPlatformName)</string></array>
+  <key>DTPlatformName</key><string>$(WatchSdkName)</string>
+  <key>MinimumOSVersion</key><string>$(WatchMinimumOSVersion)</string>
+  <key>UIDeviceFamily</key><array><integer>4</integer></array>
+  <key>WKApplication</key><true/>
+  <key>WKWatchOnly</key><true/>
+  $(_SdnwLivePlistKeys)
+</dict>
+</plist>]]></_SdnwPlistSource>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_SdnwGeneratedPlist)" Lines="$(_SdnwPlistSource)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+
+    <!-- the user's Info.plist wins; generated keys only fill gaps -->
+    <Exec Condition="'$(WatchUserInfoPlist)' != ''" Command="cp &quot;$(WatchUserInfoPlist)&quot; &quot;$(WatchAppBundleDir)Info.plist&quot; &amp;&amp; /usr/libexec/PlistBuddy -c &quot;Merge $(_SdnwGeneratedPlist)&quot; &quot;$(WatchAppBundleDir)Info.plist&quot;" StandardOutputImportance="low" />
+    <Copy Condition="'$(WatchUserInfoPlist)' == ''" SourceFiles="$(_SdnwGeneratedPlist)" DestinationFiles="$(WatchAppBundleDir)Info.plist" />
+
+    <!-- asset catalog (app icon). actool needs a watchOS simulator runtime matching the SDK even for device builds;
+         when it's missing, warn and ship without the compiled catalog rather than failing the build. -->
+    <MakeDir Condition="'$(WatchAssetCatalog)' != ''" Directories="$(WatchIntermediateDir)assets" />
+    <Exec Condition="'$(WatchAssetCatalog)' != ''" IgnoreExitCode="true" StandardOutputImportance="low"
+          Command="xcrun actool &quot;$(WatchAssetCatalog)&quot; --compile &quot;$(WatchIntermediateDir)assets&quot; --platform $(WatchSdkName) --minimum-deployment-target $(WatchMinimumOSVersion) --target-device watch --app-icon AppIcon --output-partial-info-plist &quot;$(WatchIntermediateDir)assets.plist&quot; --errors --warnings --output-format human-readable-text &gt; &quot;$(WatchIntermediateDir)actool.log&quot; 2&gt;&amp;1 &amp;&amp; test -f &quot;$(WatchIntermediateDir)assets/Assets.car&quot;">
+      <Output TaskParameter="ExitCode" PropertyName="_SdnwActoolExit" />
+    </Exec>
+    <Warning Condition="'$(WatchAssetCatalog)' != '' and '$(_SdnwActoolExit)' != '0'"
+             Text="Asset catalog not compiled (app icon skipped). actool needs a watchOS Simulator runtime matching the watchOS SDK: install it from Xcode > Settings > Components. See $(WatchIntermediateDir)actool.log" />
+    <Copy Condition="'$(WatchAssetCatalog)' != '' and '$(_SdnwActoolExit)' == '0'" SourceFiles="$(WatchIntermediateDir)assets/Assets.car" DestinationFolder="$(WatchAppBundleDir)" />
+    <Exec Condition="'$(WatchAssetCatalog)' != '' and '$(_SdnwActoolExit)' == '0'" Command="/usr/libexec/PlistBuddy -c &quot;Merge $(WatchIntermediateDir)assets.plist&quot; &quot;$(WatchAppBundleDir)Info.plist&quot;" StandardOutputImportance="low" />
+
+    <Exec Command="plutil -convert binary1 &quot;$(WatchAppBundleDir)Info.plist&quot;" />
+    <Copy SourceFiles="@(WatchResource)" DestinationFolder="$(WatchAppBundleDir)" SkipUnchangedFiles="true" />
+    <Copy Condition="'$(WatchTarget)' == 'device' and '$(CodesignProvision)' != ''" SourceFiles="$(CodesignProvision)" DestinationFiles="$(WatchAppBundleDir)embedded.mobileprovision" />
+    <Exec Condition="'$(WatchTarget)' != 'live'" Command="dsymutil &quot;$(WatchAppExecutable)&quot; -o &quot;$(WatchDsymDir)&quot; 2&gt;&amp;1 | grep -v 'warning: .*(No such file or directory)' || true" />
+  </Target>
+
+  <!-- 6. sign (ad-hoc for the simulator) -->
+  <Target Name="_SdnwSign">
+    <PropertyGroup>
+      <_SdnwSignEntitlements Condition="'$(WatchTarget)' == 'device' and '$(CodesignEntitlements)' != ''">--entitlements &quot;$(CodesignEntitlements)&quot;</_SdnwSignEntitlements>
+    </PropertyGroup>
+    <Warning Condition="'$(WatchTarget)' == 'device' and '$(CodesignKey)' == '-'" Text="Building for a device with ad-hoc signing: set CodesignKey and CodesignProvision to install on a real watch." />
+    <Exec Command="codesign --force --timestamp=none --sign &quot;$(CodesignKey)&quot; $(_SdnwSignEntitlements) &quot;$(WatchAppBundleDir)&quot;" StandardOutputImportance="low" />
+  </Target>
+
+  <!-- `dotnet run` (NativeAOT): install + launch on a simulator (or device), streaming stdout. Live mode runs the Mac executable. -->
+  <Target Name="_SdnwRunArguments" AfterTargets="ComputeRunArguments" Condition="'$(WatchTarget)' != 'live'">
+    <PropertyGroup>
+      <RunCommand>bash</RunCommand>
+      <RunArguments>&quot;$(SwiftDotNetWatchSdkDir)tools/watch-launch.sh&quot; --app &quot;$(WatchAppBundleDir)&quot; --bundle-id $(ApplicationId) --target $(WatchTarget) --sim &quot;$(WatchSimulator)&quot; --console</RunArguments>
+      <RunWorkingDirectory>$(MSBuildProjectDirectory)</RunWorkingDirectory>
+    </PropertyGroup>
+  </Target>
+
+  <!-- tooling: where the bundle is, what it's called -->
+  <Target Name="SwiftDotNetWatchAppInfo" Returns="$(WatchAppBundleDir)">
+    <Message Importance="high" Text="WATCH_APP=$(WatchAppBundleDir)" />
+    <Message Importance="high" Text="WATCH_BUNDLE_ID=$(ApplicationId)" />
+    <Message Importance="high" Text="WATCH_EXECUTABLE=$(WatchAppExecutable)" />
+    <Message Importance="high" Text="WATCH_TARGET=$(WatchTarget)" />
+    <Message Importance="high" Text="WATCH_LIVE_PORT=$(WatchLivePort)" />
+  </Target>
+</Project>

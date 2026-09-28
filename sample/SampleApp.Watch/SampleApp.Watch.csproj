@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Apple Watch head. Plain net10.0: the watch SDK below turns it into a watchOS .app —
+    NativeAOT (iOS runtime packs) + Mach-O retarget + the SwiftDotNetBridge renderer compiled for watchOS.
+
+      dotnet run                               Debug: live mode (C# on the Mac, the watch simulator renders it)
+      dotnet run -c Release                    NativeAOT build, installed and launched on a watch simulator
+      dotnet build -p:WatchTarget=device ...   a real watch (arm64, watchOS 26+)
+
+    See docs/backends/watchos.md.
+  -->
+  <Import Project="..\..\src\SwiftDotNet.Watch\sdk\SwiftDotNet.Watch.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet.Sample.Watch</RootNamespace>
+    <ApplicationTitle>SwiftDotNet</ApplicationTitle>
+    <ApplicationId>com.swiftdotnet.sample.watch</ApplicationId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SwiftDotNet.Watch\SwiftDotNet.Watch.csproj" />
+  </ItemGroup>
+
+  <Import Project="..\..\src\SwiftDotNet.Watch\sdk\SwiftDotNet.Watch.targets" />
+
+</Project>

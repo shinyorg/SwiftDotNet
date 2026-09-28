@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The android.graphics adapter for the renderer seam (ICanvas / IFontProvider / IImageDecoder).
+
+    Its own tiny project because two unrelated Android libraries draw through it — the live surfaces'
+    bitmap mode (SwiftDotNet.Live.Android) and the Android Auto map surface (SwiftDotNet.Car.Android) — and
+    neither should have to drag the other in to get a canvas.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <IsTrimmable>true</IsTrimmable>
+    <!-- No Android resources here. Left on, the designer would emit a SwiftDotNet.Resource class (root
+         namespace) that collides with SwiftDotNet.Live.Android's own (CS0436). -->
+    <AndroidGenerateResourceDesigner>false</AndroidGenerateResourceDesigner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+  </ItemGroup>
+
+</Project>

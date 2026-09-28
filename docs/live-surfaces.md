@@ -236,7 +236,7 @@ The entry-selection rule — *the latest tree for this family at or before now, 
 The bitmap route is nearly free because the live vocabulary is a strict *subset* of the main DSL:
 [`LiveLowering`](../src/SwiftDotNet.Live/LiveLowering.cs) rewrites the type names onto core nodes, the
 headless engine in [`SwiftDotNet.Graphics`](../src/SwiftDotNet.Graphics) lays out and paints them, and
-Android supplies only [`AndroidCanvas`](../src/SwiftDotNet.Live.Android/AndroidCanvas.cs). No second
+Android supplies only [`AndroidCanvas`](../src/SwiftDotNet.Graphics.Android/AndroidCanvas.cs) (in `SwiftDotNet.Graphics.Android`, shared with the Android Auto map surface). No second
 rasterizer, no second layout pass. It is the first time the [renderer seam](backends/skia.md) has been
 implemented against a platform toolkit rather than another Skia binding.
 

@@ -31,9 +31,33 @@ struct PropValue: Decodable, Equatable {
     }
 }
 
+/// Decodes a wire value that is usually a string token but may be a number or bool (e.g. the
+/// `digitalCrown` modifier ships its current `value` as a double). Everything downstream reads it as a
+/// string, so non-string scalars are stringified; a strict `String?` would fail the whole patch instead.
+@propertyWrapper
+struct LenientString: Decodable, Equatable {
+    var wrappedValue: String?
+    init(wrappedValue: String?) { self.wrappedValue = wrappedValue }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { wrappedValue = nil }
+        else if let s = try? c.decode(String.self) { wrappedValue = s }
+        else if let b = try? c.decode(Bool.self) { wrappedValue = b ? "true" : "false" }
+        else if let d = try? c.decode(Double.self) { wrappedValue = String(d) }
+        else { wrappedValue = nil }
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// A missing key decodes to nil rather than throwing (synthesized Decodable asks for the wrapper type).
+    func decode(_ type: LenientString.Type, forKey key: Key) throws -> LenientString {
+        try decodeIfPresent(type, forKey: key) ?? LenientString(wrappedValue: nil)
+    }
+}
+
 struct ModifierData: Decodable, Equatable {
     let type: String
-    let value: String?
+    @LenientString var value: String?
     let width: Double?
     let height: Double?
     let radius: Double?
@@ -65,6 +89,9 @@ struct ModifierData: Decodable, Equatable {
     let rowSpan: Double?
     let flags: String?         // layoutBounds: which of "xywh" are proportional
     let tracks: String?        // keyframes: the whole timeline, `prop:t,v[,curve];…|prop:…`
+    let from: Double?          // digitalCrown: range lower bound
+    let through: Double?       // digitalCrown: range upper bound
+    let by: Double?            // digitalCrown: snap step (0 = continuous)
 }
 
 final class WireNode: Decodable {
@@ -658,8 +685,16 @@ private func applyModifiers(_ view: some View, _ mods: [ModifierData]) -> AnyVie
             let minDist = m.amount ?? 0
             out = AnyView(out.modifier(DragEmitter(event: event, minimumDistance: minDist)))
             #endif
+        case "digitalCrown":
+            // Apple Watch only. Every other Apple slice ignores it (no crown), as do the non-watch backends.
+            #if os(watchOS)
+            out = AnyView(out.modifier(DigitalCrownEmitter(
+                event: m.event, value: Double(m.value ?? "") ?? 0,
+                from: m.from ?? 0, through: m.through ?? 1, by: m.by ?? 0)))
+            #endif
         case "onMagnify":
-            #if !os(tvOS)
+            // No pinch on tvOS (no touch surface) or watchOS (MagnificationGesture is unavailable).
+            #if !os(tvOS) && !os(watchOS)
             let event = m.event
             out = AnyView(out.gesture(MagnificationGesture().onChanged { scale in
                 if let event { emitEvent(event, String(format: "%f", scale)) }
@@ -699,6 +734,36 @@ private struct DragEmitter: ViewModifier {
 
     private func grammar(_ phase: String, _ t: CGSize, _ l: CGPoint, _ v: CGSize) -> String {
         String(format: "%@;%f,%f;%f,%f;%f,%f", phase, t.width, t.height, l.x, l.y, v.width, v.height)
+    }
+}
+#endif
+
+#if os(watchOS)
+/// Binds the Digital Crown to a C#-owned value. Rotation writes a local copy (so turning is smooth and
+/// never waits on a round-trip) and reports each change; a new value from C# replaces the local one.
+/// Both directions skip echoes, so C# writing back the value it was just sent doesn't loop.
+private struct DigitalCrownEmitter: ViewModifier {
+    let event: String?
+    let value: Double
+    let from: Double
+    let through: Double
+    let by: Double
+    @State private var local = 0.0
+    @State private var seeded = false
+
+    func body(content: Content) -> some View {
+        content
+            .focusable(true)
+            .digitalCrownRotation($local, from: from, through: max(through, from + 0.0001),
+                                  by: by > 0 ? by : nil, sensitivity: .medium,
+                                  isContinuous: false, isHapticFeedbackEnabled: true)
+            .onAppear { if !seeded { local = value; seeded = true } }
+            .onChange(of: value) { _, incoming in
+                if abs(incoming - local) > 1e-9 { local = incoming }
+            }
+            .onChange(of: local) { _, v in
+                if abs(v - value) > 1e-9, let event { emitEvent(event, String(v)) }
+            }
     }
 }
 #endif
@@ -752,7 +817,15 @@ struct NodeView: View {
         case "Tab":
             tabContent
         case "Menu":
+            #if os(watchOS)
+            // No pop-up menus on watchOS: show the items inline under their label.
+            SwiftUI.VStack(alignment: .leading) {
+                SwiftUI.Text(str("label")).font(.headline)
+                childViews
+            }
+            #else
             SwiftUI.Menu(str("label")) { childViews }
+            #endif
         case "TextField":
             TextFieldNode(node: node)
         case "SecureField":
@@ -807,11 +880,15 @@ struct NodeView: View {
             // A real platform view (a .NET MAUI control, realised by C# through MAUI's native embedding)
             // hosted inside SwiftUI. The bridge knows nothing about MAUI — only how to ask C# for a UIView
             // by key; see swiftdotnet_set_platform_view_provider.
+            #if os(watchOS)
+            SwiftUI.Text("⚠️ MauiView: platform views are unavailable on watchOS").foregroundColor(.red)
+            #else
             if g_platformViewProvider != nil {
                 EmbeddedPlatformView(key: str("key"))
             } else {
                 SwiftUI.Text("⚠️ MauiView: no platform-view provider registered").foregroundColor(.red)
             }
+            #endif
         default:
             if let renderer = g_customRenderers[node.type] {
                 renderer(SwiftDotNetProps(id: node.id, node: node))
@@ -959,9 +1036,15 @@ struct NodeView: View {
         SwiftUI.TabView { childViews }
         #else
         if node.props["style"]?.string == "page" {
+            #if os(watchOS)
+            // watchOS has no index-background style; its page dots are drawn by the system.
+            SwiftUI.TabView { childViews }
+                .tabViewStyle(.page(indexDisplayMode: .always))
+            #else
             SwiftUI.TabView { childViews }
                 .tabViewStyle(.page(indexDisplayMode: .always))
                 .indexViewStyle(.page(backgroundDisplayMode: .always))
+            #endif
         } else {
             SwiftUI.TabView { childViews }
         }
@@ -1058,7 +1141,7 @@ struct TextFieldNode: View {
     @State private var text = ""
     var body: some View {
         TextField(node.props["placeholder"]?.string ?? "", text: $text)
-            #if !os(tvOS)
+            #if !os(tvOS) && !os(watchOS)
             .textFieldStyle(.roundedBorder)
             #endif
             .modifier(TextInputTraits(node: node))
@@ -1075,7 +1158,7 @@ struct SecureFieldNode: View {
     @State private var text = ""
     var body: some View {
         SecureField(node.props["placeholder"]?.string ?? "", text: $text)
-            #if !os(tvOS)
+            #if !os(tvOS) && !os(watchOS)
             .textFieldStyle(.roundedBorder)
             #endif
             .onAppear { text = node.props["text"]?.string ?? "" }
@@ -1090,8 +1173,8 @@ struct TextEditorNode: View {
     let node: VNode
     @State private var text = ""
     var body: some View {
-        // TextEditor is unavailable on tvOS — fall back to a TextField.
-        #if os(tvOS)
+        // TextEditor is unavailable on tvOS and watchOS — fall back to a TextField.
+        #if os(tvOS) || os(watchOS)
         TextField("", text: $text)
             .onAppear { text = node.props["text"]?.string ?? "" }
             .onChange(of: text) { _, v in emitEvent(node.id, v) }
@@ -1155,8 +1238,12 @@ struct SelectableTabView: View {
             if node.props["pageIndicator"]?.bool == false {
                 content.tabViewStyle(.page(indexDisplayMode: .never))
             } else {
+                #if os(watchOS)
+                content.tabViewStyle(.page(indexDisplayMode: .always))
+                #else
                 content.tabViewStyle(.page(indexDisplayMode: .always))
                     .indexViewStyle(.page(backgroundDisplayMode: .always))
+                #endif
             }
         } else {
             content
@@ -1251,8 +1338,8 @@ struct ColorPickerNode: View {
     let node: VNode
     @State private var color = Color.accentColor
     var body: some View {
-        // ColorPicker is unavailable on tvOS — show a swatch.
-        #if os(tvOS)
+        // ColorPicker is unavailable on tvOS and watchOS — show a swatch.
+        #if os(tvOS) || os(watchOS)
         HStack {
             SwiftUI.Text(node.props["label"]?.string ?? "")
             RoundedRectangle(cornerRadius: 4)
@@ -1271,8 +1358,8 @@ struct DisclosureGroupNode: View {
     let node: VNode
     @State private var expanded = false
     var body: some View {
-        // DisclosureGroup is unavailable on tvOS — use a focusable header button + conditional content.
-        #if os(tvOS)
+        // DisclosureGroup is unavailable on tvOS and watchOS — use a header button + conditional content.
+        #if os(tvOS) || os(watchOS)
         let isOpen = node.props["expanded"]?.bool ?? false
         VStack(alignment: .leading) {
             SwiftUI.Button((isOpen ? "▾ " : "▸ ") + (node.props["label"]?.string ?? "")) {
@@ -1891,7 +1978,8 @@ struct SDNAbsoluteLayout: Layout {
 
 // MARK: - Platform views (a real native view supplied by C#)
 
-#if canImport(UIKit)
+// watchOS has UIKit but no UIView, so it has no platform-view embedding (MauiView renders a placeholder).
+#if canImport(UIKit) && !os(watchOS)
 typealias PlatformNativeView = UIView
 #elseif canImport(AppKit)
 typealias PlatformNativeView = NSView
@@ -1910,13 +1998,16 @@ public func swiftdotnet_set_platform_view_provider(_ provider: PlatformViewProvi
     g_platformViewProvider = provider
 }
 
+#if !os(watchOS)
 func swiftDotNetPlatformView(_ key: String) -> PlatformNativeView? {
     guard let provider = g_platformViewProvider,
           let raw = key.withCString({ provider($0) }) else { return nil }
     return Unmanaged<PlatformNativeView>.fromOpaque(raw).takeUnretainedValue()
 }
 
-#if canImport(UIKit)
+#endif
+
+#if canImport(UIKit) && !os(watchOS)
 /// Wraps a C#-owned UIView so SwiftUI can lay it out like any other view.
 struct EmbeddedPlatformView: UIViewRepresentable {
     let key: String
@@ -1987,6 +2078,9 @@ public func swiftdotnet_render(_ json: UnsafePointer<CChar>) {
     }
 }
 
+// watchOS has no hosting controllers: the watch app's own SwiftUI `App` shows RootHostView directly
+// (see src/SwiftDotNet.Watch/sdk/swift/SwiftDotNetWatchApp.swift).
+#if !os(watchOS)
 @_cdecl("swiftdotnet_make_host_controller")
 public func swiftdotnet_make_host_controller() -> UnsafeMutableRawPointer {
     #if canImport(UIKit)
@@ -1996,3 +2090,4 @@ public func swiftdotnet_make_host_controller() -> UnsafeMutableRawPointer {
     #endif
     return Unmanaged.passRetained(controller).toOpaque()
 }
+#endif

@@ -35,7 +35,7 @@ public abstract class SwiftDotNetActivity : ComponentActivity
         // default activity theme supplies would draw the app label a second time above it.
         ActionBar?.Hide();
 
-        var app = CreateSwiftApp();
+        var app = Hosting.SwiftDotNetApp.GetOrCreate(CreateSwiftApp);
         SetContentView(SwiftDotNetHost.CreateRootView(this, app.CreateRoot(), app.Services));
     }
 }

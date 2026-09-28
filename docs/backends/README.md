@@ -22,6 +22,8 @@ And **two routes** to get there (see [Architecture → the two backend routes](.
 | macOS | SwiftUI (AppKit-hosted) | Same Swift shim | ✅ Verified on desktop | [Apple](apple.md) |
 | tvOS | SwiftUI | Same Swift shim (`#if os(tvOS)` fallbacks) | ✅ Verified on Apple TV sim | [Apple](apple.md) |
 | Android | Jetpack Compose | Kotlin shim (`.aar`, JNI) | ✅ Verified on emulator | [Android](android.md) |
+| watchOS | SwiftUI | Same Swift renderer, **inverted host** (Swift app calls a NativeAOT .NET library restamped from iOS) | ✅ Verified on the watchOS 27 simulator (NativeAOT + live mode); device & App Store unverified | [Apple Watch](watchos.md) |
+| Wear OS | Compose for Wear OS | The Android shim + a Wear skin `.aar` (`SwiftDotNet.Wear`) | ✅ Verified on the Wear OS emulator (API 36 round AVD) | [Wear OS](wear-os.md) |
 | Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop | [Linux/GTK](linux-gtk.md) |
 | Linux | Self-drawn on a native Wayland surface | Pure C# (libwayland/xkbcommon P/Invoke, no shim) | 🧩 Scaffolded — builds clean; **never run against a compositor** (protocol tables unit-tested) | [Linux/Wayland](wayland.md) |
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded — **never compiled**, no tests | [Windows](windows.md) |
@@ -37,8 +39,8 @@ And **two routes** to get there (see [Architecture → the two backend routes](.
 
 > **What "Verified" means, and what CI actually covers.** ✅ Verified means the backend was *run* and
 > inspected on the stated target — it is not a claim of test coverage. The automated suite
-> ([`tests/SwiftDotNet.Tests`](../../tests/SwiftDotNet.Tests), 364 green) exercises **Core, Skia and the
-> terminal backend only**. There are no GTK, Web, WinUI, WPF, WinForms, SwiftUI, Compose, MonoGame or Godot rendering
+> ([`tests/SwiftDotNet.Tests`](../../tests/SwiftDotNet.Tests), 460 green) exercises **Core, Skia and the
+> terminal backend**, plus the watchOS host loop and live-mode protocol through fakes of the Swift side. There are no GTK, Web, WinUI, WPF, WinForms, SwiftUI, Compose, MonoGame or Godot rendering
 > tests, so per-backend behaviour in the tables throughout these docs is verified by hand, not by CI. The
 > two game-engine backends that are marked ✅ were verified by driving their sample heads
 > non-interactively — `--shot` / `--tap`, described on each page — and reading the captured frame. Prefer adding a Core, Skia

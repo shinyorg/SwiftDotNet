@@ -44,7 +44,9 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 ### Backends
 - **[Backends Overview](backends/README.md)** — the platform matrix and the two rendering families.
 - **[Apple — iOS / macOS / tvOS](backends/apple.md)** (SwiftUI)
+- **[Apple Watch — watchOS](backends/watchos.md)** (SwiftUI via the shared renderer; NativeAOT, live mode)
 - **[Android](backends/android.md)** (Jetpack Compose)
+- **[Wear OS](backends/wear-os.md)** (the Android backend + a Compose-for-Wear skin)
 - **[Linux / GTK](backends/linux-gtk.md)** (GTK4, pure C#)
 - **[Linux / Wayland](backends/wayland.md)** (self-drawn Skia on a native Wayland surface, no GTK)
 - **[Windows](backends/windows.md)** (WinUI 3, pure C#)
@@ -67,6 +69,9 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
   self-drawing backends: the frame seam that pumps decoded pixels onto the canvas, the
   `SwiftDotNet.Media.*` providers (AVFoundation / Camera2 + MediaCodec / MediaCapture / LibVLC), and when
   to float a real control instead.
+- **[CarPlay & Android Auto](car.md)** — the `SwiftDotNet.Car` companions: car template screens (lists,
+  grids, tabs, panes, alerts, search, points of interest, an app-drawn map) from one C# model, validated
+  against the stricter of the two platforms' content limits, and sharing the phone app's container.
 - **[Live Surfaces](live-surfaces.md)** — the `SwiftDotNet.Live` / `SwiftDotNet.Widgets` companions: iOS
   Live Activities and the Dynamic Island, home-screen widgets, Android custom notifications and app
   widgets, and Android 16 Live Updates. The first targets where **another process renders our tree**.
@@ -79,7 +84,9 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 | iOS | SwiftUI | Swift shim (xcframework, P/Invoke) | ✅ Verified on simulator |
 | macOS | SwiftUI (AppKit-hosted) | Same Swift shim | ✅ Verified on desktop |
 | tvOS | SwiftUI | Same Swift shim (`#if os(tvOS)` fallbacks) | ✅ Verified on Apple TV sim |
+| watchOS | SwiftUI | Same Swift renderer, inverted host (NativeAOT, restamped from iOS) | ✅ Verified on the watchOS 27 simulator; device & App Store unverified |
 | Android | Jetpack Compose | Kotlin shim (`.aar`, JNI) | ✅ Verified on emulator |
+| Wear OS | Compose for Wear OS | The Android shim + a Wear skin `.aar` | ✅ Verified on the Wear OS emulator (API 36 round AVD) |
 | Linux | GTK4 | Pure C# (Gir.Core, no shim) | ✅ Verified on desktop |
 | Linux | Self-drawn on a native Wayland surface | Pure C# (libwayland/xkbcommon P/Invoke) | 🧩 Scaffolded — builds clean; never run against a compositor |
 | Windows | WinUI 3 | Pure C# (no shim) | 🧩 Scaffolded — **never compiled**, no tests |

@@ -156,8 +156,29 @@ add an Xcode widget-extension target and an App Group entitlement — there is n
 Android 16 Live Updates (`Notification.ProgressStyle`) are modelled as **data**, not a view tree, because
 that is what they are.
 
+### Car head units — CarPlay & Android Auto — **CarPlay verified on the simulator; Android Auto builder-validated**
+[`plans/car-backends-plan.md`](../plans/car-backends-plan.md); reference at [CarPlay & Android Auto](car.md).
+
+Tier A (the template vocabulary) is built, ported from the Shiny.Auto prototype with MAUI's graphics types
+replaced by SwiftDotNet's (`SwiftColor` tints, the `ICanvas` seam for the map surface). CarPlay ran end-to-end
+on the iOS 26.5 simulator, including shared phone↔car state. Android Auto passes the real androidx builders
+(9/9) but has **never** reached a head unit, because the emulator ships the Android Auto stub.
+
+Remaining, in order:
+- a Desktop Head Unit run with the full Android Auto app, then an AAOS image;
+- the app-drawn map on both platforms (the CarPlay host crashes on `CPMapTemplate` in the 26.5 simulator);
+- a driving/parked signal feeding `CarLimits`;
+- Tier B navigation guidance (maneuvers, trip estimates), which is gated on a navigation entitlement.
+
+Audio and messaging apps are out of scope: neither platform drives them with templates.
+
 ## Backend-specific next steps
 
+- **Apple Watch** — a physical arm64 watch (watchOS 26+), TestFlight and App Store review (acceptance of
+  NativeAOT objects restamped from iOS is the open risk); drive live mode's UI and `dotnet watch` by hand;
+  complications / Smart Stack via the [widgets](live-surfaces.md) work; embedding the watch app in the iOS head
+  (`PhoneConnection` is written, untested); port the prototype's Mac preview window and lldb formatters. See
+  [Apple Watch](backends/watchos.md) and [`plans/watchos-plan.md`](../plans/watchos-plan.md).
 - **Windows / WinUI 3** — compile + verify the WinUI 3 backend on a Windows host (expect minor API fixes).
   It is now the only Windows backend that has never been through a compiler. See
   [Windows backend](backends/windows.md).
@@ -199,6 +220,10 @@ that is what they are.
   so today they are a solid offset ellipse); safe area. Route B (node tree → Godot `Control` nodes) stays
   open but is unattractive — it would trade SwiftUI layout semantics for Godot's container layout. See
   [Godot backend](backends/godot.md).
+- **Wear OS** — verified on the emulator; next: a physical-watch run (crown detent calibration), the Wear
+  idiom for `Picker`/`Sheet`/`Alert`, a vertical page indicator, drag-follow swipe-to-dismiss, and moving to
+  Wear Material 3 once a .NET binding exists. Tiles and complications are a separate glanceables decision
+  shared with watchOS. See [Wear OS backend](backends/wear-os.md) and the [plan](../plans/wear-os-plan.md).
 - **Collection View** — true windowed streaming (WinUI/GTK/Web); Web pull-refresh/load-more/windowing (needs
   JS-interop `scrollTop`); Swift load-more wiring. See [Collection View → Deferred](collection-view.md#deferred).
 

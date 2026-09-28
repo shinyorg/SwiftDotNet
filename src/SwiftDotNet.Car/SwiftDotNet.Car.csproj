@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The car template vocabulary: CarPlay and Android Auto from one C# model.
+
+    Plain net10.0 and platform-free by design — exactly the Live/Maps split. This assembly only *describes*
+    car screens, enforces the content limits and category rules, and owns the navigation stack; the
+    renderers that talk to CPInterfaceController / ScreenManager live in SwiftDotNet.Car.Apple and
+    SwiftDotNet.Car.Android, so an app that never connects to a car never links CarPlay or androidx.car.app.
+
+    Why a parallel vocabulary rather than View: both head units are *template* systems (a fixed catalogue
+    of screen shapes with hard content caps), and our process never draws them. See docs/car.md and
+    plans/car-backends-plan.md (Crux #1).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SwiftDotNet</RootNamespace>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- SwiftDotNetAppBuilder / SwiftHost (hosting) and SwiftColor (tints). -->
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+    <!-- ICanvas / IFontProvider for the app-drawn map surface, and Theme for resolving colour tokens. -->
+    <ProjectReference Include="..\SwiftDotNet.Graphics\SwiftDotNet.Graphics.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SwiftDotNet.Tests" />
+    <!-- The renderers wrap presented modals in CarModalScreen, whose constructor stays internal so apps
+         can only present through ICarNavigator.Present (which validates and wraps the actions). -->
+    <InternalsVisibleTo Include="SwiftDotNet.Car.Apple" />
+    <InternalsVisibleTo Include="SwiftDotNet.Car.Android" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Apple Watch host. There is no watchOS runtime in .NET, so a watch app is compiled as a plain
+    net10.0 library, NativeAOT-published with the *iOS* runtime packs, restamped to watchOS
+    (sdk/tools/retarget-macho.py) and linked into a SwiftUI app whose renderer is the same
+    SwiftDotNetBridge the iOS/macOS/tvOS heads use. See docs/backends/watchos.md and plans/watchos-plan.md.
+
+    Direction is inverted relative to iOS: on the phone .NET owns the process and P/Invokes the Swift
+    framework; on the watch the Swift app owns the process and calls into the exports in WatchExports.cs.
+
+    Plain net10.0 (not net10.0-ios): the app project is net10.0 + RuntimeIdentifier=ios*-arm64, and the
+    core library's net10.0 build carries no platform code.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <RootNamespace>SwiftDotNet.Watch</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SwiftDotNet\SwiftDotNet.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SwiftDotNet.Tests" />
+  </ItemGroup>
+
+  <!-- The SDK (MSBuild pipeline, Swift host, tools) ships as content alongside the library. -->
+  <ItemGroup>
+    <None Include="sdk/**/*" Pack="true" PackagePath="sdk/" />
+  </ItemGroup>
+
+</Project>

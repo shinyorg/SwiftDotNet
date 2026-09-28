@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Marks this as a watch app: Play only offers it to Wear OS devices. -->
+    <uses-feature android:name="android.hardware.type.watch" />
+    <application android:allowBackup="true" android:label="SwiftDotNet Wear" android:supportsRtl="true">
+        <!-- Runs without a phone companion app installed. -->
+        <meta-data android:name="com.google.android.wearable.standalone" android:value="true" />
+    </application>
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>
