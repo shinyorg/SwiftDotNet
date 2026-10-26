@@ -15,3 +15,16 @@ public interface IBridge
     /// </summary>
     void SetEventHandler(Action<string, string?> handler);
 }
+
+/// <summary>
+/// Optional companion to <see cref="IBridge"/>: a bridge that can render some composite views with a
+/// platform-native container instead of their C# <c>Body</c>. Today the only such view is
+/// <see cref="TwoPaneView"/> (SwiftUI <c>ArrangementView</c> on iOS 27.1+, Compose
+/// <c>ListDetailPaneScaffold</c> on Android). A bridge that doesn't implement this gets the composite —
+/// which every backend can draw — so implementing it is never required.
+/// </summary>
+public interface IBridgeCapabilities
+{
+    /// <summary>True when the host renders a node of type <paramref name="viewType"/> natively.</summary>
+    bool SupportsNativeView(string viewType);
+}

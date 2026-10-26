@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.JSInterop;
 
 namespace SwiftDotNet;
 
@@ -14,6 +15,10 @@ namespace SwiftDotNet;
 public sealed class SwiftDotNetView : ComponentBase, IDisposable
 {
     [Parameter] public View Root { get; set; } = default!;
+
+    [Inject] IJSRuntime JS { get; set; } = default!;
+    DotNetObjectReference<SwiftDotNetView>? _self;
+    IJSObjectReference? _posture;
 
     readonly WebBridge _bridge = new();
     readonly Dictionary<string, int> _tab = new();          // TabView selected index by node id
@@ -33,7 +38,38 @@ public sealed class SwiftDotNetView : ComponentBase, IDisposable
     }
 
     void OnChanged() => InvokeAsync(StateHasChanged);
-    public void Dispose() => _bridge.Changed -= OnChanged;
+
+    public void Dispose()
+    {
+        _bridge.Changed -= OnChanged;
+        if (_posture is { } posture)
+            _ = posture.InvokeVoidAsync("stop").AsTask().ContinueWith(_ => posture.DisposeAsync(), TaskScheduler.Default);
+        _self?.Dispose();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+        // Window posture: viewport size always, the fold where Chromium exposes viewport segments. The
+        // module emits on the same reserved `$posture` id the native shims use, so WindowPosture parses it.
+        try
+        {
+            _self = DotNetObjectReference.Create(this);
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/SwiftDotNet.Web/posture.js");
+            _posture = await module.InvokeAsync<IJSObjectReference>("start", _self);
+        }
+        catch (JSException)
+        {
+            // Prerendering or a host without the static asset: posture simply stays None.
+        }
+    }
+
+    /// <summary>Called by <c>posture.js</c> with a <c>$posture</c> wire payload.</summary>
+    [JSInvokable]
+    public void OnPosture(string payload) => _bridge.Emit(WindowPostureEventId, payload);
+
+    const string WindowPostureEventId = "$posture";
 
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {

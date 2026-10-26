@@ -9,7 +9,7 @@ which renderer you build for.
 | Target | You need |
 |--------|----------|
 | All | .NET 10 SDK |
-| iOS / macOS / tvOS | A Mac + Xcode; the Swift bridge built once (`native/SwiftDotNetBridge/build-xcframework.sh`) |
+| iOS / macOS / tvOS | A Mac + **Xcode 27.1 or later**; the Swift bridge built once (`native/SwiftDotNetBridge/build-xcframework.sh`, which refuses older Xcodes — the shim still deploys to iOS 17 but calls iOS 27.1 foldable API behind `#available`) |
 | Android | JDK 21 + Android SDK; the Compose bridge `.aar` built once (Gradle) |
 | Linux / GTK | GTK4 native libs (`brew install gtk4` / `apt install libgtk-4-1`) |
 | Windows | A Windows machine (WinUI 3 / Windows App SDK don't build on macOS) |
@@ -56,6 +56,19 @@ xcrun simctl install booted sample/SampleApp/bin/Debug/net10.0-ios/iossimulator-
 xcrun simctl launch booted com.swiftdotnet.sample
 ```
 
+> **iOS 27: the scene life cycle is mandatory.** An app built with the iOS 27 SDK that has no
+> `UIApplicationSceneManifest` is killed at launch (`UIScene life cycle is required for apps built with this
+> SDK` — seen on the iOS 27.1 simulator). Declare one whose `UIWindowSceneSessionRoleApplication` delegate is
+> `SwiftDotNetSceneDelegate`, as [the sample's Info.plist](../sample/SampleApp/Platforms/iOS/Info.plist) does;
+> `SwiftDotNetAppDelegate` then leaves the window to the scene. It's also the host the iPhone Duo hinge
+> updates were verified on. (MAUI heads, e.g. the Skia MAUI sample, point the manifest at a
+> `MauiUISceneDelegate` subclass instead.)
+>
+> **Foldables check:** `SIMCTL_CHILD_SDN_SAMPLE_PAGE=foldables xcrun simctl launch booted com.swiftdotnet.sample`
+> opens the Foldables page as the root (`tabs` wraps the tour in a tab bar; `foldables-wide` forces the
+> side-by-side split; `SIMCTL_CHILD_SDN_TWOPANE_NATIVE=0` starts with the composite). On an iPhone Duo
+> simulator, the hinge is driven from Xcode 27.1's **DeviceHub** app (there is no `simctl` command for it).
+
 ### macOS / tvOS
 
 Reuse the same xcframework from step 1 above, then select the target with `-f`:
@@ -89,6 +102,26 @@ dotnet build sample/SampleApp -f net10.0-android
 > **Gotcha:** after rebuilding the `.aar`, delete the `obj`/`bin` of both `src/SwiftDotNet` and
 > `sample/SampleApp` before rebuilding — incremental builds reuse a stale binding. See
 > [Android backend](backends/android.md).
+
+> **Your activity must declare `ConfigurationChanges`.** Folding, unfolding and rotating change the screen
+> size; without these flags Android destroys and recreates the activity — and with it the render tree and
+> every `State<T>` — instead of letting Compose and [`WindowPosture`](modifiers-gestures-animation.md#window-posture-foldables--iphone-duo)
+> re-lay out the same tree:
+>
+> ```csharp
+> [Activity(Label = "MyApp", MainLauncher = true,
+>     ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.SmallestScreenSize
+>         | ConfigChanges.ScreenLayout | ConfigChanges.Orientation)]
+> public sealed class MainActivity : SwiftDotNetActivity { … }
+> ```
+>
+> It can't be inherited from `SwiftDotNetActivity`: `ActivityAttribute` is `Inherited = false`, so the
+> manifest entry comes only from your concrete class.
+>
+> **Foldables check:** a Pixel Fold AVD (`avdmanager create avd -d pixel_fold …`), then
+> `adb shell setprop debug.mono.env SDN_SAMPLE_PAGE=foldables` before launching (Debug builds) opens the
+> Foldables page as the root. `adb emu posture 2` half-opens it, `adb emu rotate` turns a book fold into a
+> tabletop one, `adb emu fold` closes it onto the outer display.
 
 ### Wear OS (Compose for Wear OS)
 

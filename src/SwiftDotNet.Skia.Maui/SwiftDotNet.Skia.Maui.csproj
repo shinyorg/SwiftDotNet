@@ -12,6 +12,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <RootNamespace>SwiftDotNet</RootNamespace>
+    <!-- iOS posture: the hinge block trampoline is an unmanaged function pointer (SwiftDotNetSkiaView.Posture.cs). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <PropertyGroup Condition="$(TargetFramework.Contains('-maccatalyst')) Or $(TargetFramework.Contains('-ios'))">
@@ -41,6 +43,9 @@
   <ItemGroup Condition="$(TargetFramework.Contains('-android'))">
     <PackageReference Include="Xamarin.AndroidX.Lifecycle.LiveData" Version="2.11.0.1" />
     <PackageReference Include="Xamarin.AndroidX.Lifecycle.LiveData.Core" Version="2.11.0.1" />
+    <!-- Window posture: MAUI already pulls Xamarin.AndroidX.Window 1.5.1.3; the Java callback adapter
+         (WindowInfoTrackerCallbackAdapter) lives in the separate window-java binding of the same version. -->
+    <PackageReference Include="Xamarin.AndroidX.Window.WindowJava" Version="1.5.1.3" />
   </ItemGroup>
 
 </Project>

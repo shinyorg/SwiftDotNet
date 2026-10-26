@@ -15,6 +15,7 @@ sample [`ContentView`](../sample/SharedUI/ContentView.cs) exercises all of it ac
 | `ScrollView` | Scrollable region. |
 | `Grid` | Row/column grid with per-track sizing and cell spans — see [Grid](#grid) below. |
 | `AbsoluteLayout` | Children placed at coordinates you give them — see [AbsoluteLayout](#absolutelayout) below. |
+| `TwoPaneView` | Two panes that split on a foldable's fold, sit side by side when wide, collapse when narrow — see [TwoPaneView](#twopaneview) below. |
 | `List` | Rows — expands into a full **[Collection View](collection-view.md)** (keyed identity, grid, selection, refresh, load-more). `List.ForEach` for keyed data. |
 | `Form` / `Section` | Grouped settings-style layout. |
 | `Group` | Transparent grouping. |
@@ -152,6 +153,72 @@ new AbsoluteLayout(
 **Status:** ✅ Verified on Skia (`SkiaAbsoluteLayoutTests`) and the terminal (`TuiGridAbsoluteTests`);
 bounds math covered by `GridEngineTests`. Apple and Android typecheck/compile but are not yet visually
 verified; GTK is unverified (no GTK runtime in CI) and Windows has never been compiled.
+
+## TwoPaneView
+
+Two panes that follow the device: split **on the fold** of a half-open foldable (book or tabletop), side by
+side in a wide window, one pane in a narrow one. The SwiftUI analog is iOS 27.1's `ArrangementView`; on
+Android it's Material 3's `ListDetailPaneScaffold`; the knobs mirror WinUI's `TwoPaneView`.
+
+```csharp
+new TwoPaneView(
+        primary:   new List(...),
+        secondary: new DetailView(selected))
+    .MinWideWidth(600)                       // below this (and no fold): one pane
+    .PanePriority(Pane.Secondary)            // which pane shows when collapsed
+    .TallModeConfiguration(TallMode.TopBottom)   // stack in a narrow, tall window (default: one pane)
+    .SplitRatio(0.4);                        // primary's share of a ratio split
+```
+
+It reads [`WindowPosture.Current`](modifiers-gestures-animation.md#window-posture-foldables--iphone-duo), so it
+re-lays itself out when the device folds, unfolds or rotates. In order it picks:
+
+1. **Book fold** crossing the window → primary left of the fold, secondary right of it; nothing under the hinge.
+2. **Tabletop fold** → primary above the fold, secondary below.
+3. **Width ≥ `MinWideWidth`**, *or no window size reported* → side by side at `SplitRatio`.
+4. **Height ≥ `MinTallHeight`** with `TallMode.TopBottom`/`BottomTop` → stacked.
+5. Otherwise → the `PanePriority` pane alone.
+
+`ResolveLayout(PostureInfo)` exposes that decision (e.g. to hide a "back to list" button when both panes show).
+`.PaneSpacing(n)` adds a gap to ratio splits; `.UseNativeContainer(false)` forces the composite.
+
+**How it renders.** The composite is a plain [`Grid`](#grid) — `Fixed(foldX), Fixed(foldWidth), Star` for a
+fold, `Star(r), Star(1-r)` for a ratio split — so it works on **every** backend with no renderer changes.
+Where the bridge implements [`IBridgeCapabilities`](../src/SwiftDotNet/Core/IBridge.cs), the **side-by-side**
+cases (wide and book) go to the platform's own container instead; collapsing and stacking stay composite on
+purpose, so `MinWideWidth`/`PanePriority` mean the same thing everywhere.
+
+| Backend | Split on the fold | Wide / narrow by width | Renderer |
+|---|---|---|---|
+| iOS 27.1+ (SwiftUI) | ✅ (iPhone Duo) | ✅ | `ArrangementView { } secondary: { }.arrangementViewStyle(.split)` — Apple places the split at the fold and applies its **own** compact-width rule on top: in a compact window it shows only the primary pane even when C# asked for two (seen on the Duo outer display with `MinWideWidth(0)`). Stacked/single: composite. |
+| iOS < 27.1 | — (no fold API) | ✅ | Composite `Grid`. |
+| Android (Compose) | ✅ | ✅ | material3-adaptive `ListDetailPaneScaffold`, forced to two partitions, both panes expanded; hinge-aware via its own directive. Tabletop/stacked/single: composite. |
+| Web (Blazor) | ✅ Chromium with viewport segments | ✅ | Composite. |
+| Skia MAUI host (Android/iOS) | ✅ | ✅ | Composite (self-drawn `Grid`). |
+| macOS, tvOS, GTK, WinUI, WPF, TUI, other Skia hosts, Godot, Unity, MonoGame, Wayland | — | **No window size reported → always side by side** | Composite. |
+
+### Gotchas
+
+- **v1 assumes it fills the root area.** Fold coordinates arrive in root coordinates and Core can't yet ask a
+  view for its own frame (that needs a geometry-reader node). Use it as the root, or as a full-screen
+  tab/page. Under a navigation bar, a *tabletop* split sits a bar's height off the fold; a book split is exact.
+- **Without a reported window size it never collapses** — on desktop and self-drawn hosts it is always two
+  panes. Call `WindowPosture.Report(...)` from your host if you want the width rule there.
+- **The fold beats `MinWideWidth`.** A half-open device splits on the fold even in a narrow window
+  (a flip phone in tabletop is ~400dp wide, and top/bottom is exactly what it wants).
+- **Switching layouts changes the tree shape** (single → split), so platform-local state inside a pane —
+  a scroll offset — resets on a fold. `State<T>` is unaffected.
+- **Panes are top-aligned in their cells**; greedy content (`List`, `ScrollView`, `NavigationStack`) fills them.
+
+**Status:** ✅ Layout selection, the native seam and Skia placement covered by
+[`WindowPostureTests.cs`](../tests/SwiftDotNet.Tests/WindowPostureTests.cs). ✅ **Android** verified on a Pixel
+Fold AVD (API 35): native scaffold wide and on a book fold; composite on a book fold (split at 421dp), tabletop
+(split at y 421) and single pane on the folded outer display; ✅ the **Skia MAUI host** split on a book fold on
+the same AVD. ✅ **iOS composite** wide split and native `ArrangementView` (compact → primary only) seen on the
+iPhone Duo simulator, closed. ❓ The Duo **opened** (fold split) is unverified — the simulator hinge is only
+drivable from DeviceHub's GUI. 🧩 Web unverified. Plan: [`plans/foldables-plan.md`](../plans/foldables-plan.md).
+
+Source: [`TwoPaneView.cs`](../src/SwiftDotNet/Core/Views/TwoPaneView.cs).
 
 ## Navigation & presentation
 

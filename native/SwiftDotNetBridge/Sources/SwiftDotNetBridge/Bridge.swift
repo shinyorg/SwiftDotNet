@@ -792,6 +792,8 @@ struct NodeView: View {
             SwiftUI.ZStack(alignment: alignmentFor(node.props["alignment"]?.string)) { childViews }
         case "Spacer":
             SwiftUI.Spacer()
+        case "TwoPaneView":
+            TwoPaneNodeView(node: node)
         case "Divider":
             SwiftUI.Divider()
         case "ScrollView":
@@ -1579,12 +1581,20 @@ struct WebEngineView: NSViewRepresentable {
 struct RootHostView: View {
     var store = RenderStore.shared
     var body: some View {
-        content
         #if os(iOS)
-            // Layout-neutral: an empty overlay that only listens for notifications and reports the
-            // *window's* insets to C#. Deliberately not a GeometryReader around the root — that would
-            // re-align and re-inset every existing app's layout.
-            .overlay(SafeAreaReporter().frame(width: 0, height: 0))
+        // The posture reporter is a *sibling* GeometryReader, not a wrapper: it fills the root area (the
+        // same proposal the hosting controller gives `content`), and the ZStack centres `content` in it
+        // exactly as the hosting controller did, so existing layouts are untouched.
+        SwiftUI.ZStack {
+            PostureReporter()
+            content
+                // Layout-neutral: an empty overlay that only listens for notifications and reports the
+                // *window's* insets to C#. Deliberately not a GeometryReader around the root — that would
+                // re-align and re-inset every existing app's layout.
+                .overlay(SafeAreaReporter().frame(width: 0, height: 0))
+        }
+        #else
+        content
         #endif
     }
 
@@ -1652,6 +1662,128 @@ private extension UIWindow {
     }
 }
 #endif
+
+#if os(iOS)
+/// Pushes the window posture to C# on the reserved `$posture` event id:
+/// `"state;orientation;x;y;w;h;angle;windowW;windowH"` in points, relative to the root area (the safe area
+/// the C# tree lays out in). The root area's size is reported on every iOS version — `TwoPaneView` needs it
+/// for its width rule; the fold only from iOS 27.1 (iPhone Duo), from `GeometryProxy.reservedRegions(kind:
+/// .division)` for geometry and `.onHingeChange` for status and angle. A division region is only present
+/// while the device is partly open, so its presence is what makes the state `halfOpen`.
+private struct PostureReporter: View {
+    @State private var lastPayload = ""
+    /// "closed" / "partiallyOpen" / "fullyOpen", or nil while no hinge update has arrived.
+    @State private var hingeStatus: String?
+    @State private var hingeAngle: Double?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let payload = makePayload(proxy)
+            Color.clear
+                .onAppear { send(payload) }
+                .onChange(of: payload) { _, new in send(new) }
+        }
+        .modifier(HingeListener(status: $hingeStatus, angle: $hingeAngle))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func makePayload(_ proxy: GeometryProxy) -> String {
+        var state = "none"
+        var orientation = "none"
+        var fold = CGRect.zero
+        if #available(iOS 27.1, *) {
+            if let region = proxy.reservedRegions(kind: .division).first(where: \.isActive) {
+                state = "halfOpen"
+                fold = region.frame
+                orientation = fold.height >= fold.width ? "vertical" : "horizontal"
+            } else if hingeStatus == "fullyOpen" || hingeStatus == "partiallyOpen" {
+                // Open, but nothing divides this window (fully flat, or the window doesn't cross the fold).
+                state = "flat"
+            }
+        }
+        let angle = hingeAngle.map { String(format: "%f", $0) } ?? ""
+        return String(format: "%@;%@;%f;%f;%f;%f;%@;%f;%f",
+                      state, orientation, fold.minX, fold.minY, fold.width, fold.height, angle,
+                      proxy.size.width, proxy.size.height)
+    }
+
+    private func send(_ payload: String) {
+        guard payload != lastPayload else { return }
+        lastPayload = payload
+        emitEvent(POSTURE_EVENT_ID, payload)
+    }
+}
+
+/// `.onHingeChange` exists only from iOS 27.1; this keeps the `#available` out of the reporter's body.
+private struct HingeListener: ViewModifier {
+    @Binding var status: String?
+    @Binding var angle: Double?
+
+    func body(content: Content) -> some View {
+        if #available(iOS 27.1, *) {
+            content.onHingeChange { _, new in
+                guard let hinge = new.hinge else { status = nil; angle = nil; return }
+                switch hinge.status {
+                case .closed: status = "closed"
+                case .partiallyOpen: status = "partiallyOpen"
+                case .fullyOpen: status = "fullyOpen"
+                default: status = nil
+                }
+                angle = hinge.angle.degrees
+            }
+        } else {
+            content
+        }
+    }
+}
+#endif
+
+/// Reserved event id for window-posture reports — mirrors `SwiftDotNet.WindowPosture.EventId`.
+let POSTURE_EVENT_ID = "$posture"
+
+/// `TwoPaneView`, natively. C# sends this node only when both panes should show side by side (a wide
+/// window, or a book fold); collapsed and stacked layouts arrive as composites. From iOS 27.1 it is
+/// SwiftUI's `ArrangementView` with the `.split` style, which places the split on the fold itself and
+/// takes part in the system's foldable adaptations; before that (and on macOS/tvOS/watchOS, which C# never
+/// sends it to) an equal-width `HStack` stands in so the node can never render as "unknown".
+struct TwoPaneNodeView: View {
+    let node: VNode
+
+    var body: some View {
+        #if os(iOS)
+        if #available(iOS 27.1, *) {
+            ArrangementView {
+                pane(0)
+            } secondary: {
+                pane(1)
+            }
+            .arrangementViewStyle(.split.axes(.horizontal))
+            // On a fold the system decides the split; otherwise the C# ratio does.
+            .splitArrangementLayoutRatio(onFold ? nil : CGFloat(ratio))
+        } else {
+            fallback
+        }
+        #else
+        fallback
+        #endif
+    }
+
+    private var ratio: Double { node.props["ratio"]?.number ?? 0.5 }
+    private var onFold: Bool { node.props["fold"]?.bool ?? false }
+
+    private var fallback: some View {
+        SwiftUI.HStack(spacing: CGFloat(node.props["spacing"]?.number ?? 0)) {
+            pane(0).frame(maxWidth: .infinity, maxHeight: .infinity)
+            pane(1).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private func pane(_ i: Int) -> some View {
+        if i < node.children.count { NodeView(node: node.children[i]) }
+    }
+}
 
 /// Reserved event id for safe-area inset reports — mirrors `SwiftDotNet.SafeArea.EventId`. Node ids are
 /// structural paths rooted at "0", so a `$` prefix can never collide with one.

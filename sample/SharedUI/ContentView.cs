@@ -48,6 +48,10 @@ public sealed class ContentView : View
     readonly State<double> _dragBaseY = State(0.0);
     readonly State<double> _zoom = State(1.0);
 
+    // Foldables
+    readonly State<int> _foldFruit = State(0);
+    readonly State<bool> _nativeTwoPane = State(Environment.GetEnvironmentVariable("SDN_TWOPANE_NATIVE") != "0");
+
     // Maps (renders as MapLibre on Web / MapKit on Apple; graceful ⚠️ placeholder where no renderer is registered)
     readonly State<MapCamera> _mapCamera = State(new MapCamera(new MapCoordinate(51.5074, -0.1278), 12));
     readonly State<List<MapCoordinate>> _route = State(new List<MapCoordinate>());
@@ -57,7 +61,26 @@ public sealed class ContentView : View
 
     // The flyout: a grouped menu that pushes detail pages. Sections are the flyout groups; each row carries an
     // SF-Symbol icon and pushes onto the stack. This replaces the old bottom TabView tour.
-    public override View Body =>
+    // SDN_SAMPLE_PAGE=foldables opens the Foldables page as the root — a verification hook for simulators
+    // that can't be tapped from a script (`SIMCTL_CHILD_SDN_SAMPLE_PAGE=foldables xcrun simctl launch …`), and
+    // the shape TwoPaneView v1 is designed for: filling the root, so fold coordinates line up exactly.
+    // SDN_SAMPLE_PAGE=tabs wraps the tour and the Foldables page in a tab bar instead — the check for iOS
+    // 27.1's side ("vertical") bars on iPhone Duo, which only a real TabView shows.
+    static readonly string? RootPage = Environment.GetEnvironmentVariable("SDN_SAMPLE_PAGE");
+
+    public override View Body => RootPage switch
+    {
+        "foldables" => FoldablesPage(),
+        // Forces the side-by-side split even on a phone-width window, so the native containers
+        // (ArrangementView / ListDetailPaneScaffold) can be checked without a fold.
+        "foldables-wide" => FoldablesPage(minWideWidth: 0),
+        "tabs" => new TabView(
+            new Tab("Tour", "list.bullet", Tour()),
+            new Tab("Foldables", "rectangle.split.2x1", FoldablesPage())),
+        _ => Tour(),
+    };
+
+    View Tour() =>
         new NavigationStack(
             new Form(
                 new Section("Controls",
@@ -72,7 +95,8 @@ public sealed class ContentView : View
                 new Section("Layout",
                     Row("Shapes & Grid", "square.grid.2x2", ShapesPage()),
                     Row("Stacks & Alignment", "rectangle.3.offgrid", AlignmentPage()),
-                    Row("Cards & Borders", "rectangle.portrait", CardsPage())),
+                    Row("Cards & Borders", "rectangle.portrait", CardsPage()),
+                    Row("Foldables", "rectangle.split.2x1", FoldablesPage())),
 
                 new Section("Media",
                     Row("Carousel", "rectangle.stack", CarouselPage()),
@@ -100,6 +124,54 @@ public sealed class ContentView : View
                     Row("Sheets & Alerts", "arrow.forward.circle", NavPage()))
             ).NavigationTitle("SwiftDotNet")
         );
+
+    // ── Foldables ───────────────────────────────────────────────────────────
+
+    // A list/detail TwoPaneView over the live WindowPosture. Fold a Pixel Fold AVD (`adb emu posture 2/3`,
+    // `adb emu fold`) or an iPhone Duo simulator to watch it split on the fold, stack in tabletop, and collapse
+    // on the outer screen. v1 assumes the view fills the root, so inside this pushed page a *tabletop* split
+    // sits a navigation-bar's height off the fold; a book split is exact.
+    View FoldablesPage(double minWideWidth = 600)
+    {
+        var posture = WindowPosture.Current;
+        var two = new TwoPaneView(FoldList(posture), FoldDetail())
+            .MinWideWidth(minWideWidth)
+            .TallModeConfiguration(TallMode.SinglePane)
+            .UseNativeContainer(_nativeTwoPane.Value);
+        return two.NavigationTitle("Foldables");
+    }
+
+    View FoldList(PostureInfo p)
+    {
+        var rows = new List<View>
+        {
+            new Text("PRIMARY").Font(Font.Caption).ForegroundColor(Color.Blue),
+            new Text($"Fold: {p.State} · {p.Orientation}").Font(Font.Headline),
+            new Text(p.HasFold
+                    ? $"at x {p.FoldX:F0}, y {p.FoldY:F0} · {p.FoldWidth:F0}×{p.FoldHeight:F0}"
+                    : "no fold divides the window")
+                .Font(Font.Caption).ForegroundColor(Color.Secondary),
+            new Text(p.HasWindowSize ? $"Window {p.WindowWidth:F0}×{p.WindowHeight:F0}" : "Window size not reported")
+                .Font(Font.Caption).ForegroundColor(Color.Secondary),
+            new Text(p.HingeAngleDegrees is { } a ? $"Hinge {a:F0}° (effects only)" : "No hinge angle")
+                .Font(Font.Caption).ForegroundColor(Color.Secondary),
+            new Toggle("Native container", _nativeTwoPane),
+            new Divider(),
+        };
+        for (var i = 0; i < Fruits.Length; i++)
+        {
+            var index = i;
+            rows.Add(new Button((i == _foldFruit.Value ? "▶ " : "") + Fruits[i], () => _foldFruit.Value = index));
+        }
+        return new ScrollView(rows.ToArray()).Padding(16);
+    }
+
+    View FoldDetail() =>
+        new VStack(
+            new Text("SECONDARY").Font(Font.Caption).ForegroundColor(Color.Green),
+            new Text(Fruits[_foldFruit.Value].Split(' ')[0]).Font(Font.LargeTitle).ScaleEffect(2.5).Padding(40),
+            new Text(Fruits[_foldFruit.Value].Split(' ')[1]).Font(Font.Title)
+        ).Spacing(12).Padding(16);
 
     // A single flyout menu row: SF-Symbol icon + title that pushes a page.
     static NavigationLink Row(string title, string symbol, View destination) =>

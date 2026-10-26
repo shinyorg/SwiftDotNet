@@ -25,11 +25,12 @@ This is the documentation set. Start with **[Getting Started](getting-started.md
 - **[Hosting & Dependency Injection](hosting-and-di.md)** — `SwiftProgram.CreateSwiftApp()`, the builder,
   `[Inject]` services, view lifecycle, and the `UseX()` seam.
 - **[Views & Controls](views-and-controls.md)** — the full vocabulary: layout, navigation & presentation
-  (including [alerts & action sheets](views-and-controls.md#alerts--action-sheets)), inputs, and display
-  views.
+  (including [alerts & action sheets](views-and-controls.md#alerts--action-sheets) and the foldable-aware
+  [`TwoPaneView`](views-and-controls.md#twopaneview)), inputs, and display views.
 - **[Modifiers, Gestures & Animation](modifiers-gestures-animation.md)** — the universal modifier pass,
-  one-shot gestures, implicit animation, and multi-track
-  [keyframe timelines](modifiers-gestures-animation.md#keyframe-animations).
+  one-shot gestures, implicit animation, multi-track
+  [keyframe timelines](modifiers-gestures-animation.md#keyframe-animations), and the host-pushed safe area and
+  [window posture](modifiers-gestures-animation.md#window-posture-foldables--iphone-duo) (foldables, iPhone Duo).
 - **[State & Data Binding](state-and-binding.md)** — `State<T>`, two-way bindings, and the re-render loop.
 - **[Collection View (`List`)](collection-view.md)** — keyed identity, recycling, virtualization, selection,
   grids, sections, refresh, and load-more.

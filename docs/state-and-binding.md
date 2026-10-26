@@ -76,7 +76,9 @@ Not every re-render starts from a `State<T>` you own. `SafeArea.Current` (iOS/An
 host* on a reserved event id and drives the same loop: a change stores the new insets and calls
 `RequestRender`, so a `Body` reading it recomputes exactly as if you'd assigned to a state cell. An
 unchanged report is dropped without scheduling anything. See
-[Safe area](modifiers-gestures-animation.md#safe-area-ios--android-only).
+[Safe area](modifiers-gestures-animation.md#safe-area-ios--android-only). `WindowPosture.Current` (fold +
+root size) rides the same mechanism on the `$posture` id — see
+[Window posture](modifiers-gestures-animation.md#window-posture-foldables--iphone-duo).
 
 ## Collections
 

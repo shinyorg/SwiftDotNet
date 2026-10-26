@@ -196,6 +196,18 @@ The engine is host-agnostic via `ISkiaHost`. Available hosts:
 | **WPF** | [`src/SwiftDotNet.Skia.Wpf`](../../src/SwiftDotNet.Skia.Wpf) + [`sample/SampleApp.Skia.Wpf`](../../sample/SampleApp.Skia.Wpf) | `SwiftDotNetSkiaElement` — a `FrameworkElement` painting into a `WriteableBitmap` back buffer, blitted in `OnRender`; mouse/wheel/`TextInput` → router → bridge; a `DispatcherTimer(16ms)` drives the animation clock and `router.Poll`. Zoom is ctrl+wheel (WPF raises no pinch for a mouse). Deliberately **not** built on `SkiaSharp.Views.WPF`, which is a .NET-Framework-only package that drags in OpenTK. 🧩 Compiles clean, never run. |
 | **Windows Forms** | [`src/SwiftDotNet.Skia.WindowsForms`](../../src/SwiftDotNet.Skia.WindowsForms) + [`sample/SampleApp.Skia.WinForms`](../../sample/SampleApp.Skia.WinForms) | `SwiftDotNetSkiaControl` — a `Control` painting into a locked 32bpp GDI+ `Bitmap`, blitted with `DrawImageUnscaled`. **The only WinForms backend there is**, on purpose — see [WinForms](winforms.md). 🧩 Compiles clean, never run. |
 
+> **Window posture (MAUI host).** [`SwiftDotNetSkiaView.Posture.cs`](../../src/SwiftDotNet.Skia.Maui/SwiftDotNetSkiaView.Posture.cs)
+> calls `WindowPosture.Report` with the view's size on every `SizeChanged` (all TFMs), plus the fold: on
+> Android from Jetpack WindowManager (`WindowInfoTrackerCallbackAdapter`, from the `Xamarin.AndroidX.Window.WindowJava`
+> binding it now references; the `DisplayFeatures` list yields invokers, so `FoldingFeature` is found with a
+> Java `IsInstance` check + `JavaCast`, never `OfType`), and on iOS 27.1 from a `UIHingeInteraction` plus
+> `UIView` `reservedRegionsOfKind:division`. The MAUI workload compiles `net10.0-ios` against the **iOS 26**
+> reference pack, which has no hinge bindings, and retargeting to `net10.0-ios27.1` would force it on every
+> app — so those few calls go through `objc_msgSend` and a `BlockLiteral` (arm64 only; `AllowUnsafeBlocks`).
+> Coordinates are view-relative. ✅ Android: book fold reported and split on a Pixel Fold AVD. ✅ iOS: size and
+> hinge updates arrive on the iPhone Duo simulator (closed; opening it wasn't drivable). The sample's iOS head
+> gained a scene manifest + `SceneDelegate : MauiUISceneDelegate`, without which iOS 27 kills it at launch.
+
 > An iOS app hosting this view must also `<Import>` [`SwiftDotNetBridge.targets`](../../src/SwiftDotNet/SwiftDotNetBridge.targets)
 > — the app's ProjectReference graph resolves `SwiftDotNet` to its iOS slice, whose Swift-bridge P/Invokes
 > the native linker must resolve even though the Skia route never calls them.

@@ -25,6 +25,27 @@
 	<array>
 		<string>arm64</string>
 	</array>
+	<!-- UIScene lifecycle. Required from iOS 27: an app built without a scene manifest is killed at launch
+	     (_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption, verified on the iOS 27.1 simulator).
+	     It is also what lets an iPhone Duo deliver hinge updates and posture to the window. The phone window
+	     comes from SwiftDotNetSceneDelegate, built from the same app as SwiftDotNetAppDelegate. -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>SwiftDotNetSceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

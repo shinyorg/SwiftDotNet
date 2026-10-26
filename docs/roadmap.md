@@ -95,6 +95,19 @@ WinForms) so `WebView`/`Map` work there too; and the guest direction (a MAUI con
 Compose tree) compiles on every platform but has never run — the WinUI third of it has never compiled,
 along with the rest of that backend.
 
+### Foldables & iPhone Duo — **implemented; Android verified, Duo opened unverified**
+[`plans/foldables-plan.md`](../plans/foldables-plan.md) · docs: [Window posture](modifiers-gestures-animation.md#window-posture-foldables--iphone-duo),
+[`TwoPaneView`](views-and-controls.md#twopaneview). All six phases are built: the `$posture` channel
+(`WindowPosture` / `PostureInfo`), reporters in the Swift and Kotlin shims, the Blazor host and the Skia MAUI
+host, a composite `TwoPaneView`, and native `ArrangementView` (iOS 27.1+) / `ListDetailPaneScaffold`
+(Android) for its side-by-side cases. ✅ 26 tests; ✅ Android (Compose and Skia MAUI) on a Pixel Fold AVD —
+book, tabletop, folded; ✅ iPhone Duo simulator **closed** (root size, hinge updates, side bars). What's left:
+**open the Duo** (DeviceHub's hinge isn't scriptable) and check the fold split, `ArrangementView` on a fold
+and the inner display's side bars; run the Web reporter in Chromium with a foldable viewport (the Blazor
+sample first needs its unrelated `[Inject]` startup error fixed); re-run Wear on a watch AVD after the Compose
+1.12 bump; a geometry-reader node so `TwoPaneView` needn't fill the root; per-window posture (after
+[multi-window](../plans/windows-plan.md) Step 0).
+
 ### Accessibility & screen readers
 [`plans/accessibility-plan.md`](../plans/accessibility-plan.md) — nothing is built. Ten SwiftUI-style
 modifiers (`.AccessibilityLabel`/`Hint`/`Value`/`Hidden`/traits/grouping/actions), an `Accessibility`

@@ -33,7 +33,8 @@ Everything platform-neutral lives in [`src/SwiftDotNet/Core`](../src/SwiftDotNet
 | Node model | `Node.cs`, `NodeBuilder.cs` | The serializable tree a `View` lowers to via `ToNode()` |
 | Serialization | `NodeJson.cs` | Hand-rolled JSON — **zero reflection, trim/AOT-safe** (no IL2026) |
 | Diff engine | `TreeDiffer.cs` | Produces `replace` / `updateProps` / `setChildren` patches |
-| Bridge contract | `IBridge.cs` | The one interface each backend implements |
+| Bridge contract | `IBridge.cs` | The one interface each backend implements (+ optional `IBridgeCapabilities`) |
+| Host-pushed ambient state | `SafeArea.cs`, `WindowPosture.cs` | Device values a host reports on reserved `$`-prefixed event ids |
 | Runtime | `SwiftApp.cs` | Drives render, applies patches through `IBridge`, routes events |
 | Styling | `EnvironmentValues.cs`, `Styles.cs`, `Theme.cs`, `Modifier.cs` | See [Global Styles](global-styles.md) |
 | Layout math | `GridLayout.cs`, `GridEngine.cs` | `GridTrack`/`LayoutFlags` and the shared grid-placement + proportional-bounds math — see below |
@@ -307,6 +308,14 @@ reach services via `[Inject]` / `Service<T>()`. See
   **strong-skipping** means an in-place VNode mutation is *skipped* unless props/children are observable.
 - JSON is hand-rolled (`NodeJson`) precisely to stay trim/AOT-safe.
 - `Date` crosses the bridge as Unix epoch seconds; `ColorPicker` as a hex string.
+- **Host → C# device values ride the event callback** under reserved ids (`$safeArea`, `$posture`) that no
+  structural node path (rooted at `"0"`) can produce. `SwiftApp.OnEvent` routes them to a static
+  (`SafeArea.Current`, `WindowPosture.Current`) that de-dupes and calls `RequestRender` — no new ABI, and every
+  host that can already emit an event can report. Not part of `EnvironmentValues`, which is app-set and top-down.
+- **A composite can opt into a native container per bridge.** `IBridgeCapabilities.SupportsNativeView(type)` lets
+  a view's `BuildNode` emit a native node only where the bridge draws it (`TwoPaneView` → SwiftUI
+  `ArrangementView` on iOS 27.1+, Compose `ListDetailPaneScaffold`) and its composite `Body` everywhere else, so
+  no backend ever sees an unknown node.
 
 For where the architecture is still open (DI, per-view reconciliation, binary protocol), see the
 **[Roadmap](roadmap.md)**.

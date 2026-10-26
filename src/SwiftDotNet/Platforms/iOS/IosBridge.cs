@@ -9,8 +9,13 @@ namespace SwiftDotNet;
 /// and bridges events back from SwiftUI into managed callbacks. Internal — apps use
 /// <see cref="SwiftDotNetHost"/>.
 /// </summary>
-internal sealed unsafe partial class IosBridge : IBridge
+internal sealed unsafe partial class IosBridge : IBridge, IBridgeCapabilities
 {
+    /// <summary>The Swift shim draws <c>TwoPaneView</c> with SwiftUI's <c>ArrangementView</c>, which only exists
+    /// from iOS 27.1; earlier systems get the composite.</summary>
+    public bool SupportsNativeView(string viewType)
+        => viewType == TwoPaneView.NativeType && OperatingSystem.IsIOSVersionAtLeast(27, 1);
+
     // The bridge framework is a load-time dependency (embedded in the app bundle), so its
     // exported @_cdecl symbols are in the global namespace. Resolving via "__Internal"
     // (dlsym RTLD_DEFAULT) avoids the @rpath-vs-dlopen-leaf-name resolution problem.

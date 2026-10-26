@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalMaterial3AdaptiveApi::class)
 
 package com.swiftdotnet.bridge
 
@@ -79,6 +79,19 @@ import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
+import androidx.compose.material3.adaptive.layout.AnimatedPane
+import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffold
+import androidx.compose.material3.adaptive.layout.PaneAdaptedValue
+import androidx.compose.material3.adaptive.layout.ThreePaneScaffoldValue
+import androidx.compose.material3.adaptive.layout.calculatePaneScaffoldDirective
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
+import androidx.window.layout.WindowLayoutInfo
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -536,6 +549,8 @@ private fun rowAlignFor(token: String?): Alignment.Vertical = when (token) {
 
 /** Reserved event id for safe-area inset reports — mirrors `SwiftDotNet.SafeArea.EventId`. */
 private const val SAFE_AREA_EVENT_ID = "\$safeArea"
+/** Reserved event id for window-posture reports — mirrors `SwiftDotNet.WindowPosture.EventId`. */
+private const val POSTURE_EVENT_ID = "\$posture"
 
 /**
  * Builds the `WindowInsets` a `safeAreaPadding` / `ignoresSafeArea` modifier refers to: the
@@ -929,8 +944,15 @@ fun RenderNode(node: VNode) = NodeView(node)
 private fun RootHostView() {
     val root = SwiftDotNetBridge.root
     ReportSafeAreaInsets()
+    // The root box's bounds in the window: posture geometry is reported relative to it, which is the
+    // space the C# tree lays out in (and equals the window when the activity is edge-to-edge).
+    var rootBounds by remember { mutableStateOf<Rect?>(null) }
+    ReportPosture(rootBounds)
     val body: @Composable () -> Unit = {
-        Box(Modifier.fillMaxSize(), contentAlignment = LocalRootAlignment.current) {
+        Box(
+            Modifier.fillMaxSize().onGloballyPositioned { rootBounds = it.boundsInWindow() },
+            contentAlignment = LocalRootAlignment.current,
+        ) {
             if (root != null) NodeView(root)
             else Text("SwiftDotNet: waiting for first render…", Modifier.align(Alignment.Center))
         }
@@ -962,6 +984,91 @@ private fun ReportSafeAreaInsets() {
     LaunchedEffect(payload) { SwiftDotNetBridge.emit(SAFE_AREA_EVENT_ID, payload) }
 }
 
+/**
+ * Pushes the window posture to C# on the reserved `$posture` event id:
+ * `"state;orientation;x;y;w;h;angle;windowW;windowH"` in dp, relative to the root box. The fold comes from
+ * Jetpack WindowManager's `windowLayoutInfo` Flow (the first `FoldingFeature`); Android has no hinge angle,
+ * so that field is always empty. A fold that is `HALF_OPENED` — or a hinge that separates two displays —
+ * divides the window (`halfOpen`); a flat one is reported as `flat` with no geometry. Keyed on the payload
+ * like the safe-area reporter, so it emits only when something changes.
+ */
+@Composable
+private fun ReportPosture(root: Rect?) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val density = LocalDensity.current.density
+    var layoutInfo by remember { mutableStateOf<WindowLayoutInfo?>(null) }
+    val activity = remember(context) { context.findActivity() }
+    if (activity != null) {
+        LaunchedEffect(activity) {
+            WindowInfoTracker.getOrCreate(activity).windowLayoutInfo(activity).collect { layoutInfo = it }
+        }
+    }
+    if (root == null || root.width <= 0f) return
+
+    val fold = layoutInfo?.displayFeatures?.filterIsInstance<FoldingFeature>()?.firstOrNull()
+    fun dp(px: Float) = (px / density).toString()
+    val divides = fold != null && (fold.state == FoldingFeature.State.HALF_OPENED || fold.isSeparating)
+    val payload = buildString {
+        when {
+            fold == null -> append("none;none;0;0;0;0")
+            !divides -> append("flat;none;0;0;0;0")
+            else -> {
+                val b = fold.bounds
+                append("halfOpen;")
+                append(if (fold.orientation == FoldingFeature.Orientation.VERTICAL) "vertical" else "horizontal")
+                append(';').append(dp(b.left - root.left)).append(';').append(dp(b.top - root.top))
+                append(';').append(dp(b.width().toFloat())).append(';').append(dp(b.height().toFloat()))
+            }
+        }
+        append(";;").append(dp(root.width)).append(';').append(dp(root.height))
+    }
+    LaunchedEffect(payload) { SwiftDotNetBridge.emit(POSTURE_EVENT_ID, payload) }
+}
+
+private tailrec fun Context.findActivity(): android.app.Activity? = when (this) {
+    is android.app.Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+/**
+ * `TwoPaneView`, natively: Material 3's `ListDetailPaneScaffold`. C# only sends this node when both panes
+ * should show side by side (wide window or a book fold) — collapsing and stacked layouts stay composites —
+ * so the directive is forced to two horizontal partitions and both panes are expanded. The scaffold's own
+ * directive still carries the hinge as an excluded bound, so on a book fold it splits on the hinge; in a
+ * wide window the list pane is sized from the C# `ratio`.
+ */
+@Composable
+private fun TwoPaneNode(node: VNode) {
+    val primary = node.children.getOrNull(0)
+    val secondary = node.children.getOrNull(1)
+    val onFold = node.props["fold"] as? Boolean ?: false
+    val ratio = (node.n("ratio") ?: 0.5).toFloat()
+    val base = calculatePaneScaffoldDirective(currentWindowAdaptiveInfo())
+    val directive = base.copy(
+        maxHorizontalPartitions = 2,
+        horizontalPartitionSpacerSize = if (onFold) base.horizontalPartitionSpacerSize else (node.n("spacing") ?: 0.0).dp,
+    )
+    val value = ThreePaneScaffoldValue(
+        primary = PaneAdaptedValue.Expanded,     // detail
+        secondary = PaneAdaptedValue.Expanded,   // list
+        tertiary = PaneAdaptedValue.Hidden,      // extra
+    )
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val listWidth = maxWidth * ratio
+        ListDetailPaneScaffold(
+            directive = directive,
+            value = value,
+            listPane = {
+                AnimatedPane(if (onFold) Modifier else Modifier.preferredWidth(listWidth)) {
+                    primary?.let { NodeView(it) }
+                }
+            },
+            detailPane = { AnimatedPane { secondary?.let { NodeView(it) } } },
+        )
+    }
+}
+
 @Composable
 private fun NodeView(node: VNode) = Modified(node) { RawNode(node) }
 
@@ -980,6 +1087,7 @@ private fun RawNode(node: VNode) {
         "Text" -> Text(node.s("text"))
         "Button" -> Button(onClick = { SwiftDotNetBridge.emit(node.id, null) }) { Text(node.s("title")) }
         "Spacer" -> Spacer(Modifier.size(8.dp))
+        "TwoPaneView" -> TwoPaneNode(node)
         "Divider" -> HorizontalDivider()
 
         "VStack" -> Column(
@@ -1324,25 +1432,38 @@ private fun GridNode(node: VNode) {
         val colSpans = placements.map { it.column to it.columnSpan }
         val rowSpans = placements.map { it.row to it.rowSpan }
 
-        // Pass 1: natural sizes drive the content-sized columns.
-        val natural = measurables.map { it.measure(Constraints()) }
-        val availableW = if (constraints.hasBoundedWidth) constraints.maxWidth.toFloat()
-                         else natural.sumOf { it.width }.toFloat()
-        val colW = resolveTracks(cols, availableW, colGapPx, colSpans, natural.map { it.width.toFloat() })
-
         fun extent(sizes: FloatArray, start: Int, count: Int, gap: Float): Float {
             var total = 0f
             for (i in start until minOf(start + count, sizes.size)) total += sizes[i]
             return total + gap * maxOf(0, minOf(count, sizes.size - start) - 1)
         }
 
-        // Pass 2: re-measure inside the resolved cell so wrapping text reports its real height.
-        val cells = measurables.mapIndexed { i, m ->
-            val w = extent(colW, placements[i].column, placements[i].columnSpan, colGapPx).toInt()
-            m.measure(Constraints(maxWidth = maxOf(0, w)))
+        // Sizing runs on intrinsics, and each child is measured exactly once, at the end, inside its
+        // resolved cell. Compose forbids measuring a Measurable twice in one pass, and an exploratory
+        // measure with unbounded constraints throws outright for a scrollable child (a ScrollView or List
+        // pane — the TwoPaneView case). Intrinsics answer "how big would you like to be" without either.
+        // Pass 1: natural widths drive the content-sized columns.
+        val naturalW = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity).toFloat() }
+        val availableW = if (constraints.hasBoundedWidth) constraints.maxWidth.toFloat()
+                         else naturalW.sum()
+        val colW = resolveTracks(cols, availableW, colGapPx, colSpans, naturalW)
+
+        // Pass 2: natural heights at the resolved width (wrapping text reports its real height).
+        val cellWidths = measurables.indices.map {
+            extent(colW, placements[it].column, placements[it].columnSpan, colGapPx).toInt().coerceAtLeast(0)
         }
+        val naturalH = measurables.mapIndexed { i, m -> m.maxIntrinsicHeight(cellWidths[i]).toFloat() }
         val availableH = if (constraints.hasBoundedHeight) constraints.maxHeight.toFloat() else Float.MAX_VALUE
-        val rowH = resolveTracks(rows, availableH, rowGapPx, rowSpans, cells.map { it.height.toFloat() })
+        val rowH = resolveTracks(rows, availableH, rowGapPx, rowSpans, naturalH)
+
+        // Pass 3: the one real measure, bounded by the cell — a greedy child fills it, a scrollable child
+        // gets the finite height it requires. Only a cell in an unbounded grid stays unbounded.
+        val cells = measurables.mapIndexed { i, m ->
+            val h = extent(rowH, placements[i].row, placements[i].rowSpan, rowGapPx)
+            val maxH = if (h >= Constraints.Infinity.toFloat() || h >= Float.MAX_VALUE / 2) Constraints.Infinity
+                       else h.toInt().coerceAtLeast(0)
+            m.measure(Constraints(maxWidth = cellWidths[i], maxHeight = maxH))
+        }
 
         val totalW = (colW.sum() + colGapPx * maxOf(0, colW.size - 1)).toInt()
         val totalH = (rowH.sum() + rowGapPx * maxOf(0, rowH.size - 1)).toInt()

@@ -68,6 +68,11 @@ Produces `build/SwiftDotNetBridge.xcframework` with **5 slices**: `ios-arm64`, `
 (`Versions/A/…` with symlinks), unlike the flat iOS/tvOS layout. Min iOS/tvOS 17, min macOS 14 (for
 `@Observable`).
 
+**Requires Xcode 27.1+.** The deployment targets are unchanged, but the foldables support calls iOS 27.1
+SwiftUI API (`onHingeChange`, `GeometryProxy.reservedRegions(kind:)`, `ArrangementView`) behind
+`#available(iOS 27.1, *)`; an older SDK lacks the symbols entirely, so the script checks `xcodebuild -version`
+and stops with a clear error instead.
+
 ## The library & samples
 
 - [`src/SwiftDotNet`](../../src/SwiftDotNet) is one multi-target library; `Platforms/{iOS,macOS,tvOS}/` hold
@@ -97,11 +102,35 @@ See [Getting Started](../getting-started.md#ios-swiftui) for build/run commands.
   layout — wrapping the root in a `GeometryReader` would have re-aligned every existing app. Keyboard
   height comes from `UIResponder.keyboardWillChangeFrame`/`WillHide`, which SwiftUI has no equivalent for.
   See [Safe area](../modifiers-gestures-animation.md#safe-area-ios--android-only).
-- **Scene manifests.** Declaring `UIApplicationSceneManifest` (required for CarPlay) moves every window to a
+- **Scene manifests — now required on iOS 27.** An app built with the iOS 27 SDK and no
+  `UIApplicationSceneManifest` is terminated at launch (`_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`
+  — verified on the iOS 27.1 simulator, iPhone Duo; it isn't Duo-specific). The sample now declares one.
+  Declaring `UIApplicationSceneManifest` (also required for CarPlay) moves every window to a
   scene. `SwiftDotNetAppDelegate` notices the manifest, builds the app and returns without creating a window;
   point `UIWindowSceneSessionRoleApplication` at
   [`SwiftDotNetSceneDelegate`](../../src/SwiftDotNet/Platforms/iOS/SwiftDotNetSceneDelegate.cs) to get the
   phone UI back. `SwiftDotNetCar.targets` does this for you. See [CarPlay & Android Auto](../car.md).
+- **Foldables (iPhone Duo, iOS 27.1+).** `RootHostView` is a `ZStack` of a `PostureReporter` — a
+  `GeometryReader` *sibling* of the content, filling the same area the hosting controller proposes, so
+  existing layouts don't move — and the content. It reports the root size on every iOS version, and from
+  27.1 the fold: `reservedRegions(kind: .division)` (present only while partly open) for geometry,
+  `.onHingeChange` for status and angle. `TwoPaneView`'s side-by-side cases render as
+  `ArrangementView { } secondary: { }.arrangementViewStyle(.split.axes(.horizontal))` with
+  `.splitArrangementLayoutRatio(ratio)` (nil on a fold, so the system places the split); before 27.1 C# never
+  sends that node. See [Window posture](../modifiers-gestures-animation.md#window-posture-foldables--iphone-duo).
+  - **Hinge delivery on the host:** the plan worried a non-scene window wouldn't get hinge updates. Moot —
+    a non-scene app doesn't launch at all on iOS 27 (above). With the scene host, `.onHingeChange` fires on
+    the iPhone Duo simulator (closed: angle 0, no division region).
+  - **Side ("vertical") bars — open decision 3: ✅ confirmed.** Built with the 27.1 SDK, on the Duo simulator's
+    outer display the status bar sits vertically on the trailing edge and a real `TabView`
+    (`SDN_SAMPLE_PAGE=tabs`) renders its tab bar as a vertical pill on the trailing side — no shim changes.
+    The navigation bar stays on top. The opened (inner) display wasn't checked.
+  - **`ArrangementView` has its own compact rule.** Given both panes in a compact-width window (the Duo outer
+    display, forced with `SDN_SAMPLE_PAGE=foldables-wide`), it showed only the primary pane, while the composite
+    shows both. C#'s `MinWideWidth` normally keeps it from being asked.
+  - ❓ **Not verified: the Duo opened.** The simulator's hinge is driven only from Xcode 27.1's DeviceHub GUI
+    (no `simctl`/`devicectl` command), which couldn't be scripted here, so the fold geometry, book/tabletop
+    splits and `ArrangementView` on a fold are untested.
 - **Maps:** MapKit ships as a separate companion xcframework (`SwiftDotNetMaps`), registered via
   `AppleMaps.Register()` — it stays out of the core bridge. See [Maps](../maps.md).
 - **Alert / ActionSheet buttons need a dismissal guard.** SwiftUI dismisses the dialog *itself* when a

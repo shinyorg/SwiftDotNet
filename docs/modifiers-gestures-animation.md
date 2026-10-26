@@ -155,6 +155,68 @@ reads it recomputes automatically.
 Source: [`SafeArea.cs`](../src/SwiftDotNet/Core/SafeArea.cs),
 [`ViewModifiers.cs`](../src/SwiftDotNet/Core/ViewModifiers.cs).
 
+## Window posture (foldables & iPhone Duo)
+
+The safe area's sibling: a second host-pushed value describing the **fold** — whether one divides the
+window, where it is, which way it runs — plus the size of the root layout area. It's not a modifier; it's
+what [`TwoPaneView`](views-and-controls.md#twopaneview) reads, and any `Body` can read it too. There's no
+SwiftUI equivalent value — the closest are `DeviceHinge` (`.onHingeChange`) and
+`GeometryProxy.reservedRegions(kind: .division)`, which the iOS host is built on.
+
+```csharp
+var p = WindowPosture.Current;                  // live; PostureInfo.None until the host's first report
+if (p.IsBook)        { /* fold runs top-to-bottom at p.FoldX, p.FoldWidth wide */ }
+else if (p.IsTabletop) { /* fold runs side-to-side at p.FoldY */ }
+var wide = p.HasWindowSize && p.WindowWidth >= 600;
+```
+
+| API | What it is |
+|-----|------------|
+| `WindowPosture.Current` | The live `PostureInfo`. Readable on every platform — `PostureInfo.None` where nothing reports. |
+| `PostureInfo.State` | `None` (no fold divides the window — slab, closed, or not reported), `Flat` (has a fold, fully open), `HalfOpen` (the fold divides the window: partly open, or a separating hinge). |
+| `.Orientation`, `.FoldX/Y/Width/Height` | Fold geometry in points/dp, **root coordinates** (the window on Android, the safe area on iOS). Only meaningful when `HasFold`. |
+| `.IsBook` / `.IsTabletop` / `.HasFold` | Shorthands for half-open vertical / horizontal / either. |
+| `.WindowWidth` / `.WindowHeight` / `.HasWindowSize` | The root area's size; 0 where the host doesn't report it. |
+| `.HingeAngleDegrees` | iOS only (`null` elsewhere). **Effects only** — Apple is explicit that the angle is not a layout input; it changes continuously while the device moves. |
+| `WindowPosture.Report(PostureInfo)` | Push a posture from a host of your own (Unity, a preview, a test). De-duplicated. |
+| `WindowPosture.IsSupported` | True on iOS, Android and the browser — the platforms with a reporter. Informational; `Current` needs no guard. |
+
+| Host | Reports | Source |
+|------|---------|--------|
+| **iOS** (SwiftUI shim) | Root size on every iOS version; the fold from **iOS 27.1** (iPhone Duo) | `onHingeChange` (status, angle) + `reservedRegions(kind: .division)` (geometry) in a sibling `GeometryReader` on the root — layout-neutral |
+| **Android** (Compose shim) | Root size + fold | Jetpack WindowManager `windowLayoutInfo` Flow, first `FoldingFeature`; `HALF_OPENED` or `isSeparating` → `HalfOpen` |
+| **Web** (Blazor) | Viewport size + fold | `window.viewport.segments` (two segments → fold between them), re-checked on `navigator.devicePosture` change. Chromium only |
+| **Skia MAUI host** (Android/iOS/Catalyst) | View size everywhere; fold on Android (WindowManager) and iOS 27.1 (`UIHingeInteraction` + `UIView` reserved regions) | Reads the platform API itself and calls `WindowPosture.Report` |
+| macOS, tvOS, watchOS, GTK, WinUI, WPF, TUI, Godot, Unity, MonoGame, Wayland, other Skia hosts | Nothing — `PostureInfo.None` | — |
+
+> **Gotchas.**
+> - **There is no spanning mode.** A fully open foldable is one big window (`Flat`, no geometry); a closed
+>   one is the outer display (`None`). Only `HalfOpen` carries a fold. Lay out from width first, then the fold.
+> - **Root coordinates.** Fold geometry is relative to the area the C# tree lays out in. A view nested
+>   below a navigation bar sees the fold offset by the bar's height — `TwoPaneView` v1 assumes it fills the root.
+> - **First render sees `None`.** As with the safe area, hosts report after their first layout pass.
+> - **Android must not restart on fold.** Without `ConfigurationChanges` on the activity, folding recreates
+>   it and every `State<T>` is lost — see [Getting started](getting-started.md#android-jetpack-compose).
+> - **iOS needs the scene life cycle.** Apps built with the iOS 27 SDK must declare a scene manifest
+>   (they're killed at launch otherwise), and the shim's hinge APIs need the xcframework built with Xcode 27.1.
+> - **v1 is one posture per process** — per-window posture waits on [multi-window](../plans/windows-plan.md).
+> - **Wire:** `"state;orientation;x;y;w;h;angle;windowW;windowH"` on the reserved `$posture` event id,
+>   invariant culture, empty `angle` for none. Malformed reports are dropped; unchanged ones don't render.
+>
+> **Status:** ✅ Channel, parsing, de-dup and `TwoPaneView` layout covered by
+> [`WindowPostureTests.cs`](../tests/SwiftDotNet.Tests/WindowPostureTests.cs) (26 tests, incl. Skia layout).
+> ✅ **Android Compose host** verified on a Pixel Fold AVD (API 35): `flat` when open, `halfOpen · vertical`
+> at x 421 on `adb emu posture 2`, `halfOpen · horizontal` at y 421 after rotating, `none` after
+> `adb emu fold`. ✅ **Skia MAUI host on Android** verified on the same AVD (book fold reported, view-relative).
+> ✅ **iOS host** verified on the iPhone Duo simulator (iOS 27.1) *closed only*: root size and hinge updates
+> arrive (scene-based host); the same for the Skia MAUI host on iOS. ❓ **Opening the Duo was not
+> verified** — the iOS 27.1 simulator's hinge is driven only from Xcode 27.1's DeviceHub GUI, which could
+> not be scripted here. 🧩 **Web** reporter builds and its asset is served, but it was not run (the Blazor
+> sample fails at startup on an unrelated `[Inject]` error) and no foldable viewport was emulated.
+
+Source: [`WindowPosture.cs`](../src/SwiftDotNet/Core/WindowPosture.cs) · plan:
+[`plans/foldables-plan.md`](../plans/foldables-plan.md).
+
 ## Gestures
 
 One-shot gestures, attachable to any view. Each maps to the platform's native recognizer and fires back

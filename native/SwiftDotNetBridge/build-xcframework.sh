@@ -3,6 +3,11 @@ set -euo pipefail
 
 # Builds SwiftDotNetBridge.xcframework (dynamic frameworks: iOS device + iOS simulator + macOS, arm64)
 # from the Swift bridge sources, consumable by .NET for iOS/macOS via <NativeReference>.
+#
+# REQUIRES Xcode 27.1 or later. The shim still deploys to iOS 17, but the foldables support (posture
+# reporter, native TwoPaneView) calls iOS 27.1 SwiftUI API — `onHingeChange`, `reservedRegions(kind:)`,
+# `ArrangementView` — behind `#available(iOS 27.1, *)`. An older SDK doesn't have those symbols at all,
+# so the compile fails rather than degrading. See plans/foldables-plan.md.
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$HERE/Sources/SwiftDotNetBridge/Bridge.swift"
@@ -12,6 +17,12 @@ MODULE="SwiftDotNetBridge"
 MIN_IOS="17.0"
 MIN_MAC="14.0"
 MIN_TVOS="17.0"
+
+XCODE_VERSION="$(xcodebuild -version | head -1 | awk '{print $2}')"
+if [ "$(printf '%s\n27.1\n' "$XCODE_VERSION" | sort -V | head -1)" != "27.1" ]; then
+  echo "error: Xcode 27.1+ required (found $XCODE_VERSION) — the shim uses iOS 27.1 SwiftUI API behind #available." >&2
+  exit 1
+fi
 
 rm -rf "$WORK" "$OUT/$MODULE.xcframework"
 mkdir -p "$WORK"

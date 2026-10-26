@@ -153,6 +153,11 @@ public static class SwiftApp
             _bridge.Render(patch.ToJson());
     }
 
+    /// <summary>True when the running bridge renders <paramref name="viewType"/> with a native container
+    /// (see <see cref="IBridgeCapabilities"/>); false with no bridge or a bridge that doesn't say.</summary>
+    internal static bool BridgeSupportsNativeView(string viewType)
+        => _bridge is IBridgeCapabilities caps && caps.SupportsNativeView(viewType);
+
     static void OnEvent(string nodeId, string? value)
     {
         // Reserved host→C# channel: safe-area insets aren't tied to a node, so they ride the event
@@ -160,6 +165,13 @@ public static class SwiftApp
         if (nodeId == SafeArea.EventId)
         {
             SafeArea.Update(value);
+            return;
+        }
+
+        // Same channel, second reserved id: the window posture (fold + root size). See WindowPosture.cs.
+        if (nodeId == WindowPosture.EventId)
+        {
+            WindowPosture.Update(value);
             return;
         }
 

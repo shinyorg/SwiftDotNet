@@ -101,6 +101,25 @@ single registration list serves both Blazor and SwiftDotNet — see
 > **Gotcha:** Blazor also defines an `[Inject]` attribute, so a file importing both `SwiftDotNet` and
 > `Microsoft.AspNetCore.Components` must qualify which one it means.
 
+## Window posture (foldables)
+
+`SwiftDotNetView` imports [`wwwroot/posture.js`](../../src/SwiftDotNet.Web/wwwroot/posture.js)
+(`_content/SwiftDotNet.Web/posture.js`) after its first render. The module builds the same `$posture` wire the
+native shims emit — viewport size always; a fold when `window.viewport.segments` has two segments (side by side
+→ a vertical fold in the gap, stacked → horizontal) — and calls back a `[JSInvokable] OnPosture`, which feeds it
+through the bridge's event handler so [`WindowPosture`](../modifiers-gestures-animation.md#window-posture-foldables--iphone-duo)
+parses it like any host report. It re-checks on `resize`, `segmentschange` and `navigator.devicePosture`
+`change`. No segments means `none`, even where `devicePosture` exists — Chromium reports `continuous` on
+ordinary laptops too, so it can't tell a flat foldable from a slab. No hinge angle on the web.
+
+Viewport segments are **Chromium-only** (Android foldables, or DevTools' foldable device emulation);
+elsewhere only the size is reported, which still gives `TwoPaneView` its width rule.
+
+🧩 **Builds and the asset is served** (`GET /_content/SwiftDotNet.Web/posture.js` → 200), but it has **not been
+run**: the Blazor sample currently stops at startup with an unrelated error
+(`'SampleRootView.Greeting' was read before it was injected`, from `AppRoot.OnInitialized`), and no foldable
+viewport was emulated.
+
 ## Deferred
 
 Web pull-refresh / load-more / list windowing need JS-interop `scrollTop` — not yet wired. See

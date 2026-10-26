@@ -19,7 +19,7 @@ namespace SwiftDotNet;
 /// the canvas plus a 1×1 transparent <see cref="Entry"/> that is focused whenever the engine focuses a
 /// text control, and whose text is mirrored into the engine. See <see cref="AttachSoftKeyboard"/>.
 /// </summary>
-public class SwiftDotNetSkiaView : Microsoft.Maui.Controls.ContentView
+public partial class SwiftDotNetSkiaView : Microsoft.Maui.Controls.ContentView
 {
     readonly SkiaBridge _bridge = new();
     readonly SkiaPointerRouter _pointer;
@@ -55,6 +55,10 @@ public class SwiftDotNetSkiaView : Microsoft.Maui.Controls.ContentView
         AttachSoftKeyboard();
         AttachPlatformViews();
         Content = _layout;
+
+        // Window posture: the root area is this view, so its size (and the fold, where the platform has
+        // one) is what TwoPaneView lays out against. See SwiftDotNetSkiaView.Posture.cs.
+        SizeChanged += (_, _) => ReportPosture();
 
         SwiftApp.Run(root, _bridge, services);
 
@@ -165,6 +169,7 @@ public class SwiftDotNetSkiaView : Microsoft.Maui.Controls.ContentView
     protected override void OnHandlerChanged()
     {
         base.OnHandlerChanged();
+        AttachPosture();
         // Drive the implicit-animation clock at ~60fps once we're attached; repaints only while animating.
         if (Handler is not null && _timer is null)
         {

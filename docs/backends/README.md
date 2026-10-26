@@ -84,5 +84,10 @@ Everything in [`Core`](../../src/SwiftDotNet/Core) — DSL, `State<T>`, `Node`, 
 drift apart: [`GridEngine`](../../src/SwiftDotNet/Core/GridEngine.cs) (track parsing + grid cell placement)
 and [`AbsoluteLayoutBounds`](../../src/SwiftDotNet/Core/GridLayout.cs) (proportional-bounds resolution) are
 called by every C# backend and ported line-for-line into the Swift and Kotlin shims. A backend implements exactly one interface,
-[`IBridge`](../../src/SwiftDotNet/Core/IBridge.cs), plus a host. The same
+[`IBridge`](../../src/SwiftDotNet/Core/IBridge.cs), plus a host — and may optionally implement
+`IBridgeCapabilities` to draw a composite view (today only `TwoPaneView`) with a native container. Hosts that
+can see the device also push two ambient values on reserved event ids: the safe area (`$safeArea`, iOS/Android)
+and the [window posture](../modifiers-gestures-animation.md#window-posture-foldables--iphone-duo)
+(`$posture` — iOS, Android, Web, the Skia MAUI host; everything else reports nothing, so `TwoPaneView` splits
+by width only there, or always when no size is known). The same
 [`SharedUI.ContentView`](../../sample/SharedUI/ContentView.cs) renders on all of them.

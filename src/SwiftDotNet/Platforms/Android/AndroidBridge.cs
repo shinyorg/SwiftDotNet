@@ -9,8 +9,11 @@ namespace SwiftDotNet;
 /// The Android implementation of <see cref="IBridge"/>: calls the Kotlin/Compose bridge over JNI
 /// and routes Compose events back into managed callbacks. Internal — apps use <see cref="SwiftDotNetHost"/>.
 /// </summary>
-internal sealed class AndroidBridge : IBridge
+internal sealed class AndroidBridge : IBridge, IBridgeCapabilities
 {
+    /// <summary>The Compose shim draws <c>TwoPaneView</c> with material3-adaptive's <c>ListDetailPaneScaffold</c>.</summary>
+    public bool SupportsNativeView(string viewType) => viewType == TwoPaneView.NativeType;
+
     /// <summary>Builds the Compose-backed host <see cref="AndroidView"/>.</summary>
     public AndroidView CreateHostView(Context context) => NativeBridge.CreateHostView(context);
 

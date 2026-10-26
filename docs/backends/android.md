@@ -26,6 +26,10 @@ Alert, Image/Label, ProgressView/Gauge, Link, shapes — plus the modifier set.
   `Layout` composables whose measure/place passes port `SkiaNode.ResolveTracks` and
   [`GridEngine`](../../src/SwiftDotNet/Core/GridEngine.cs) line for line. Fixed/Flexible track sizes and
   point bounds are converted `dp → px` before sizing. See [Grid](../views-and-controls.md#grid).
+  The grid sizes tracks from **intrinsics** and measures each child exactly **once**, inside its resolved
+  cell: Compose forbids a second `measure()` in one pass, and the old exploratory unbounded measure threw
+  for any scrollable child (`Vertically scrollable component was measured with an infinity maximum height`)
+  — found when a `ScrollView` pane went into a `TwoPaneView` on a Pixel Fold AVD.
 
 - **Form-factor seam (Kotlin-only).** `overrideRenderer(type, …)` replaces a *built-in* node type's
   rendering (consulted before the built-in mapping — unlike `registerRenderer`, which only fills in unknown
@@ -45,10 +49,16 @@ native/SwiftDotNetComposeBridge/gradlew -p native/SwiftDotNetComposeBridge assem
 dotnet build sample/SampleApp -f net10.0-android
 ```
 
-Toolchain: Gradle wrapper 8.14.3, AGP 8.11.1, Kotlin 2.1.0, compileSdk 36, Compose BOM 2025.01.00.
+Toolchain: Gradle wrapper 8.14.3, AGP 8.11.1, Kotlin 2.1.0, compileSdk 36, Compose BOM **2026.09.00**
+(Compose UI/Foundation 1.12.1, Material3 1.4.0), plus `androidx.window:window:1.5.1` and
+`androidx.compose.material3.adaptive:adaptive-layout:1.3.0` for [foldables](#foldables).
 
 `src/SwiftDotNet` (net10.0-android TFM) binds the `.aar` via `<AndroidLibrary … Bind="true">` and references
-`Xamarin.AndroidX.Compose.*` (Ui/Foundation, Material3, Activity.Compose). `AndroidBridge : IBridge` calls
+`Xamarin.AndroidX.Compose.*` (Ui/Foundation **1.12.1**, Material3, Activity.Compose), `Xamarin.AndroidX.Window`
+1.5.1.3 and `Xamarin.AndroidX.Compose.Material3.Adaptive.Layout` 1.3.0. The runtime classes come from these
+NuGet packages, not the `.aar`, so the BOM must match them: the Adaptive.Layout binding requires Compose UI
+≥ 1.12.0, which is what moved the whole set from 1.11.4 (restores of the phone, Wear, Car and Skia MAUI heads
+show no new NU1107/NU1605; the Wear sample builds but has not been re-run on a watch AVD since the bump). `AndroidBridge : IBridge` calls
 the bound `Com.Swiftdotnet.Bridge.SwiftDotNetBridge` static methods; events come back via a C#
 `EventProxy : Java.Lang.Object, IEventCallback`.
 
@@ -128,6 +138,30 @@ draws behind the system bars — required on Android 15+ for apps targeting SDK 
 
 🧩 **Not emulator-verified** — the Kotlin compiles and the wire contract is tested, but real inset values,
 rotation and keyboard behavior are unconfirmed.
+
+## Foldables
+
+`RootHostView` also reports the [window posture](../modifiers-gestures-animation.md#window-posture-foldables--iphone-duo)
+on the reserved `$posture` id: `ReportPosture()` collects `WindowInfoTracker.windowLayoutInfo(activity)` (the
+Kotlin **Flow** API, so the deprecated Java callback adapter isn't involved) in a `LaunchedEffect`, takes the
+first `FoldingFeature`, and converts its window-pixel bounds to dp relative to the root `Box`
+(`onGloballyPositioned { boundsInWindow() }`). `HALF_OPENED` or `isSeparating` → `halfOpen`; otherwise `flat`;
+no feature → `none`. Android has no hinge angle.
+
+`TwoPaneView`'s side-by-side cases render as material3-adaptive **`ListDetailPaneScaffold`**:
+`calculatePaneScaffoldDirective(currentWindowAdaptiveInfo())` copied with `maxHorizontalPartitions = 2`
+(C# already decided two panes), both panes `Expanded`. On a book fold the directive's hinge bounds place the
+split; in a wide window the list pane gets `preferredWidth = ratio × width`. Stacked and single layouts stay
+composite `Grid`s.
+
+**Activity restarts.** Declare `ConfigurationChanges = ScreenSize | SmallestScreenSize | ScreenLayout |
+Orientation` on your activity (see [Getting started](../getting-started.md#android-jetpack-compose)); the
+attribute can't come from `SwiftDotNetActivity` because `ActivityAttribute` is `Inherited = false`.
+
+✅ **Verified on a Pixel Fold AVD (API 35):** `flat` / `halfOpen · vertical` at 421dp (`adb emu posture 2`) /
+`halfOpen · horizontal` after `adb emu rotate` / `none` after `adb emu fold`; native scaffold in a wide window
+and on a book fold; composite book, tabletop and single-pane layouts; `State<T>` survived rotation and folding
+(no activity restart).
 
 ### `CameraView` and `Map` are not in the AAR
 
